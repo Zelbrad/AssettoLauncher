@@ -6,15 +6,9 @@ This is basically just a launcher where you can see all your installed mods from
 
 Personally, I really like the project, and I hope the community does too.
 
----
-
-A lightweight launcher for the four Assetto Corsa games: AC, ACC, EVO and Rally. It lets you browse installed mods visually, read the official Steam news, and launch the games.
-
-Built with [Neutralino](https://neutralino.js.org/), which uses the WebView2 runtime that comes with Windows: no Electron or Chromium bundle. The installer is about 7.5 MB.
-
 ## Download
 
-Get the latest version from [Releases](https://github.com/Zelbrad/AssettoLauncher/releases):
+**[⬇ Download the latest version](https://github.com/Zelbrad/AssettoLauncher/releases/latest)**, then pick one of:
 
 - **`Assetto-Launcher-Setup-<version>.exe`**: installs for your Windows user only (no admin prompt), with a Start Menu entry and an optional desktop shortcut. Installing a newer version keeps your settings.
 - **`assetto-launcher-release.zip`**: portable. Unzip anywhere you can write to and run `assetto-launcher-win_x64.exe`.
@@ -24,6 +18,12 @@ Needs Windows 10 (1803 or later) or 11 and the games from Steam. It works offlin
 ### "Windows protected your PC"?
 
 The launcher isn't code-signed yet, so Windows SmartScreen warns about it until enough people have run it. Click **More info → Run anyway**. Each release lists the installer's SHA-256 hash, so you can check you have the genuine file (`Get-FileHash <file>` in PowerShell).
+
+## About
+
+A lightweight launcher for the four Assetto Corsa games: AC, ACC, EVO and Rally. It lets you browse installed mods visually, read the official Steam news, and launch the games.
+
+Built with [Neutralino](https://neutralino.js.org/), which uses the WebView2 runtime that comes with Windows: no Electron or Chromium bundle. The installer is about 7.5 MB.
 
 ## Build from source
 
