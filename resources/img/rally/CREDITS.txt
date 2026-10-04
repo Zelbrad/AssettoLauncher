@@ -1,0 +1,16 @@
+Rally location covers (Quick Drive), resized to 960 px. From Wikimedia Commons:
+
+alsace.jpg      "Sébastien Loeb au rallye d'Alsace 2010" by Jef132, CC BY-SA 3.0
+                https://commons.wikimedia.org/wiki/File:S%C3%A9bastien_Loeb_au_rallye_d%27Alsace_2010.JPG
+greece.jpg      "Xavier Pons - 2006 Acropolis Rally" by zotosi, CC BY 2.0
+                https://commons.wikimedia.org/wiki/File:Xavier_Pons_-_2006_Acropolis_Rally.jpg
+livigno.jpg     "Livigno (Italy) 2007" by Wismat (pl.wikipedia), CC BY-SA 3.0
+                https://commons.wikimedia.org/wiki/File:Livigno_(Italy)_2007.jpg
+montecarlo.jpg  "Ott Tänak at Col de Moissière, Rallye Monte-Carlo 2019" by Iain Cameron, CC BY 2.0
+                https://commons.wikimedia.org/wiki/File:Ott_T%C3%A4nak_at_Col_de_Moissi%C3%A8re,_Rallye_Monte-Carlo_2019.jpg
+weles.jpg       "Forest track in the Hafren Forest with rallying sign" by Bill Boaden, CC BY-SA 2.0
+                https://commons.wikimedia.org/wiki/File:Forest_track_in_the_Hafren_Forest_with_rallying_sign_-_geograph.org.uk_-_2977596.jpg
+
+Brand logos in ../brands are the manufacturers' trademarks, from Wikipedia/Wikimedia Commons.
+
+Country flags in ../flags: flagcdn.com (public domain flag images).

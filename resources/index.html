@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Assetto Launcher</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+  <div id="app">
+    <header id="titlebar">
+      <div class="brand"><img src="/img/ACLLogowide.png" alt="Assetto Launcher"></div>
+      <nav id="nav">
+        <button data-view="games" class="active">Games</button>
+        <button data-view="mods">Mods</button>
+        <button data-view="quickdrive" id="nav-qd">Quick Drive</button>
+        <button data-view="community">Community</button>
+        <button data-view="settings">Settings</button>
+      </nav>
+      <div class="win-controls">
+        <button id="win-min" title="Minimize"><svg viewBox="0 0 12 12"><path d="M1 6h10" stroke="currentColor" stroke-width="1.4"/></svg></button>
+        <button id="win-max" title="Maximize"><svg viewBox="0 0 12 12"><rect x="1.5" y="1.5" width="9" height="9" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.4"/></svg></button>
+        <button id="win-close" title="Close"><svg viewBox="0 0 12 12"><path d="M1.5 1.5l9 9M10.5 1.5l-9 9" stroke="currentColor" stroke-width="1.4"/></svg></button>
+      </div>
+    </header>
+
+    <aside id="sidebar">
+      <div id="game-list"></div>
+      <div class="version" id="app-version"></div>
+    </aside>
+
+    <main id="main"></main>
+  </div>
+
+  <div id="modal-root"></div>
+  <div id="toast"></div>
+
+  <script src="/js/neutralino.js"></script>
+  <script src="/vendor/hls.min.js" defer></script>
+  <script type="module" src="/js/main.js"></script>
+</body>
+</html>

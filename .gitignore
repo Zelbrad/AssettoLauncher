@@ -1,0 +1,14 @@
+# Build output and Neutralino runtime (bin\ comes from `npx @neutralinojs/neu update`)
+dist/
+bin/
+
+# The launcher's own data when run from the project folder
+.tmp/
+.storage/
+.cache/
+neutralinojs.log
+
+# Design sources
+*.fig
+ACL.png
+ACRCover.png
