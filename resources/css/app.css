@@ -529,6 +529,15 @@ select { background: #222; border: 1px solid #383838; border-radius: 6px; height
 /* Offline note (top right, under the title bar) */
 #net-note { position: fixed; top: calc(var(--titlebar-h) + 14px); right: 18px; z-index: 60; max-width: 340px; display: flex; align-items: center; gap: 10px; padding: 9px 8px 9px 14px; background: #181818; border: 2px solid var(--red); border-radius: 8px; font-size: 12.5px; line-height: 1.4; color: #e6e6e6; animation: netIn .25s ease; transition: opacity .2s, transform .2s; }
 #net-note.hide { opacity: 0; transform: translateY(-6px); }
-#net-note .net-close { flex: none; width: 22px; height: 22px; padding: 0; background: none; border: 0; color: var(--red); display: grid; place-items: center; cursor: pointer; }
-#net-note .net-close svg { width: 12px; height: 12px; }
+#net-note .net-close, #app-update .net-close { flex: none; width: 22px; height: 22px; padding: 0; background: none; border: 0; color: var(--red); display: grid; place-items: center; cursor: pointer; }
+#net-note .net-close svg, #app-update .net-close svg { width: 12px; height: 12px; }
+
+/* Launcher update offer (top right, stays until answered) */
+#app-update { position: fixed; top: calc(var(--titlebar-h) + 14px); right: 18px; z-index: 61; width: 400px; display: grid; grid-template-columns: 1fr auto; gap: 10px 8px; padding: 12px 10px 12px 14px; background: #181818; border: 2px solid var(--red); border-radius: 8px; color: #e6e6e6; animation: netIn .25s ease; }
+#app-update .upd-text b { display: block; font-size: 13.5px; }
+#app-update .upd-text small { display: block; margin-top: 3px; font-size: 12px; color: var(--muted); }
+#app-update .upd-text .link { font-size: 12px; }
+#app-update .upd-btns { grid-column: 1 / -1; display: flex; gap: 8px; }
+#app-update .upd-btns .btn { flex: 1; white-space: nowrap; }
+#app-update .net-close { grid-column: 2; grid-row: 1; align-self: start; }
 @keyframes netIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }

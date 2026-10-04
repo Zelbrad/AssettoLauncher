@@ -11,6 +11,7 @@ import { quickDrive, readAcSession, defaultAcSession, acWeathers, roadTemperatur
 import { knownCars, launchEvo, readEvoSession, defaultEvoSession, EVO_MODES, EVO_WEATHER, EVO_GRIP, EVO_TIME_SPEEDS } from './evolaunch.js';
 import { IMPORT_RE, resolveDropped, prepareImport, installItem, setItemCar, carChoices, discardImport } from './installer.js';
 import { readEvoExtras, isLazyImage, lazyImage } from './kspkg.js';
+import { latestRelease, isNewer, isInstalledCopy, installUpdate } from './appupdate.js';
 import { esc, timeAgo, openExternal, openFolder, storageGet, storageSet, norm, log, exists, basename, prettifyId, fileUrl, listDir, join, run, powershellEncoded } from './util.js';
 
 Neutralino.init();
@@ -2300,7 +2301,7 @@ async function renderSettings() {
       <div class="setting"><label>News</label><div class="val">Checked for new posts each time the launcher opens</div><div class="btns"><button class="btn small subtle" data-act="clear-cache">Refresh now</button></div></div>
     </div>
     <div class="settings-group"><h3>About</h3>
-      <div class="setting"><label>Version</label><div class="val">${esc(window.NL_APPVERSION || '')} · Neutralino ${esc(window.NL_VERSION || '')}</div><div></div></div>
+      <div class="setting"><label>Version</label><div class="val">${esc(window.NL_APPVERSION || '')} · Neutralino ${esc(window.NL_VERSION || '')}</div><div class="btns"><button class="btn small subtle" data-act="check-update">Check for updates</button></div></div>
       <div class="setting"><label>Source code</label><div class="val">Open source (MIT). Feedback and ideas are welcome.</div><div class="btns"><button class="btn small subtle" data-url="${REPO_URL}">GitHub ↗</button></div></div>
       <div class="setting"><label>Support</label><div class="val">The launcher is free. If you'd like to support it, you can buy me a coffee.</div><div class="btns"><button class="btn small primary" data-url="${KOFI_URL}">Support on Ko-fi ↗</button></div></div>
     </div>
@@ -2328,6 +2329,11 @@ async function renderSettings() {
     } else if (t.dataset.act === 'rescan') {
       await detect();
       toast('Games re-detected');
+    } else if (t.dataset.act === 'check-update') {
+      t.disabled = true; t.textContent = 'Checking…';
+      const rel = await checkAppUpdate({ manual: true });
+      if (!rel) toast(`You're up to date (${window.NL_APPVERSION || ''})`);
+      t.disabled = false; t.textContent = 'Check for updates';
     } else if (t.dataset.act === 'clear-cache') {
       for (const g of GAMES) { await getNews(g.appid, { force: true }); }
       toast('News refreshed');
@@ -2487,6 +2493,49 @@ function showOfflineNotice() {
   document.body.appendChild(el);
 }
 
+// A newer launcher on GitHub (appupdate.js): top-right offer to install it, skip
+// that version (not offered again) or close it (offered again next launch).
+async function checkAppUpdate({ manual = false } = {}) {
+  const rel = await latestRelease().catch(() => null);
+  if (!rel || !isNewer(rel.version, window.NL_APPVERSION || '0')) return null;
+  if (manual || state.settings.skipVersion !== rel.version) showUpdateOffer(rel, await isInstalledCopy());
+  return rel;
+}
+function showUpdateOffer(rel, installed) {
+  $('#app-update')?.remove();
+  const el = document.createElement('div');
+  el.id = 'app-update';
+  el.innerHTML = `<div class="upd-text"><b>Assetto Launcher ${esc(rel.version)} is out</b>
+      <small>You have ${esc(window.NL_APPVERSION || '')}. <button class="link" data-u="notes">What's new ↗</button></small></div>
+    <div class="upd-btns">
+      <button class="btn small primary" data-u="install">${installed && rel.setup ? 'Install update' : 'Download ↗'}</button>
+      <button class="btn small subtle" data-u="skip">Skip this version</button>
+    </div>
+    <button class="net-close" data-u="close" title="Not now" aria-label="Not now"><svg viewBox="0 0 12 12"><path d="M2.5 2.5l7 7M9.5 2.5l-7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>`;
+  el.onclick = async e => {
+    const b = e.target.closest('[data-u]');
+    if (!b) return;
+    const act = b.dataset.u;
+    if (act === 'notes') openExternal(rel.page);
+    if (act === 'close') el.remove();
+    if (act === 'skip') { state.settings.skipVersion = rel.version; saveSettings(); el.remove(); }
+    if (act === 'install') {
+      if (!installed || !rel.setup) { openExternal(rel.page); return; }
+      b.disabled = true; b.textContent = 'Downloading…';
+      try {
+        await installUpdate(rel.setup);
+        b.textContent = 'Installing…';
+        // The installer takes over from here and starts the new version.
+        setTimeout(() => Neutralino.app.exit(), 800);
+      } catch (err) {
+        toast(err.message || 'The update failed', true);
+        b.disabled = false; b.textContent = 'Install update';
+      }
+    }
+  };
+  document.body.appendChild(el);
+}
+
 // Snapshot runs click through dialogs; they mustn't change the user's settings.
 function saveSettings() { if (!state.snapshotRun) storageSet('settings', state.settings); }
 
@@ -2552,6 +2601,7 @@ Neutralino.events.on('ready', async () => {
       // Online: every game's news and the official Rally page are checked for
       // anything new, in the background (a few KB when nothing changed).
       if (online) {
+        if (!state.snapshotRun) checkAppUpdate();
         for (const g of GAMES) checkNews(g.appid);
         siteSync().catch(err => log(`site sync: ${err?.message}`));
       }
@@ -2586,6 +2636,19 @@ async function runSnapshots(dir) {
     state.game = 'ac'; renderSidebar(); state.view = 'mods'; state.settings.acFilter = 'all'; render(); await snap('max-ac-mods');
     openQuickDriveDialog(); await wait(4000); await snap('max-quickdrive');
     await snapSession('max');
+    await Neutralino.app.exit();
+    return;
+  }
+  // --check13: launcher updates (GitHub check, version order, offer, download + hash check).
+  if ((window.NL_ARGS || []).includes('--check13')) {
+    log(`check13 latest: ${JSON.stringify(await latestRelease())}; installed copy ${await isInstalledCopy()}`);
+    log(`check13 order: ${[['0.2.0', '0.1.0'], ['0.10.0', '0.9.9'], ['v0.1.0', '0.1.0'], ['0.1.0', '0.2.0']].map(([a, b]) => `${a}>${b}=${isNewer(a, b)}`).join(' ')}`);
+    showUpdateOffer({ version: '0.2.0', page: 'https://github.com/Zelbrad/AssettoLauncher/releases', setup: { name: 'x.exe' } }, true);
+    await snap('check13-offer');
+    try {
+      await installUpdate({ name: 'check13-LICENSE.txt', url: 'https://github.com/Zelbrad/AssettoLauncher/raw/main/LICENSE', sha256: '00' });
+      log('check13 install: NOT refused');
+    } catch (err) { log(`check13 install refused: ${err.message}`); }
     await Neutralino.app.exit();
     return;
   }
