@@ -6,6 +6,8 @@ This is basically just a launcher where you can see all your installed mods from
 
 Personally, I really like the project, and I hope the community does too.
 
+The launcher is free. If you'd like to support it, you can [buy me a coffee on Ko-fi](https://ko-fi.com/gperpas) ☕
+
 ## Download
 
 **[⬇ Download the latest version](https://github.com/Zelbrad/AssettoLauncher/releases/latest)**, then pick one of:
@@ -116,7 +118,7 @@ Install folders are found automatically through Steam (`libraryfolders.vdf` + `a
 - **Variant labels:** read from `presets/*.visualcarpreset`.
 - **Thumbnails:** `generated/thumbnails/*.texture` holds a protobuf header (width, height, format 34 = BC7, 256×256 tiling) and `*.texturemips` holds the BC7 blocks, stored tile by tile. `js/bc7.js` decodes them. It's a port of [bcdec](https://github.com/iOrange/bcdec) (MIT/Unlicense).
 
-Only the table and these few files are read (about 3 MB from an 850 MB package). Decoded thumbnails are cached as JPGs in `.cache/evo/`, keyed by package size and modification time.
+Only the table and these few files are read (about 3 MB from an 850 MB package). Decoded thumbnails are cached as JPGs in `.cache/evo/`, keyed by package size and modification time. The official catalogue (`readEvoCatalog`) only notes which texture each car/track picture comes from; pictures are decoded when first shown (`lazyImage`, asked for by the page's image error handler; cards load lazily, so only those near the view ask), on-screen ones first, and the rest one by one in the background a few seconds later (tracks, then cars). On a first run the EVO pages open in ~3 s instead of waiting for 100+ BC7 textures.
 
 ## Layout
 

@@ -10,7 +10,7 @@ import { findSteamPath, findInstalledApps, getNews, cachedNews, refreshNews, get
 import { quickDrive, readAcSession, defaultAcSession, acWeathers, roadTemperature, AC_MODES, AC_GRIP } from './quickdrive.js';
 import { knownCars, launchEvo, readEvoSession, defaultEvoSession, EVO_MODES, EVO_WEATHER, EVO_GRIP, EVO_TIME_SPEEDS } from './evolaunch.js';
 import { IMPORT_RE, resolveDropped, prepareImport, installItem, setItemCar, carChoices, discardImport } from './installer.js';
-import { readEvoExtras } from './kspkg.js';
+import { readEvoExtras, isLazyImage, lazyImage } from './kspkg.js';
 import { esc, timeAgo, openExternal, openFolder, storageGet, storageSet, norm, log, exists, basename, prettifyId, fileUrl, listDir, join, run, powershellEncoded } from './util.js';
 
 Neutralino.init();
@@ -54,6 +54,19 @@ function toast(msg, error = false) {
 
 // Card/thumbnail images fall back through data-fallback, then to a placeholder.
 window.__imgFail = img => {
+  // An EVO picture not decoded yet: decode it now (cards only load near the
+  // view), keep the card blank meanwhile, then show it.
+  const src = img.getAttribute('src') || '';
+  if (!img.dataset.lazy && isLazyImage(src)) {
+    img.dataset.lazy = '1';
+    img.style.visibility = 'hidden';
+    lazyImage(src, true, img).then(ok => {
+      if (!img.isConnected) return;
+      img.style.visibility = '';
+      if (ok) { img.removeAttribute('src'); img.src = src; } else window.__imgFail(img);
+    });
+    return;
+  }
   const next = img.dataset.fallback;
   if (next) {
     img.dataset.fallback = '';
@@ -2244,6 +2257,9 @@ const PATH_SETTINGS = [
   { game: 'rally', key: 'rally_install', label: 'Rally game folder', get: p => p.rally.install },
 ];
 
+const REPO_URL = 'https://github.com/Zelbrad/AssettoLauncher';
+const KOFI_URL = 'https://ko-fi.com/gperpas';
+
 async function renderSettings() {
   const rows = await Promise.all(PATH_SETTINGS.map(async s => {
     const v = s.get(state.paths);
@@ -2281,8 +2297,12 @@ async function renderSettings() {
     </div>
     <div class="settings-group"><h3>Data</h3>
       <div class="setting"><label>Steam</label><div class="val">${esc(state.steamPath)}</div><div class="btns"><button class="btn small subtle" data-act="rescan">Re-detect games</button></div></div>
-      <div class="setting"><label>News &amp; store cache</label><div class="val">Refreshed every 30 minutes</div><div class="btns"><button class="btn small subtle" data-act="clear-cache">Refresh now</button></div></div>
+      <div class="setting"><label>News</label><div class="val">Checked for new posts each time the launcher opens</div><div class="btns"><button class="btn small subtle" data-act="clear-cache">Refresh now</button></div></div>
+    </div>
+    <div class="settings-group"><h3>About</h3>
       <div class="setting"><label>Version</label><div class="val">${esc(window.NL_APPVERSION || '')} · Neutralino ${esc(window.NL_VERSION || '')}</div><div></div></div>
+      <div class="setting"><label>Source code</label><div class="val">Open source (MIT). Feedback and ideas are welcome.</div><div class="btns"><button class="btn small subtle" data-url="${REPO_URL}">GitHub ↗</button></div></div>
+      <div class="setting"><label>Support</label><div class="val">The launcher is free. If you'd like to support it, you can buy me a coffee.</div><div class="btns"><button class="btn small primary" data-url="${KOFI_URL}">Support on Ko-fi ↗</button></div></div>
     </div>
   </div></div>`;
 
@@ -2299,6 +2319,8 @@ async function renderSettings() {
       await applyPaths();
     } else if (t.dataset.open) {
       openFolder(t.dataset.open);
+    } else if (t.dataset.url) {
+      openExternal(t.dataset.url);
     } else if (t.dataset.toggle) {
       state.settings[t.dataset.toggle] = !state.settings[t.dataset.toggle];
       saveSettings();
@@ -2564,6 +2586,23 @@ async function runSnapshots(dir) {
     state.game = 'ac'; renderSidebar(); state.view = 'mods'; state.settings.acFilter = 'all'; render(); await snap('max-ac-mods');
     openQuickDriveDialog(); await wait(4000); await snap('max-quickdrive');
     await snapSession('max');
+    await Neutralino.app.exit();
+    return;
+  }
+  // --check12: EVO Quick Drive with no decoded pictures (fresh install): how soon
+  // the page shows, and pictures filling in (visible ones first, then the rest).
+  if ((window.NL_ARGS || []).includes('--check12')) {
+    const t0 = Date.now();
+    state.game = 'evo'; renderSidebar(); state.view = 'quickdrive'; render();
+    while (!document.querySelector('#main .qd[data-game="evo"] #qd-cars [data-car]') && Date.now() - t0 < 120000) await wait(100);
+    log(`check12 page shown after ${Date.now() - t0} ms`);
+    const shown = () => [...document.querySelectorAll('#qd-cars img.main, #qd-tracks img.main')].filter(i => i.complete && i.naturalWidth && i.style.visibility !== 'hidden').length;
+    for (const s of [1, 3, 8, 20]) {
+      await wait(s === 1 ? 1000 : (s - [1, 3, 8, 20][[1, 3, 8, 20].indexOf(s) - 1]) * 1000);
+      log(`check12 ${s}s: ${shown()} pictures shown of ${document.querySelectorAll('#qd-cars [data-car], #qd-tracks [data-track]').length} cards`);
+      if (s === 3) await snap('check12-evo-3s');
+    }
+    $('#qd-cars').scrollTop = 2000; await wait(4000); await snap('check12-evo-scrolled');
     await Neutralino.app.exit();
     return;
   }

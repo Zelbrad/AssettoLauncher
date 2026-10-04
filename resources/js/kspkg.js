@@ -7,7 +7,7 @@
 // thumbnails, track photos/maps), never a whole package. Decoded images are
 // cached as JPGs keyed by package size + mtime, so later scans are one stat call.
 import { decodeBC7 } from './bc7.js';
-import { join, basename, log, readText, writeText, mapLimit, prettifyId } from './util.js';
+import { join, basename, log, readText, writeText, mapLimit, prettifyId, fileUrl } from './util.js';
 
 const KEY = [0xC1, 0x35, 0x11, 0x7D, 0xA9, 0x21, 0x97, 0x9F]; // 0x9F9721A97D1135C1, little-endian
 const TABLE_SIZES = [0x4000000, 0x2000000];
@@ -280,16 +280,87 @@ export async function pruneCache(cacheDir, liveKeys) {
 // Official content (content.kspkg): car list with car-select thumbnails and
 // track list with layout photos + SVG maps, as the game's menus show them.
 
-const BASE_VERSION = 'v4'; // v4: Race containers per layout
+const BASE_VERSION = 'v5'; // v5: pictures decoded when shown (catalogue lists their textures)
 const slug = name => name.toLowerCase().replace(/\s+/g, '_');
 const layoutName = id => prettifyId(id.replace(/-/g, ' ')).replace(/\bV(\d)/g, 'v$1');
 
-function catalogWithPaths(cat, dir) {
+// ---------------------------------------------------------------------------
+// Pictures of the official catalogue are decoded when first shown, not while the
+// catalogue is built (70+ BC7 textures made the first EVO page take long). The
+// catalogue lists each picture's texture; cards point at the JPG it becomes, and a
+// card whose JPG doesn't exist yet asks for it (lazyImage, from the page's image
+// error handler; the browser only loads cards near the view). Shown pictures go
+// first; the rest are decoded one by one in the background, tracks then cars.
+
+const lazyJobs = new Map(); // picture URL -> { url, pkgPath, tex, out, maxWidth }
+const urgent = [], idle = [];
+const openPkgs = new Map(); // package path -> Promise<package>
+let pumping = false, prefetchTimer = 0;
+
+export const isLazyImage = url => lazyJobs.has(url);
+
+// Decodes the picture behind url (if it's one of ours); resolves true once its JPG
+// exists. el: the <img> waiting for it (pictures on screen are decoded first).
+export function lazyImage(url, now = true, el = null) {
+  const job = lazyJobs.get(url);
+  if (!job) return Promise.resolve(false);
+  if (el) (job.els ||= new Set()).add(el);
+  if (!job.promise) {
+    job.promise = new Promise(resolve => { job.resolve = resolve; });
+    (now ? urgent : idle).push(job);
+  } else if (now && idle.includes(job)) {
+    idle.splice(idle.indexOf(job), 1); urgent.push(job);
+  }
+  pump();
+  return job.promise;
+}
+
+// Is one of the job's <img>s inside its scrolling list's visible area?
+function onScreen(job) {
+  for (const el of job.els || []) {
+    if (!el.isConnected) continue;
+    const r = el.getBoundingClientRect();
+    const box = el.closest('.qd-grid, .mods-cars .grid, .view')?.getBoundingClientRect() || { top: 0, bottom: innerHeight };
+    if (r.height && r.bottom > Math.max(0, box.top) && r.top < Math.min(innerHeight, box.bottom)) return true;
+  }
+  return false;
+}
+
+async function pump() {
+  if (pumping) return;
+  pumping = true;
+  while (urgent.length || idle.length) {
+    const i = urgent.findIndex(onScreen);
+    const job = i >= 0 ? urgent.splice(i, 1)[0] : urgent.shift() || idle.shift();
+    let ok = false;
+    try {
+      if (await exists(job.out)) { job.resolve(true); continue; } // decoded on an earlier run
+      if (!openPkgs.has(job.pkgPath)) openPkgs.set(job.pkgPath, openPackage(job.pkgPath));
+      const pkg = await openPkgs.get(job.pkgPath), e = pkg?.get(job.tex);
+      ok = !!e && await saveTexture(pkg, e, job.out, job.maxWidth);
+    } catch (err) { log(`picture ${job.tex}: ${err?.message || err}`); }
+    job.resolve(ok);
+    // Background work yields between pictures so scrolling stays smooth.
+    if (!urgent.length) await new Promise(r => setTimeout(r, 60));
+  }
+  pumping = false;
+}
+
+function catalogWithPaths(cat, dir, pkgPath) {
   const p = f => f ? join(dir, f) : '';
-  return {
-    cars: cat.cars.map(c => ({ ...c, image: p(c.image) })),
-    tracks: cat.tracks.map(t => ({ ...t, layouts: t.layouts.map(l => ({ ...l, image: p(l.image), map: p(l.map) })) })),
+  const lazy = (file, tex, maxWidth) => {
+    const out = p(file), url = fileUrl(out);
+    if (tex && url && !lazyJobs.has(url)) lazyJobs.set(url, { url, pkgPath, tex, out, maxWidth });
+    return out;
   };
+  const out = {
+    tracks: cat.tracks.map(t => ({ ...t, layouts: t.layouts.map(l => ({ ...l, image: lazy(l.image, l.tex, 1000), map: p(l.map) })) })),
+    cars: cat.cars.map(c => ({ ...c, image: lazy(c.image, c.tex, 1024) })),
+  };
+  // Whatever hasn't been shown yet is decoded in the background, a moment later.
+  clearTimeout(prefetchTimer);
+  prefetchTimer = setTimeout(() => { for (const url of lazyJobs.keys()) lazyImage(url, false); }, 2500);
+  return out;
 }
 
 export async function readEvoCatalog(contentPath, cacheDir, onProgress = () => {}) {
@@ -298,7 +369,7 @@ export async function readEvoCatalog(contentPath, cacheDir, onProgress = () => {
   const baseDir = join(cacheDir, 'base'), dir = join(baseDir, key);
   const manifestPath = join(dir, 'catalog.json');
   const cached = await readText(manifestPath);
-  if (cached) { try { return catalogWithPaths(JSON.parse(cached), dir); } catch { /* rebuild */ } }
+  if (cached) { try { return catalogWithPaths(JSON.parse(cached), dir, contentPath); } catch { /* rebuild */ } }
 
   await ensureDir(cacheDir); await ensureDir(baseDir);
   // A game update produces a new key; drop catalogues from older versions. For the
@@ -316,6 +387,7 @@ export async function readEvoCatalog(contentPath, cacheDir, onProgress = () => {
   onProgress(0, 0, 'Reading game package…');
   const pkg = await openPackage(contentPath);
   if (!pkg) throw new Error('content.kspkg has no readable file table');
+  openPkgs.set(contentPath, Promise.resolve(pkg)); // reused for the pictures
 
   const table = async name => { const e = pkg.get(name); return e ? protoFields(await pkg.read(e)) : []; };
   const rows = (t, inner) => msgs(t, 2).flatMap(m => msgs(m, 3)).flatMap(m => msgs(m, inner));
@@ -353,33 +425,30 @@ export async function readEvoCatalog(contentPath, cacheDir, onProgress = () => {
     };
   });
 
-  const jobs = [
-    ...cars.map(c => async () => {
-      const tex = pkg.find(new RegExp(`^content\\\\cars\\\\${c.id}\\\\generated\\\\thumbnails\\\\[^\\\\]+\\.texture$`, 'i'))
-        .sort((a, b) => a.name.split('-').pop().localeCompare(b.name.split('-').pop(), undefined, { numeric: true }))[0];
-      if (!tex) return;
-      const out = `car-${c.id}.jpg`;
-      if (await saveTexture(pkg, tex, join(dir, out), 1024).catch(err => log(`car thumb ${c.id}: ${err?.message || err}`))) c.image = out;
-    }),
-    ...tracks.flatMap(t => t.layouts.map(l => async () => {
-      const tex = pkg.get(`uiresources\\images\\tracks\\${l.file}.texture`);
-      const out = `track-${l.file}.jpg`;
-      if (tex && await saveTexture(pkg, tex, join(dir, out), 1000).catch(err => log(`track photo ${l.file}: ${err?.message || err}`))) l.image = out;
-      const svg = pkg.get(`uiresources\\images\\trackmaps\\${l.file}.svg`);
-      if (svg) {
-        const mapOut = `map-${l.file}.svg`;
-        await Neutralino.filesystem.writeBinaryFile(join(dir, mapOut), (await pkg.read(svg)).slice().buffer);
-        l.map = mapOut;
-      }
-      delete l.file;
-    })),
-  ];
+  // Pictures: only their textures are noted here (decoded when shown, see lazyImage).
+  for (const c of cars) {
+    const tex = pkg.find(new RegExp(`^content\\\\cars\\\\${c.id}\\\\generated\\\\thumbnails\\\\[^\\\\]+\\.texture$`, 'i'))
+      .sort((a, b) => a.name.split('-').pop().localeCompare(b.name.split('-').pop(), undefined, { numeric: true }))[0];
+    if (tex) { c.tex = tex.name; c.image = `car-${c.id}.jpg`; }
+  }
+  // Track maps are small SVGs, copied out now.
+  const jobs = tracks.flatMap(t => t.layouts.map(l => async () => {
+    const tex = pkg.get(`uiresources\\images\\tracks\\${l.file}.texture`);
+    if (tex) { l.tex = tex.name; l.image = `track-${l.file}.jpg`; }
+    const svg = pkg.get(`uiresources\\images\\trackmaps\\${l.file}.svg`);
+    if (svg) {
+      const mapOut = `map-${l.file}.svg`;
+      if (!(await exists(join(dir, mapOut)))) await Neutralino.filesystem.writeBinaryFile(join(dir, mapOut), (await pkg.read(svg)).slice().buffer);
+      l.map = mapOut;
+    }
+    delete l.file;
+  }));
   let done = 0;
-  await mapLimit(jobs, 3, async job => { await job(); onProgress(++done, jobs.length, 'Extracting official cars and tracks…'); });
+  await mapLimit(jobs, 4, async job => { await job(); onProgress(++done, jobs.length, 'Reading official cars and tracks…'); });
 
-  const catalog = { cars: cars.filter(c => c.image), tracks: tracks.filter(t => t.layouts.length) };
+  const catalog = { cars: cars.filter(c => c.tex), tracks: tracks.filter(t => t.layouts.length) };
   await writeText(manifestPath, JSON.stringify(catalog));
-  return catalogWithPaths(catalog, dir);
+  return catalogWithPaths(catalog, dir, contentPath);
 }
 
 // ---------------------------------------------------------------------------
