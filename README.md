@@ -160,7 +160,7 @@ Each game's background is `img/covers/<ac|acc|evo|rally>.jpg`; replace a file to
 
 The UI is laid out on the Figma frame's 1920×991 canvas using its pixel values. `main.js` zooms the page to fit the startup window. A bigger window (maximized or resized) keeps that zoom and gets more room instead: the navbar, sidebar, buttons and news cards keep their size, the hero image grows, the hero logo and text scale up with the window (75 % of the extra room), and the Mods and Quick Drive grids add columns. A smaller window zooms out. `--snapshots=<dir> --maximize` takes a short snapshot pass in a maximized window. The Mods, Community and Settings pages render 1.2× larger for readability (`--page-zoom`).
 
-## Neutralino gotchas (already handled)
+## Neutralino gotchas
 
 - The native bridge treats backslashes in strings as escape characters, so the code normalizes paths to `/`. It doubles backslashes in shell commands. File writes go through `writeBinaryFile` and storage values are base64.
 - Server mounts match by prefix, so no mount name can be a prefix of another (`/m/assettocorsa`, `/m/competizione`, ...).
