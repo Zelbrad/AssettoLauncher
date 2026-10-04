@@ -1,5 +1,13 @@
 # Assetto Launcher
 
+I started this project roughly a year ago with a design in mind, made in Figma. I didn't have the coding skills nor the idea sorted out, but thanks to AI I could make this project come to life, and I think it's worth a shot. The code is open source and I would love the community's feedback on things to improve. I think the foundation is pretty good, and while some features may not be as good or as polished as I would like them to be, they are better than nothing.
+
+This is basically just a launcher where you can see all your installed mods from any Assetto Corsa game, and on top of that you can start races with a predefined car and track, like in Content Manager. For the games that aren't the original Assetto Corsa, the car and track are added to a save file, so that when you go into the game after choosing them and launching the game through the launcher, it'll set them as the default. So you already have everything selected. For some games, you can even change the time, weather, opponents and more.
+
+Personally, I really like the project, and I hope the community does too.
+
+---
+
 A lightweight launcher for the four Assetto Corsa games: AC, ACC, EVO and Rally. It lets you browse installed mods visually, read the official Steam news, and launch the games.
 
 Built with [Neutralino](https://neutralino.js.org/), which uses the WebView2 runtime that comes with Windows: no Electron or Chromium bundle. The installer is about 7.5 MB.
