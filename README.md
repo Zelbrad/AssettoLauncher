@@ -6,7 +6,7 @@ This is basically just a launcher where you can see all your installed mods from
 
 Personally, I really like the project, and I hope the community does too.
 
-The launcher is free. If you'd like to support it, you can [buy me a coffee on Ko-fi](https://ko-fi.com/gperpas) ☕
+The launcher is completely free forever. If you'd like to support it, you can [buy me a coffee on Ko-fi](https://ko-fi.com/gperpas) ☕
 
 ## Download
 
