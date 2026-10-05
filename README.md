@@ -4,13 +4,16 @@ I started this project roughly a year ago with a design in mind, made in Figma. 
 
 This is basically just a launcher where you can see all your installed mods from any Assetto Corsa game, and on top of that you can start races with a predefined car and track, like in Content Manager. For the games that aren't the original Assetto Corsa, the car and track are added to a save file, so that when you go into the game after choosing them and launching the game through the launcher, it'll set them as the default. So you already have everything selected. For some games, you can even change the time, weather, opponents and more.
 
+Support for Linux will come with 0.2.0 (comming soon)
+
 Personally, I really like the project, and I hope the community does too.
 
 The launcher is completely free forever. If you'd like to support it, you can [buy me a coffee on Ko-fi](https://ko-fi.com/gperpas) ☕
 
 ## Download
 
-**[⬇ Download the latest version](https://github.com/Zelbrad/AssettoLauncher/releases/latest)**, then pick one of:
+**[Visit the Assetto Launcher website](https://www.assettolauncher.net/)** or 
+**[Download the latest version from Github](https://github.com/Zelbrad/AssettoLauncher/releases/latest)**, then pick one of:
 
 - **`Assetto-Launcher-Setup-<version>.exe`**: installs for your Windows user only (no admin prompt), with a Start Menu entry and an optional desktop shortcut. Installing a newer version keeps your settings.
 - **`assetto-launcher-release.zip`**: portable. Unzip anywhere you can write to and run `assetto-launcher-win_x64.exe`.
