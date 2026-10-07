@@ -6,6 +6,7 @@ bin/
 .tmp/
 .storage/
 .cache/
+backgrounds/
 neutralinojs.log
 
 # Design sources

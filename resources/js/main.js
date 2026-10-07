@@ -15,7 +15,7 @@ import { knownCars, withAllConfigs, launchEvo, readEvoSession, defaultEvoSession
 import { IMPORT_RE, resolveDropped, prepareImport, installItem, setItemCar, carChoices, discardImport } from './installer.js';
 import { readEvoExtras, readCarPresets, isLazyImage, lazyImage } from './kspkg.js';
 import { latestRelease, isNewer, isInstalledCopy, installUpdate } from './appupdate.js';
-import { esc, timeAgo, openExternal, openFolder, storageGet, storageSet, norm, log, exists, basename, prettifyId, fileUrl, listDir, join, run, CURL, NULL_DEV, IS_LINUX } from './util.js';
+import { esc, timeAgo, openExternal, openFolder, storageGet, storageSet, norm, log, exists, basename, prettifyId, fileUrl, mountDir, listDir, join, run, CURL, NULL_DEV, IS_LINUX } from './util.js';
 
 Neutralino.init();
 
@@ -433,16 +433,67 @@ $('#game-list').addEventListener('click', e => {
 // ---------------------------------------------------------------------------
 // Games view
 
-// Bundled cover per game; drop img/covers/<key>.jpg to change it.
+// Each game's background: the picture picked in Settings → Game backgrounds, else the bundled
+// cover (img/covers/<key>.jpg). Picked pictures are copied to <app>/backgrounds, served at
+// /m/backgrounds; settings.backgrounds[key] is the file name there. The cover stays as the layer
+// under it, so a missing file shows the cover.
+let bgDir = '';
+async function backgroundsDir() {
+  if (bgDir) return bgDir;
+  let appDir = window.NL_PATH;
+  try { appDir = await Neutralino.filesystem.getAbsolutePath(appDir); } catch { /* keep as is */ }
+  const dir = join(appDir, 'backgrounds');
+  try { await Neutralino.filesystem.createDirectory(dir); } catch { /* exists */ }
+  if (await mountDir('/m/backgrounds', dir)) bgDir = dir;
+  return dir;
+}
+
 function heroImage(g) {
-  return `/img/covers/${g.key}.jpg`;
+  const own = state.settings.backgrounds?.[g.key];
+  const url = own && bgDir ? fileUrl(join(bgDir, own)) : '';
+  return `${url ? `url('${url}'), ` : ''}url('/img/covers/${g.key}.jpg')`;
+}
+// How much the background is darkened (0-80 %), so a bright picture keeps the text readable.
+const heroDarken = g => (state.settings.bgDarken?.[g.key] || 0) / 100;
+
+async function pickBackground(key) {
+  let picked;
+  try {
+    picked = (await Neutralino.os.showOpenDialog('Choose a background', {
+      filters: [{ name: 'Pictures', extensions: ['jpg', 'jpeg', 'png', 'webp'] }],
+    }))?.[0];
+  } catch (err) { log(`open dialog: ${err?.message || JSON.stringify(err)}`); }
+  if (!picked) return;
+  const dir = await backgroundsDir();
+  const ext = (picked.match(/\.(jpe?g|png|webp)$/i)?.[1] || 'jpg').toLowerCase();
+  // A new name each time, so the webview never shows the previous picture from its cache.
+  const file = `${key}-${Date.now()}.${ext}`;
+  try {
+    await Neutralino.filesystem.copy(norm(picked), join(dir, file));
+  } catch (err) {
+    log(`background copy: ${err?.message || JSON.stringify(err)}`);
+    return toast('Could not copy that picture', true);
+  }
+  await removeBackground(key);
+  state.settings.backgrounds = { ...state.settings.backgrounds, [key]: file };
+  saveSettings();
+}
+
+// Deletes the game's picked picture (the copy in <app>/backgrounds, never the original).
+async function removeBackground(key) {
+  const old = state.settings.backgrounds?.[key];
+  if (!old) return;
+  if (bgDir) await Neutralino.filesystem.remove(join(bgDir, old)).catch(() => {});
+  const { [key]: _, ...rest } = state.settings.backgrounds;
+  state.settings.backgrounds = rest;
+  saveSettings();
 }
 
 function renderGames() {
   const g = gameByKey(state.game);
   const installed = isInstalled(g);
   main.innerHTML = `<div class="view games">
-    <div class="hero-bg" style="background-image:url('${heroImage(g)}'), url('${steamUrls.hero(g.appid)}'), linear-gradient(120deg,#2a2a2a,#111)"></div>
+    <div class="hero-bg" style="background-image:${heroImage(g)}, url('${steamUrls.hero(g.appid)}'), linear-gradient(120deg,#2a2a2a,#111); --bg-darken:${heroDarken(g)}"></div>
     <div id="update-note"></div>
     <section class="hero">
       <div class="hero-top">
@@ -2774,6 +2825,19 @@ async function renderSettings() {
         <button class="btn small subtle" data-restore="${g.key}" ${list.length ? '' : 'disabled'}>Restore…</button>
       </div></div>`;
   }));
+  if (state.settings.backgrounds && Object.keys(state.settings.backgrounds).length) await backgroundsDir();
+  const bgRows = GAMES.map(g => {
+    const own = state.settings.backgrounds?.[g.key];
+    const dark = Math.round(heroDarken(g) * 100);
+    return `<div class="setting bg-setting"><label>${esc(`${g.title} ${g.sub || ''}`.trim())}</label>
+      <div class="val note bg-val"><span class="bg-thumb" style="background-image:${heroImage(g)}"><i style="opacity:${dark / 100}"></i></span>${own ? 'Your picture' : 'Default picture'}</div>
+      <div class="btns">
+        <label class="bg-darken" title="Darkens the picture so the text on it stays readable">Darken
+          <input type="range" min="0" max="80" step="5" value="${dark}" data-darken="${g.key}"><output>${dark}%</output></label>
+        <button class="btn small subtle" data-bg-pick="${g.key}">Choose image…</button>
+        <button class="btn small subtle" data-bg-reset="${g.key}" ${own ? '' : 'disabled'}>Reset</button>
+      </div></div>`;
+  });
   if (state.view !== 'settings') return;
   // Drawn again after a change: same scroll position, no fade.
   const again = $('#app').classList.contains('settings-mode') ? main.querySelector('.view.settings') : null;
@@ -2783,6 +2847,9 @@ async function renderSettings() {
     <h1>Settings</h1>
     <p class="lead">Folders are detected from your Steam libraries. Override any of them if you moved things around.</p>
     <div class="settings-group"><h3>Game folders</h3>${rows.join('')}</div>
+    <div class="settings-group"><h3>Game backgrounds</h3>
+      <p class="settings-note">The picture behind each game on the Games tab. Yours is copied into the launcher, so you can move or delete the original.</p>
+      ${bgRows.join('')}</div>
     ${cspGroup}${videoGroup}
     <div class="settings-group"><h3>Game settings backups</h3>
       <p class="settings-note">Controls, graphics, audio, car setups and progress, never mods. The launcher also makes one automatically each week and keeps the last 4 automatic ones. <button class="link" data-act="open-backups">Open backups folder</button></p>
@@ -2824,6 +2891,12 @@ async function renderSettings() {
       state.settings[t.dataset.toggle] = !state.settings[t.dataset.toggle];
       saveSettings();
       t.classList.toggle('on');
+    } else if (t.dataset.bgPick) {
+      await pickBackground(t.dataset.bgPick);
+      renderSettings();
+    } else if (t.dataset.bgReset) {
+      await removeBackground(t.dataset.bgReset);
+      renderSettings();
     } else if (t.dataset.act === 'rescan') {
       await detect();
       toast('Games re-detected');
@@ -2917,7 +2990,21 @@ async function renderSettings() {
       navigator.clipboard?.writeText(text).then(() => toast('Copied. Paste it in AC\'s Properties → Launch options in Steam.'), () => toast(text));
     }
   };
+  // The darken slider shows its value and the preview while dragged, and is saved on release.
+  main.querySelector('.page').oninput = e => {
+    const r = e.target.closest('[data-darken]');
+    if (!r) return;
+    r.nextElementSibling.textContent = `${r.value}%`;
+    const shade = r.closest('.setting').querySelector('.bg-thumb i');
+    if (shade) shade.style.opacity = r.value / 100;
+  };
   main.querySelector('.page').onchange = async e => {
+    const r = e.target.closest('[data-darken]');
+    if (r) {
+      state.settings.bgDarken = { ...state.settings.bgDarken, [r.dataset.darken]: Number(r.value) };
+      saveSettings();
+      return;
+    }
     const s = e.target.closest('select');
     if (!s) return;
     try {
@@ -3194,6 +3281,7 @@ Neutralino.events.on('ready', async () => {
     $('#app-version').textContent = `v${window.NL_APPVERSION || ''}`;
     await setupWindow();
     state.settings = { ...DEFAULT_SETTINGS, ...(await storageGet('settings', {})) };
+    if (state.settings.backgrounds && Object.keys(state.settings.backgrounds).length) await backgroundsDir();
     state.game = gameByKey(state.settings.lastGame) ? state.settings.lastGame : 'rally';
     renderSidebar();
     await detect();
@@ -3258,6 +3346,21 @@ async function runSnapshots(dir) {
     log(`preview-update: page height ${h()} with the bar`);
     $('#app-update-bar [data-u="close"]').click();
     log(`preview-update: page height ${h()} after closing it`);
+    await Neutralino.app.exit();
+    return;
+  }
+  // --preview-backgrounds: AC with Rally's cover as its picked background, darkened 40 %
+  // (Games tab and Settings). Snapshot runs don't save settings; the copied file is deleted after.
+  if ((window.NL_ARGS || []).includes('--preview-backgrounds')) {
+    const dir = await backgroundsDir(), file = 'ac-preview.jpg';
+    let appDir = window.NL_PATH;
+    try { appDir = await Neutralino.filesystem.getAbsolutePath(appDir); } catch { /* keep as is */ }
+    await Neutralino.filesystem.copy(join(appDir, 'resources/img/covers/rally.jpg'), join(dir, file)).catch(err => log(`preview-backgrounds copy: ${JSON.stringify(err)}`));
+    state.settings.backgrounds = { ac: file };
+    state.settings.bgDarken = { ac: 40 };
+    state.game = 'ac'; renderSidebar(); state.view = 'games'; render(); await snap('backgrounds-games');
+    state.view = 'settings'; render(); await snap('backgrounds-settings');
+    await Neutralino.filesystem.remove(join(dir, file)).catch(() => {});
     await Neutralino.app.exit();
     return;
   }

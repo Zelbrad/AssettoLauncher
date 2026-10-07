@@ -53,8 +53,9 @@ Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags
 Filename: "{app}\{#AppExe}"; Flags: nowait; Check: WizardSilent
 
 [UninstallDelete]
-; The launcher's own data (settings, caches, window state). Backups in Documents stay.
+; The launcher's own data (settings, caches, window state, picked backgrounds). Backups in Documents stay.
 Type: filesandordirs; Name: "{app}\.storage"
+Type: filesandordirs; Name: "{app}\backgrounds"
 Type: filesandordirs; Name: "{app}\.cache"
 Type: filesandordirs; Name: "{app}\.tmp"
 Type: files; Name: "{app}\neutralinojs.log"

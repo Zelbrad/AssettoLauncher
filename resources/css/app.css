@@ -115,6 +115,8 @@ a, button { -webkit-user-drag: none; }
 /* ---------- Games view: fixed to the window, never scrolls ---------- */
 .view.games { overflow: hidden; }
 .hero-bg { position: absolute; inset: 0; background-size: cover; background-position: right center; z-index: 0; }
+/* Settings → Game backgrounds → Darken (--bg-darken, 0 to .8), under the shading below */
+.hero-bg::before { content: ''; position: absolute; inset: 0; background: #0e0e0e; opacity: var(--bg-darken, 0); }
 /* Shading in design pixels (not %), widened with the text (--hero-scale) so it
    covers it the same way in a bigger window. */
 .hero-bg::after {
@@ -477,6 +479,13 @@ select { background: #222; border: 1px solid #383838; border-radius: 6px; height
 /* Assetto Corsa settings (CSP, video): a short description instead of a path */
 .setting .val.note { font-family: var(--font-body); font-size: 12.5px; color: var(--muted); white-space: normal; line-height: 1.4; }
 .setting .val.note.warn { color: #d6a640; }
+/* Game backgrounds: a small preview (with the darkening on it), a Darken slider and the buttons */
+.bg-val { display: flex; align-items: center; gap: 14px; }
+.bg-thumb { position: relative; flex: none; width: 112px; height: 58px; border-radius: 6px; border: 1px solid #333; background-size: cover; background-position: right center; overflow: hidden; }
+.bg-thumb i { position: absolute; inset: 0; background: #0e0e0e; }
+.setting label.bg-darken { display: flex; align-items: center; gap: 10px; margin-right: 8px; font-size: 12.5px; color: var(--muted); }
+.bg-darken output { width: 34px; text-align: right; font-variant-numeric: tabular-nums; color: #ccc; }
+.bg-darken input[type=range] { width: 120px; height: 4px; accent-color: var(--red); cursor: pointer; }
 .setting > select, .setting .btns > select { height: 32px; min-width: 200px; font-size: 13px; }
 .qd-row input[type=date] { height: 32px; min-width: 160px; padding: 0 8px; font-size: 12.5px; color: #eee; background: #222; border: 1px solid #383838; border-radius: 6px; color-scheme: dark; }
 /* CSP version picker: green the newest stable, red unstable (buggy), gray older or not rated */
