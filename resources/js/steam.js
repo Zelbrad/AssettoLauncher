@@ -1,13 +1,81 @@
 // Steam integration: install detection from local library manifests, plus
 // public Web API calls (news, store details). The Steam API sends no CORS
-// headers, so HTTP goes through the curl.exe that ships with Windows 10+.
-import { norm, join, readText, run, powershell, log, storageGet, storageSet, cleanText } from './util.js';
+// headers, so HTTP goes through curl (shipped with Windows 10+, standard on Linux).
+import { norm, join, readText, run, powershell, log, storageGet, storageSet, cleanText, IS_LINUX, CURL, exists, listDir, sh, shQuote, basename } from './util.js';
 
 export async function findSteamPath() {
+  if (IS_LINUX) return findLinuxSteam();
   const r = await powershell("(Get-ItemProperty -LiteralPath 'HKCU:/Software/Valve/Steam' -ErrorAction SilentlyContinue).SteamPath");
   const p = r.stdOut.trim();
   if (p) return norm(p);
   return 'C:/Program Files (x86)/Steam';
+}
+
+export const linuxHome = async () => norm(await Neutralino.os.getEnv('HOME').catch(() => '')) || '/root';
+
+// Native, Debian-style and Flatpak installs. ~/.steam/steam is usually a
+// symlink to one of the others; the first with a library manifest wins.
+async function findLinuxSteam() {
+  const home = await linuxHome();
+  const candidates = [
+    '.steam/steam', '.local/share/Steam', '.steam/debian-installation', '.steam/root',
+    '.var/app/com.valvesoftware.Steam/.local/share/Steam', '.var/app/com.valvesoftware.Steam/data/Steam',
+    'snap/steam/common/.local/share/Steam',
+  ].map(p => join(home, p));
+  for (const p of candidates) if (await exists(join(p, 'steamapps/libraryfolders.vdf'))) return p;
+  for (const p of candidates) if (await exists(join(p, 'steamapps'))) return p;
+  return candidates[1];
+}
+
+// --- Proton (Linux)
+// Each game runs in its own Wine prefix, steamapps/compatdata/<appid>, kept in
+// the library the game is installed in (or Steam's main library).
+export async function compatDataDir(appid, installDir, steamPath) {
+  const libOf = dir => { const m = /^(.*)\/steamapps\/common\/[^/]+$/i.exec(norm(dir)); return m ? m[1] : ''; };
+  const dirs = [libOf(installDir), steamPath].filter(Boolean).map(lib => join(lib, 'steamapps/compatdata', String(appid)));
+  for (const d of dirs) if (await exists(join(d, 'pfx'))) return d;
+  return dirs[0] || '';
+}
+
+// The Proton build that last ran the game: compatdata/<appid>/config_info lists
+// paths inside it (".../Proton 9.0/files/share/fonts/"). Otherwise the newest
+// Proton in a library or compatibilitytools.d.
+async function findProton(appid, installDir, steamPath) {
+  const compat = await compatDataDir(appid, installDir, steamPath);
+  const info = await readText(join(compat, 'config_info'));
+  for (const line of (info || '').split(/\r?\n/)) {
+    const m = /^(\/.*?)\/(files|dist)\//.exec(line.trim());
+    if (m && await exists(join(m[1], 'proton'))) return m[1];
+  }
+  const vdf = await readText(join(steamPath, 'steamapps/libraryfolders.vdf'));
+  const libs = new Set([norm(steamPath)]);
+  if (vdf) for (const m of vdf.matchAll(/"path"\s+"([^"]+)"/g)) libs.add(norm(m[1]));
+  const found = [];
+  for (const base of [...[...libs].map(l => join(l, 'steamapps/common')), join(steamPath, 'compatibilitytools.d')]) {
+    for (const e of await listDir(base)) {
+      if (e.type === 'DIRECTORY' && /proton/i.test(e.entry) && await exists(join(base, e.entry, 'proton'))) found.push(join(base, e.entry));
+    }
+  }
+  // Numeric sort, so "Proton 10.0" beats "Proton 9.0".
+  return found.sort((a, b) => basename(a).localeCompare(basename(b), undefined, { numeric: true })).pop() || '';
+}
+
+// Runs a game's Windows exe the way Steam does, in the game's prefix. Steam
+// must be running (the game checks ownership through it). dllOverrides: Wine's
+// WINEDLLOVERRIDES, e.g. "dwrite=n,b" so AC loads Custom Shaders Patch.
+export async function runWithProton({ exe, cwd, args = [], appid, installDir, steamPath, dllOverrides = '' }) {
+  const proton = await findProton(appid, installDir, steamPath);
+  if (!proton) throw new Error('Proton not found. Start the game once from Steam so it sets up Proton, then try again.');
+  const compat = await compatDataDir(appid, installDir, steamPath);
+  const env = [
+    `STEAM_COMPAT_CLIENT_INSTALL_PATH=${shQuote(steamPath)}`, `STEAM_COMPAT_DATA_PATH=${shQuote(compat)}`,
+    `STEAM_COMPAT_INSTALL_PATH=${shQuote(installDir)}`, `SteamAppId=${appid}`, `SteamGameId=${appid}`,
+    ...(dllOverrides ? [`WINEDLLOVERRIDES=${shQuote(dllOverrides)}`] : []),
+  ].join(' ');
+  const cmd = `cd ${shQuote(cwd)} && ${env} nohup ${shQuote(join(proton, 'proton'))} run ${shQuote(exe)} ${args.map(shQuote).join(' ')} </dev/null >/dev/null 2>&1 &`;
+  log(`proton: ${proton} ${basename(exe)} (${compat})`);
+  const r = await sh(cmd);
+  if (r.exitCode !== 0) throw new Error(r.stdErr.trim() || `Could not start ${basename(exe)} through Proton`);
 }
 
 // Steam build id and last update time (unix seconds) of each installed app, from its manifest.
@@ -38,7 +106,7 @@ export async function findInstalledApps(steamPath) {
 }
 
 async function curlJson(url) {
-  const r = await run(`curl.exe -s -L --max-time 20 -H "Accept-Language: en" "${url}"`);
+  const r = await run(`${CURL} -s -L --max-time 20 -H "Accept-Language: en" "${url}"`);
   if (r.exitCode !== 0 || !r.stdOut) return null;
   try { return JSON.parse(r.stdOut); } catch { log(`bad json from ${url}`); return null; }
 }
@@ -102,7 +170,7 @@ export async function cachedNews(appid) {
 export async function refreshNews(appid) {
   const key = `news2_${appid}`;
   const cached = await storageGet(key, null);
-  const r = await run(`curl.exe -s --max-time 8 "https://api.steampowered.com/ISteamNews/GetNewsForApp/v2/?appid=${appid}&count=1&maxlength=1&feeds=steam_community_announcements"`);
+  const r = await run(`${CURL} -s --max-time 8 "https://api.steampowered.com/ISteamNews/GetNewsForApp/v2/?appid=${appid}&count=1&maxlength=1&feeds=steam_community_announcements"`);
   let latest = '';
   try { latest = JSON.parse(r.stdOut).appnews.newsitems[0]?.gid || ''; } catch { return null; }
   if (cached?.items?.length && cached.items[0].gid === latest) {

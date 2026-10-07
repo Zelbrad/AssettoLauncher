@@ -4,13 +4,13 @@
 //   GET /cup/<car|track>/<id>    -> { version, changelog, author, ... }
 //   GET /cup/<car|track>/<id>/get   redirects to the download (or info) page
 // Only AC content is registered there; EVO, ACC and Rally mods have no registry.
-import { run, log } from './util.js';
+import { run, log, CURL } from './util.js';
 
 const CUP = 'https://acstuff.club/cup';
 let list = null, fetchedAt = 0;
 
 async function curlJson(url) {
-  const r = await run(`curl.exe -s -L --max-time 20 "${url}"`);
+  const r = await run(`${CURL} -s -L --max-time 20 "${url}"`);
   if (r.exitCode !== 0 || !r.stdOut) return null;
   try { return JSON.parse(r.stdOut); } catch { return null; }
 }

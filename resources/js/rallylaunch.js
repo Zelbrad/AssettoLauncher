@@ -14,7 +14,7 @@
 // keeps in the menu are ignored (tested), so those are left alone.
 // Stage ids only appear in the save once the player has driven them, so the
 // launcher offers the stages it has seen there.
-import { exists, log, powershell } from './util.js';
+import { exists, log, isProcessRunning } from './util.js';
 
 const KEY_TIME = '/Script/acr.WeatherOptions/StartingTime';
 const SIZE_NAME = 'PlayerSaveGameData\0';
@@ -55,8 +55,9 @@ const STAGE_VARIANTS = {
 };
 export const RALLY_KNOWN_STAGES = Object.entries(STAGE_VARIANTS).flatMap(([group, variants]) =>
   variants.flatMap(v => [`${group}${v}Forward`, `${group}${v}Reverse`]));
-// Location covers (img/rally/<location>.jpg, credits in CREDITS.txt).
-export const rallyCover = location => RALLY_LOCATIONS[location] ? `/img/rally/${location.toLowerCase()}.jpg` : '';
+// Location covers (img/rally/<location>.jpg, credits in CREDITS.txt); locations without one use a stage photo.
+const COVERS = new Set(['Alsace', 'Greece', 'Livigno', 'MonteCarlo', 'Weles']);
+export const rallyCover = location => COVERS.has(location) ? `/img/rally/${location.toLowerCase()}.jpg` : '';
 const words = s => s.replace(/([a-z])([A-Z0-9])/g, '$1 $2').replace(/(\d)([A-Z])/g, '$1 $2');
 
 // { location, locationName, country, group, stage, length, direction, route } of a stage id.
@@ -170,8 +171,7 @@ export async function rallyBests(paths) {
 }
 
 export async function isRallyRunning() {
-  const r = await powershell('(Get-Process acr -ErrorAction SilentlyContinue | Measure-Object).Count');
-  return Number(r.stdOut.trim()) > 0;
+  return isProcessRunning('acr');
 }
 
 // The car → last driven map. The main menu shows the most recently driven car

@@ -1,4 +1,4 @@
-import { GAMES, gameByKey, resolvePaths, SCANNERS, setEnabled, contentFolder, evoCacheDir, uninstallPaths, uninstallItem, rallyIncompatible, ACC_CARS, RALLY_CARS, rallyCarName, rallyCarIds, appCacheDir } from './games.js';
+import { GAMES, gameByKey, resolvePaths, SCANNERS, setEnabled, contentFolder, evoCacheDir, uninstallPaths, uninstallItem, rallyIncompatible, ACC_CARS, RALLY_CARS, rallyCarName, rallyCarIds, appCacheDir, rallyGameStages, markFresh } from './games.js';
 import { ACC_TRACKS, ACC_MODES, ACC_WEATHER, ACC_TIME_SPEEDS, accSeasonName, accOwnedDlcs, accModelOwned, accTrackOwned, accSeasonOwned, accModelClass, readAccSession, accCustomCars, writeAccSession, ensureModelCar } from './acclaunch.js';
 import { readRallySave, rallyStage, writeRallySession, rallyBests, RALLY_KNOWN_STAGES, rallyCover, rallySelectedLiveries } from './rallylaunch.js';
 import { SITE_PAGES, siteCars, siteMaps, rallyStagePhotos, imageSizes, bestMatch, stageGroupOf, words } from './sitecatalog.js';
@@ -7,16 +7,19 @@ import { checkMods } from './health.js';
 import { acUpdates, cupDetails } from './updates.js';
 import { listBackups, createBackup, restoreBackup, deleteBackup, autoBackups, backupsRoot } from './backups.js';
 import { findSteamPath, findInstalledApps, getNews, cachedNews, refreshNews, getStoreDetails, steamUrls, appBuilds } from './steam.js';
-import { quickDrive, readAcSession, defaultAcSession, acWeathers, roadTemperature, AC_MODES, AC_GRIP } from './quickdrive.js';
-import { knownCars, launchEvo, readEvoSession, defaultEvoSession, EVO_MODES, EVO_WEATHER, EVO_GRIP, EVO_TIME_SPEEDS } from './evolaunch.js';
+import { quickDrive, readAcSession, defaultAcSession, acWeathers, roadTemperature, presetForType, AC_MODES, AC_GRIP, AC_ASSIST_PRESETS } from './quickdrive.js';
+import { readCsp, cspVersions, cspVersionInfo, installCsp, uninstallWeatherMod, deselectWeatherMod, writeCspSetting, compareVersions, cspWeatherLabel, isWetWeather, CSP_WEATHER_TYPES, CSP_PAGE, VCREDIST_URL, SOL_URL, PURE_URL, PROTON_DLL_OVERRIDE } from './csp.js';
+import { readVideo, writeVideo, displayModes, AA_LEVELS, ANISO_LEVELS, SHADOW_SIZES, FPS_LIMITS } from './acvideo.js';
+import { listPpFilters, uninstallPpFilter, restorePpFilter } from './ppfilters.js';
+import { knownCars, withAllConfigs, launchEvo, readEvoSession, defaultEvoSession, EVO_MODES, EVO_WEATHER, EVO_GRIP, EVO_TIME_SPEEDS } from './evolaunch.js';
 import { IMPORT_RE, resolveDropped, prepareImport, installItem, setItemCar, carChoices, discardImport } from './installer.js';
-import { readEvoExtras, isLazyImage, lazyImage } from './kspkg.js';
+import { readEvoExtras, readCarPresets, isLazyImage, lazyImage } from './kspkg.js';
 import { latestRelease, isNewer, isInstalledCopy, installUpdate } from './appupdate.js';
-import { esc, timeAgo, openExternal, openFolder, storageGet, storageSet, norm, log, exists, basename, prettifyId, fileUrl, listDir, join, run, powershellEncoded } from './util.js';
+import { esc, timeAgo, openExternal, openFolder, storageGet, storageSet, norm, log, exists, basename, prettifyId, fileUrl, listDir, join, run, CURL, NULL_DEV, IS_LINUX } from './util.js';
 
 Neutralino.init();
 
-const DEFAULT_SETTINGS = { overrides: {}, minimizeOnLaunch: true, lastGame: 'rally', acFilter: 'mods' };
+const DEFAULT_SETTINGS = { overrides: {}, minimizeOnLaunch: true, lastGame: 'rally', acFilter: 'all' };
 
 const state = {
   view: 'games',
@@ -180,21 +183,71 @@ async function dropResizeFrame() {
     await setWindowSize(Math.max(MIN_WIN.width, s.width), Math.max(MIN_WIN.height, s.height));
   } catch (err) { log(`resize frame: ${JSON.stringify(err)}`); }
 }
+let wasMaximized = null;
 async function syncMaximized() {
-  try { document.body.classList.toggle('maximized', await Neutralino.window.isMaximized()); } catch { /* not ready */ }
+  let max;
+  try { max = await Neutralino.window.isMaximized(); } catch { return; /* not ready */ }
+  document.body.classList.toggle('maximized', max);
+  if (max === wasMaximized) return;
+  // A window that started maximized gets the resize frame dropped when it's restored.
+  if (wasMaximized && !max) await dropResizeFrame();
+  wasMaximized = max;
+  windowFrame();
 }
 
 // Windows 11 rounds the corners of normal windows but not of borderless ones
 // unless asked: DWMWA_WINDOW_CORNER_PREFERENCE (33) = DWMWCP_ROUNDSMALL (3), a
-// ~4-5 px radius that keeps the window's shadow (not rounded while maximized).
-// Older Windows ignores it.
-async function roundCorners() {
-  if (!window.NL_PID) return;
-  const r = await powershellEncoded(`Add-Type -Namespace W -Name D -MemberDefinition '[DllImport("dwmapi.dll")] public static extern int DwmSetWindowAttribute(IntPtr h, int a, ref int v, int s);'
-$h = (Get-Process -Id ${window.NL_PID}).MainWindowHandle; $v = 3
-[W.D]::DwmSetWindowAttribute($h, 33, [ref]$v, 4)`).catch(err => ({ stdOut: '', stdErr: String(err?.message || err) }));
-  log(`round corners: ${(r.stdOut || r.stdErr || '').trim()}`);
+// ~4-5 px radius that keeps the window's shadow. Asked for, the corners and the
+// 1 px border (DWMWA_BORDER_COLOR, 34) stay while maximized too, showing the
+// window behind at the screen's edges, so a maximized window gets square corners
+// (DWMWCP_DONOTROUND, 1) and no border (DWMWA_COLOR_NONE). A window that starts
+// maximized (its saved state) also reaches 8 px past every edge of the screen's
+// work area (the screen minus the taskbar), the frame Windows leaves room for:
+// it's fitted to the work area. The helper works in real pixels (per-monitor DPI
+// aware), so display scaling doesn't round it off. Older Windows ignores the DWM
+// attributes. One PowerShell stays open for this, so the switch is instant.
+const WINDOW_FRAME_CS = 'using System; using System.Runtime.InteropServices; public static class LauncherWindow {'
+  + ' [StructLayout(LayoutKind.Sequential)] public struct R { public int L, T, Rt, B; }'
+  + ' [StructLayout(LayoutKind.Sequential)] public struct MI { public int cb; public R mon; public R work; public int f; }'
+  + ' [DllImport("user32.dll")] static extern bool IsZoomed(IntPtr h);'
+  + ' [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr h, out R r);'
+  + ' [DllImport("user32.dll")] static extern IntPtr MonitorFromWindow(IntPtr h, int f);'
+  + ' [DllImport("user32.dll")] static extern bool GetMonitorInfo(IntPtr m, ref MI i);'
+  + ' [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr h, IntPtr a, int x, int y, int cx, int cy, uint f);'
+  + ' [DllImport("dwmapi.dll")] static extern int DwmSetWindowAttribute(IntPtr h, int a, ref int v, int s);'
+  + ' [DllImport("user32.dll")] static extern IntPtr SetThreadDpiAwarenessContext(IntPtr c);'
+  + ' public static string Fit(IntPtr h) {'
+  + '  try { SetThreadDpiAwarenessContext(new IntPtr(-4)); } catch (EntryPointNotFoundException) { }'
+  + '  bool max = IsZoomed(h); int corner = max ? 1 : 3, border = max ? -2 : -1;'
+  + '  DwmSetWindowAttribute(h, 33, ref corner, 4); DwmSetWindowAttribute(h, 34, ref border, 4);'
+  + '  if (!max) return "normal";'
+  + '  R r; GetWindowRect(h, out r); MI mi = new MI(); mi.cb = Marshal.SizeOf(mi); GetMonitorInfo(MonitorFromWindow(h, 2), ref mi);'
+  + '  R w = mi.work; int o = w.L - r.L;'
+  + '  if (o <= 0 || o > 32 || r.Rt - w.Rt != o || w.T - r.T != o || r.B - w.B != o) return "maximized " + (r.Rt - r.L) + "x" + (r.B - r.T);'
+  + '  SetWindowPos(h, IntPtr.Zero, w.L, w.T, w.Rt - w.L, w.B - w.T, 0x14);'
+  + '  return "maximized, pulled in " + o + " px to " + (w.Rt - w.L) + "x" + (w.B - w.T); } }';
+let frameHelper = null;
+async function windowFrame() {
+  if (!window.NL_PID || IS_LINUX) return;
+  try {
+    frameHelper ||= (async () => {
+      const p = await Neutralino.os.spawnProcess('powershell -NoProfile -NonInteractive -WindowStyle Hidden -Command -');
+      Neutralino.events.on('spawnedProcess', e => {
+        const text = String(e.detail.data ?? '').trim();
+        if (e.detail.id === p.id && e.detail.action !== 'exit' && text) log(`window frame: ${text}`);
+      });
+      await Neutralino.os.updateSpawnedProcess(p.id, 'stdIn', `Add-Type -TypeDefinition '${WINDOW_FRAME_CS}'; $h = (Get-Process -Id ${window.NL_PID}).MainWindowHandle\n`);
+      return p.id;
+    })();
+    await Neutralino.os.updateSpawnedProcess(await frameHelper, 'stdIn', '[LauncherWindow]::Fit($h)\n');
+  } catch (err) { frameHelper = null; log(`window frame: ${err?.message || JSON.stringify(err)}`); }
 }
+
+// No browser context menu (Back, Reload, Save as, Inspect...): it doesn't belong
+// in an app. Text fields keep it for cut, copy and paste.
+document.addEventListener('contextmenu', e => {
+  if (!e.target.closest('input, textarea, [contenteditable="true"]')) e.preventDefault();
+});
 
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;
@@ -527,7 +580,9 @@ function cardHTML(item, idx) {
     : item.incompatible ? '<span class="flag">Crashes game</span>'
     : item.update ? `<span class="flag update">Update v${esc(item.update.version)}</span>`
     : item.game === 'ac' && content && !item.isMod ? '<span class="flag kunos">Kunos</span>'
-    : item.game === 'ac' && content ? '<span class="flag">Mod</span>' : '';
+    : (item.game === 'ac' || item.game === 'evo') && content && item.isMod ? '<span class="flag">Mod</span>' : '';
+  // Official content added by the game's latest update (markFresh, games.js).
+  const fresh = item.isNew ? `<span class="flag tag-new${item.flag || (item.badge && item.image) ? ' after-icon' : ''}">New</span>` : '';
   const num = item.kind === 'replay' ? '' : item.number != null ? `<div class="placeholder">#${esc(item.number)}</div>` : `<div class="placeholder">${initials(item.title)}</div>`;
   return `<button class="card ${item.enabled ? '' : 'disabled'}" data-idx="${idx}">
     <div class="thumb ${item.kind === 'replay' ? 'icon' : ''}">
@@ -535,7 +590,8 @@ function cardHTML(item, idx) {
       ${imgTag(item.image, item.fallbackImage)}
       ${item.overlay ? `<img class="overlay" src="${esc(item.overlay)}" loading="lazy" onerror="this.remove()" alt="">` : ''}
       ${item.badge && item.image ? `<img class="badge" src="${esc(item.badge)}" loading="lazy" onerror="this.remove()" alt="">` : ''}
-      ${flag}
+      ${item.flag ? `<img class="flag-badge" src="${esc(item.flag)}" alt="">` : ''}
+      ${fresh}${flag}
     </div>
     <div class="card-body">
       <div class="card-title">${esc(item.title)}</div>
@@ -833,7 +889,9 @@ function openDetail(g, item, onChange) {
 //   o.session  { summary() -> { title, sub }, sections(sel) -> sheet sections, onChange(ui) }
 //   o.cars     [{ key, title, sub, image, brand, flag, locked }]
 //   o.brandLogo(name) -> image url ('' shows initials)
-//   o.variants(carKey) -> [{ key, title, sub, image }]   (liveries / skins)
+//   o.variants(carKey) -> [{ key, title, sub, image, livery?, spec?, specLabel? }]   (liveries / skins)
+//              with specs (EVO: the same livery per mechanical preset), the row shows
+//              each livery once in the chosen spec, and a Spec menu switches the whole row
 //   o.tracks   [{ key, title, sub, image, flag, layouts: [{ key, name, sub, outline, preview }] }]
 //   o.sel      { car, variant, track, layout }; o.defaultVariant(carKey)
 //   o.onLocked(car), o.onLaunch(sel), o.onClose(sel) (also when switching game or launching)
@@ -910,6 +968,28 @@ function quickDriveModal(o) {
     <div class="thumb">${imgTag(img, '')}${flag}</div>
     <div class="qd-card-body"><b>${esc(title)}</b><small>${esc(sub || '')}</small></div></button>`;
   const variantOf = () => (o.variants(sel.car) || []).find(v => v.key === sel.variant);
+  // The livery row: with specs, every livery once, in the selected spec. A livery
+  // the spec doesn't have shows the spec it comes with; picking it switches to it.
+  const specsOf = all => [...new Map(all.filter(x => x.spec).map(x => [x.spec, { key: x.spec, label: x.specLabel || x.spec }])).values()];
+  const variantRow = () => {
+    const all = o.variants(sel.car) || [];
+    const specs = specsOf(all);
+    if (specs.length < 2) return { variants: all, specs, spec: specs[0]?.key };
+    const spec = all.find(x => x.key === sel.variant)?.spec ?? specs[0].key;
+    const liveries = [...new Map(all.map(x => [x.livery, x])).values()];
+    return {
+      specs, spec,
+      variants: liveries.map(l => all.find(x => x.livery === l.livery && x.spec === spec)
+        || { ...l, sub: [l.sub, l.specLabel !== l.title && l.specLabel].filter(Boolean).join(' · ') }),
+    };
+  };
+  // Another spec: the same livery with it, else its first livery.
+  const pickSpec = spec => {
+    const all = o.variants(sel.car) || [], cur = all.find(x => x.key === sel.variant);
+    return (all.find(x => x.spec === spec && x.livery === cur?.livery) || all.find(x => x.spec === spec))?.key ?? sel.variant;
+  };
+  const withSpec = (v, all) => [v.title, specsOf(all).length > 1 && v.specLabel !== v.title && v.specLabel].filter(Boolean).join(' · ');
+  const variantText = v => (v ? withSpec(v, o.variants(sel.car) || []) : '');
 
   const drawBrands = () => {
     const names = [...new Set(o.cars.map(c => c.brand).filter(Boolean))].sort((a, b) => a.localeCompare(b));
@@ -941,7 +1021,7 @@ function quickDriveModal(o) {
     const s = o.session?.summary();
     const btn = el.querySelector('[data-session]');
     btn.hidden = !s;
-    if (s) btn.innerHTML = `<span class="qd-session-gear">⚙</span><span class="qd-session-text"><b>${esc(s.title)}</b><small>${esc(s.sub)}</small></span><span class="qd-session-edit">Session settings</span>`;
+    if (s) btn.innerHTML = `<svg class="qd-session-gear" viewBox="0 0 24 24" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/></svg><span class="qd-session-edit">Session settings</span>`;
     return s;
   };
   const sync = () => {
@@ -956,15 +1036,18 @@ function quickDriveModal(o) {
       if (img && want && img.getAttribute('src') !== want) img.src = want;
     });
     el.querySelectorAll('#qd-tracks [data-track]').forEach(b => b.classList.toggle('active', b.dataset.track === sel.track));
-    const variants = o.variants(sel.car) || [];
+    const { variants, specs, spec } = variantRow();
     // Keep the row's scroll position while picking within the same car.
     const keepX = stripCar === sel.car ? el.querySelector('.qd-variant-strip')?.scrollLeft || 0 : 0;
     stripCar = sel.car;
     const hint = o.variantHint?.(sel.car);
+    const chevron = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    const specMenu = specs.length > 1 ? `<div class="qd-spec"><button class="qd-spec-btn" data-spec-menu title="${esc(`Spec: ${specs.find(s => s.key === spec)?.label || ''}`)}">Spec${chevron}</button>
+      <div class="qd-spec-menu" hidden><small>Spec</small>${specs.map(s => `<button class="${s.key === spec ? 'active' : ''}" data-spec="${esc(s.key)}">${esc(s.label)}</button>`).join('')}</div></div>` : '';
     el.querySelector('#qd-variants').innerHTML = variants.length || hint
-      ? `<span class="qd-layouts-name">${esc(o.variantLabel)}</span><div class="qd-variant-strip">${variants.map(x => `<button class="qd-variant ${x.key === sel.variant ? 'active' : ''}" data-variant="${esc(x.key)}" title="${esc([x.title, x.sub].filter(Boolean).join(' · '))}">
+      ? `<span class="qd-layouts-name">${esc(o.variantLabel)}</span>${specMenu}<div class="qd-variant-strip">${variants.map(x => `<button class="qd-variant ${x.key === sel.variant ? 'active' : ''}" data-variant="${esc(x.key)}" title="${esc([x.title, x.sub].filter(Boolean).join(' · '))}">
           <div class="thumb">${imgTag(x.image, '')}</div><span>${esc(x.title)}${x.sub ? `<small>${esc(x.sub)}</small>` : ''}</span></button>`).join('')}</div>
-          ${hint ? `<span class="qd-variant-hint" title="${esc(hint)}">ⓘ</span>` : ''}`
+          ${hint ? `<span class="qd-variant-hint" data-tip="${esc(hint)}" aria-label="${esc(hint)}"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="8.2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M10 9v5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="10" cy="6.2" r="1.1" fill="currentColor"/></svg></span>` : ''}`
       : '';
     const strip = el.querySelector('.qd-variant-strip');
     if (strip) strip.scrollLeft = keepX;
@@ -975,10 +1058,10 @@ function quickDriveModal(o) {
     const pb = o.best?.(sel);
     el.querySelector('#qd-summary').innerHTML = `
       <div class="qd-sum-img">${imgTag(vImage || c?.image, (c?.brand && o.brandLogo(c.brand)) || '')}</div>
-      <div><b>${esc(c?.summaryTitle || c?.title || '')}</b><small>${esc(v ? v.title : c?.sub || '')}</small></div>
+      <div><b>${esc(c?.summaryTitle || c?.title || '')}</b><small>${esc(v ? variantText(v) : c?.sub || '')}</small></div>
       <div class="qd-sum-img">${imgTag(layout?.preview || t?.image, '')}</div>
       <div><b>${esc(t?.title || '')}</b><small>${esc([layout?.name, layout?.sub].filter(Boolean).join(' · '))}</small></div>
-      ${pb ? `<div class="qd-pb" title="Your personal best with this car here, as recorded by the game"><small>Your best</small><b>${esc(lapTime(pb.ms))}</b><span>${esc(pb.at ? timeAgo(pb.at / 1000) : '')}</span></div>` : ''}
+      ${pb ? `<div class="qd-pb" title="Your personal best with this car here, as recorded by the game${pb.at ? ` (${esc(timeAgo(pb.at / 1000))})` : ''}"><small>Your best</small><b>${esc(lapTime(pb.ms))}</b></div>` : ''}
       ${note ? `<button class="qd-sum-note" data-session><b>${esc(note.title)}</b><small>${esc(note.sub)}</small></button>` : ''}`;
   };
   const redraw = () => { drawBrands(); drawCars(); drawTracks(); };
@@ -1009,9 +1092,20 @@ function quickDriveModal(o) {
     sync();
   };
   el.querySelector('#qd-variants').onclick = e => {
+    if (e.target.closest('[data-spec-menu]')) {
+      const menu = el.querySelector('.qd-spec-menu');
+      if (menu) menu.hidden = !menu.hidden;
+      return;
+    }
+    const s = e.target.closest('[data-spec]');
+    if (s) { sel.variant = pickSpec(s.dataset.spec); sync(); return; }
     const b = e.target.closest('[data-variant]');
     if (b) { sel.variant = b.dataset.variant; sync(); }
   };
+  // The Spec menu closes on any other click.
+  el.addEventListener('click', e => {
+    if (!e.target.closest('.qd-spec')) { const m = el.querySelector('.qd-spec-menu'); if (m) m.hidden = true; }
+  });
   // The livery row scrolls sideways; let the mouse wheel drive it.
   el.querySelector('#qd-variants').addEventListener('wheel', e => {
     const strip = e.target.closest('.qd-variant-strip');
@@ -1078,8 +1172,8 @@ function quickDriveModal(o) {
   const store = key => ((state.settings[key] ||= {})[o.game] ||= []);
   const describe = s => {
     const c = findCar(s.car), t = findTrack(s.track), l = t?.layouts.find(x => x.key === s.layout);
-    const v = (o.variants(s.car) || []).find(x => x.key === s.variant);
-    return { car: c?.summaryTitle || c?.title || '', variant: v?.title || '', track: [t?.title, l?.name].filter(Boolean).join(' · '), session: o.session?.summary()?.title || '' };
+    const all = o.variants(s.car) || [], v = all.find(x => x.key === s.variant);
+    return { car: c?.summaryTitle || c?.title || '', variant: v ? withSpec(v, all) : '', track: [t?.title, l?.name].filter(Boolean).join(' · '), session: o.session?.summary()?.title || '' };
   };
   const snapshot = () => ({ sel: { ...sel }, session: o.session?.get ? JSON.parse(JSON.stringify(o.session.get())) : null, label: describe(sel) });
   const same = (a, b) => JSON.stringify([a.sel, a.session]) === JSON.stringify([b.sel, b.session]);
@@ -1184,8 +1278,9 @@ function quickDriveModal(o) {
 }
 
 // Session settings sheet over the Quick Drive dialog. session.sections(sel) returns
-//   [{ title, note?, wide?, fields: [{ label, hint?, type: 'seg'|'select', options: [[value, label]], get(), set(value) }] }]
-// and is rebuilt after every change, so fields can depend on each other.
+//   [{ title, note?, wide?, fields: [{ label, hint?, type: 'seg'|'select'|'date', options: [[value, label]], get(), set(value) }] }]
+// ('date' has no options: its value is YYYY-MM-DD) and is rebuilt after every
+// change, so fields can depend on each other.
 function openSessionSheet(host, session, getSel, onChange) {
   host.querySelector('.qd-sheet-wrap')?.remove();
   const wrap = document.createElement('div');
@@ -1193,8 +1288,9 @@ function openSessionSheet(host, session, getSel, onChange) {
   host.appendChild(wrap);
   let fields = [];
   const fieldHTML = (f, i) => {
-    const k = f.options.findIndex(([v]) => v === f.get());
-    const control = f.type === 'seg'
+    const k = (f.options || []).findIndex(([v]) => v === f.get());
+    const control = f.type === 'date' ? `<input type="date" data-f="${i}" value="${esc(f.get())}">`
+      : f.type === 'seg'
       ? `<div class="qd-seg" data-f="${i}">${f.options.map(([, label], j) => `<button data-k="${j}" class="${j === k ? 'active' : ''}">${esc(label)}</button>`).join('')}</div>`
       : `<select data-f="${i}">${f.options.map(([, label], j) => `<option value="${j}" ${j === k ? 'selected' : ''}>${esc(label)}</option>`).join('')}</select>`;
     return `<div class="qd-row"><label>${esc(f.label)}${f.hint ? `<small>${esc(f.hint)}</small>` : ''}</label>${control}</div>`;
@@ -1219,6 +1315,9 @@ function openSessionSheet(host, session, getSel, onChange) {
   });
   wrap.addEventListener('change', e => {
     if (e.target.matches('select[data-f]')) set(Number(e.target.dataset.f), Number(e.target.value));
+    if (e.target.matches('input[type=date][data-f]') && /^\d{4}-\d{2}-\d{2}$/.test(e.target.value)) {
+      fields[Number(e.target.dataset.f)].set(e.target.value); draw(); onChange();
+    }
   });
   draw();
 }
@@ -1277,7 +1376,7 @@ const rallyCarImage = id => siteImage('rally', 'cars', id, `${rallyCarName(id)} 
 // changed page is ~70 KB compressed.
 async function siteSync() {
   const since = state.settings.siteModified ? `-H "If-Modified-Since: ${state.settings.siteModified}"` : '';
-  const res = await run(`curl.exe -s -i -L --compressed --max-time 20 -A "Mozilla/5.0" ${since} "${SITE_PAGES.rally}"`);
+  const res = await run(`${CURL} -s -i -L --compressed --max-time 20 -A "Mozilla/5.0" ${since} "${SITE_PAGES.rally}"`);
   if (res.exitCode !== 0) return;
   const split = res.stdOut.lastIndexOf('\r\n\r\n', res.stdOut.indexOf('<'));
   const head = res.stdOut.slice(0, split < 0 ? res.stdOut.length : split);
@@ -1290,10 +1389,11 @@ async function siteSync() {
   const dir = await appCacheDir('site');
   const extra = state.settings.siteExtra ||= [];
   const known = (kind, key, name) => siteManifest.rally[kind]?.[key] || extra.some(x => x.kind === kind && (x.key === key || x.name === name));
-  const ids = Object.keys(RALLY_CARS).map(k => ({ key: k, name: `${RALLY_CARS[k].name} ${k}` }));
+  const ids = (await rallyCarIds(state.paths).catch(() => Object.keys(RALLY_CARS))).map(k => ({ key: k, name: `${rallyCarName(k)} ${k}` }));
   // Stages: known ones by name; stages added later by the save's stage ids
   // ("PortugalS1Arganil..." matches a caption naming Arganil).
-  const groups = [...new Set((state.settings.rallyStages || []).map(id => rallyStage(id).group).filter(Boolean))];
+  const stageIds = [...(state.settings.rallyStages || []), ...await rallyGameStages(state.paths, state.settings.rallyStages || []).catch(() => [])];
+  const groups = [...new Set(stageIds.map(id => rallyStage(id).group).filter(Boolean))];
   const generic = /^(s\d+|full|short\d*|cut\d*|forward|reverse|stage|circuit|test|track\d*)$/;
   const groupOf = name => stageGroupOf(name) || groups.find(g => {
     const gw = new Set(words(g.replace(/(\d)([A-Z])/g, '$1 $2')));
@@ -1307,7 +1407,7 @@ async function siteSync() {
   for (const j of jobs) {
     const file = `rally-${j.kind}-${(j.key || j.name).replace(/[^A-Za-z0-9]+/g, '_')}.${j.kind === 'maps' ? 'png' : 'jpg'}`;
     for (const url of j.kind === 'maps' ? [j.img] : imageSizes(j.img)) {
-      const r = await run(`curl.exe -s -L -f --max-time 30 -o "${join(dir, file)}" "${url}"`);
+      const r = await run(`${CURL} -s -L -f --max-time 30 -o "${join(dir, file)}" "${url}"`);
       if (r.exitCode === 0) { extra.push({ game: 'rally', kind: j.kind, key: j.key, name: j.name, file }); log(`site sync: ${j.name}`); break; }
     }
   }
@@ -1319,7 +1419,24 @@ async function siteSync() {
 
 // Country flags (img/flags/<iso>.png, from flagcdn.com) for track cards.
 const FLAGS = { Spain: 'es', 'United Kingdom': 'gb', USA: 'us', Hungary: 'hu', Italy: 'it', 'South Africa': 'za', Australia: 'au', Germany: 'de', France: 'fr', Austria: 'at', Belgium: 'be', Japan: 'jp', Netherlands: 'nl', Greece: 'gr', Wales: 'gb-wls' };
-const flagUrl = country => FLAGS[country] ? `/img/flags/${FLAGS[country]}.png` : '';
+// img/flags has every country (flagcdn codes), so any English country name works:
+// names come from the browser's own region list, built on first use.
+let flagNames = null;
+const flagCode = country => {
+  if (FLAGS[country]) return FLAGS[country];
+  if (!flagNames) {
+    flagNames = new Map();
+    try {
+      const dn = new Intl.DisplayNames(['en'], { type: 'region' });
+      for (let a = 65; a < 91; a++) for (let b = 65; b < 91; b++) {
+        const code = String.fromCharCode(a, b), name = dn.of(code);
+        if (name && name !== code) flagNames.set(name.toLowerCase(), code.toLowerCase());
+      }
+    } catch { /* no region names: only FLAGS */ }
+  }
+  return flagNames.get(String(country || '').toLowerCase()) || '';
+};
+const flagUrl = country => { const code = flagCode(country); return code ? `/img/flags/${code}.png` : ''; };
 
 const brandKey = b => String(b).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/-?(amg|benz)$/, '').replace(/[^a-z0-9]/g, '');
 const BUNDLED_LOGOS = ['astonmartin', 'bentley', 'citroen', 'fiat', 'ginetta', 'jaguar', 'lexus', 'skoda', 'subaru'];
@@ -1491,9 +1608,17 @@ async function openRallyQuickDrive() {
   try { fromGame = await readRallySave(state.paths); } catch (err) { toast(err.message, true); return; }
   state.settings.qdGame = 'rally';
   const saved = state.settings.rallyQD || {};
-  const seen = [...new Set([...RALLY_KNOWN_STAGES, ...(state.settings.rallyStages || []), ...fromGame.stages, fromGame.stage])].sort();
-  state.settings.rallyStages = seen;
+  const remembered = [...new Set([...RALLY_KNOWN_STAGES, ...(state.settings.rallyStages || []), ...fromGame.stages, fromGame.stage])].sort();
+  state.settings.rallyStages = remembered;
   saveSettings();
+  // Plus every stage in the game's files (rallyfiles.js): ones an update added show
+  // up before they're driven. Those get "New" for a while (markFresh).
+  const fileStages = await rallyGameStages(state.paths, remembered).catch(err => { log(`rally stages: ${err?.message}`); return []; });
+  const seen = [...new Set([...remembered, ...fileStages])].sort();
+  const stageMarks = fileStages.map(id => ({ id }));
+  await markFresh('rally_stages', stageMarks);
+  const newStages = new Set(stageMarks.filter(x => x.isNew).map(x => x.id));
+  const tagNew = (after = false) => `<span class="flag tag-new${after ? ' after-icon' : ''}">New</span>`;
   let minutes = Math.round((saved.minutes ?? fromGame.seconds / 60) / 15) * 15 % (24 * 60);
 
   const placeholder = title => `<div class="placeholder">${esc(initials(title))}</div>`;
@@ -1501,9 +1626,12 @@ async function openRallyQuickDrive() {
   const brandOf = id => { const n = rallyCarName(id); return /^Alfa Romeo/.test(n) ? 'Alfa Romeo' : n.split(' ')[0]; };
   const logoFlag = (brand, title) => logos.get(brandKey(brand)) ? `<img class="main contain" src="${esc(logos.get(brandKey(brand)))}" alt="">` : placeholder(title);
   const carIds = await rallyCarIds(state.paths).catch(() => Object.keys(RALLY_CARS));
+  const carMarks = carIds.map(id => ({ id }));
+  await markFresh('rally_cars', carMarks);
+  const newCars = new Set(carMarks.filter(x => x.isNew).map(x => x.id));
   const carEntries = () => carIds.map(id => {
     const image = rallyCarImage(id);
-    return { key: id, title: rallyCarName(id), sub: brandOf(id), brand: brandOf(id), image, flag: image ? '' : logoFlag(brandOf(id), rallyCarName(id)) };
+    return { key: id, title: rallyCarName(id), sub: brandOf(id), brand: brandOf(id), image, flag: (newCars.has(id) ? tagNew() : '') + (image ? '' : logoFlag(brandOf(id), rallyCarName(id))) };
   });
   const cars = carEntries();
 
@@ -1544,12 +1672,13 @@ async function openRallyQuickDrive() {
     }
     const loc = byLocation.get(st.location);
     if (!loc.image && stageImage) loc.image = stageImage;
-    loc.layouts.push({ key: id, name: [st.stage, st.length].filter(Boolean).join(' · '), sub: [st.direction, st.route].filter(Boolean).join(' · '), preview: stageImage, outline: map });
+    loc.layouts.push({ key: id, name: [st.stage, st.length].filter(Boolean).join(' · '), sub: [st.direction, st.route, newStages.has(id) && 'New'].filter(Boolean).join(' · '), preview: stageImage, outline: map });
   }
   const tracks = [...byLocation.values()].sort((a, b) => a.title.localeCompare(b.title));
   for (const t of tracks) {
     t.image ||= rallyCover(t.key);
     t.flag = t.image && t.flagUrl ? `<img class="flag-badge" src="${esc(t.flagUrl)}" alt="">` : t.image ? '' : t.flagUrl ? '' : placeholder(t.title);
+    if (t.layouts.some(l => newStages.has(l.key))) t.flag += tagNew(!!(t.image && t.flagUrl));
     t.image ||= t.flagUrl;
     t.sub = `${t.sub ? `${t.sub} · ` : ''}${t.layouts.length} stage${t.layouts.length > 1 ? 's' : ''}`;
     t.layouts.sort((a, b) => a.name.localeCompare(b.name) || a.sub.localeCompare(b.sub));
@@ -1584,7 +1713,7 @@ async function openRallyQuickDrive() {
     variantLabel: 'Livery',
     variants: liveryVariants,
     keepCarImage: true,
-    variantHint: () => 'Your own liveries come from Documents\\My Games\\acr\\Liveries. The game\'s other liveries show up here once you\'ve picked them in Rally.',
+    variantHint: () => "Custom liveries only apply to cars you've driven or selected in Rally at least once. Until then, the game starts with the default livery.",
     defaultVariant: liveryOf,
     tracks,
     sel: { car: pickCar, variant: liveryOf(pickCar), track: trackOf(pickStage)?.key || '', layout: pickStage },
@@ -1620,20 +1749,26 @@ async function openRallyQuickDrive() {
 // ---------------------------------------------------------------------------
 // Quick drive (EVO): pre-set the game mode with its sessions, AI grid and
 // weather, the track/layout and the player car + livery, then start EVO. Cars
-// and liveries are limited to configurations EVO has already used (see
-// evolaunch.js); their thumbnails and names come from the game package
-// (readEvoExtras). The selection is remembered even when the dialog is closed
-// without launching.
+// and liveries are the configurations EVO has an ID for: every stock one, plus
+// customised ones it has used (see evolaunch.js); their thumbnails and names
+// come from the game package (readEvoExtras). The selection is remembered even
+// when the dialog is closed without launching.
 
 async function openEvoQuickDrive({ car, track } = {}) {
   const g = gameByKey('evo');
   const cacheDir = await evoCacheDir().catch(() => '');
-  const [cars, tracks, known, fromGame, external] = await Promise.all([
+  const contentPkg = state.paths.evo.install ? `${state.paths.evo.install}/content.kspkg` : '';
+  const [cars, tracks, driven, fromGame, external, presets] = await Promise.all([
     getItems(g, 'cars'), getItems(g, 'tracks'),
     knownCars(cacheDir).catch(err => { log(`known cars: ${err?.message}`); return []; }),
     readEvoSession().catch(err => { log(`evo session: ${err?.message}`); return defaultEvoSession(); }),
     getItems(g, 'liveries').catch(() => []),
+    contentPkg ? readCarPresets(contentPkg, cacheDir).catch(err => { log(`car presets: ${err?.message}`); return []; }) : [],
   ]);
+  // Mod cars bring their presets in their own package.
+  const modPkgs = [...new Set(cars.filter(c => c.isMod && c.carId && c.path).map(c => c.path))];
+  const modPresets = (await Promise.all(modPkgs.map(p => readCarPresets(p, cacheDir).catch(err => { log(`car presets ${p}: ${err?.message}`); return []; })))).flat();
+  const known = await withAllConfigs(driven, [...presets, ...modPresets]).catch(err => { log(`evo configs: ${err?.message}`); return driven; });
   const official = tracks.filter(t => t.evoTrack);
   if (!official.some(t => t.layouts.some(l => l.practice || l.race))) { toast('No EVO tracks found. Check the EVO folder in Settings.', true); return; }
   state.settings.qdGame = 'evo';
@@ -1647,14 +1782,13 @@ async function openEvoQuickDrive({ car, track } = {}) {
   }
   const container = () => EVO_MODES[ss.mode].container;
 
-  // Every car is listed; the ones EVO has an ID for ("ready") come first, most recently driven on top.
+  // Every car is listed; the ones driven come first, most recent on top, then the rest A-Z.
   const knownBy = new Map(known.map(k => [k.carId, k]));
-  const rank = c => { const k = knownBy.get(c.carId); return k ? known.indexOf(k) : Infinity; };
+  const rank = c => { const k = knownBy.get(c.carId); return k?.seen ? known.indexOf(k) : Infinity; };
   const carList = cars.filter(c => c.carId).sort((a, b) => rank(a) - rank(b) || a.title.localeCompare(b.title));
   const current = known.find(k => k.current);
   const currentConfig = current?.configs.find(c => c.current);
   const currentItem = current && carList.find(c => c.carId === current.carId);
-  const contentPkg = state.paths.evo.install ? `${state.paths.evo.install}/content.kspkg` : '';
   const pkgOf = c => c?.isMod ? c.path : contentPkg;
   const km = c => `${(c.length / 1000).toFixed(2)} km`;
 
@@ -1673,19 +1807,56 @@ async function openEvoQuickDrive({ car, track } = {}) {
     const x = extras.liveries[extras.liveryKey({ carId, mech: cfg.mech, visual: cfg.visual })];
     return x && { ...x, image: x.image ? fileUrl(x.image) : '' };
   };
+  // Pictures are decoded from the game package, so a car's other liveries load
+  // when it's picked rather than all 250 at once; loads run one after another.
+  const liveriesOf = carId => {
+    const item = carList.find(c => c.carId === carId);
+    return item ? (knownBy.get(carId)?.configs || []).filter(c => c.visual).map(c => ({ carId, mech: c.mech, visual: c.visual, pkgPath: pkgOf(item) })) : [];
+  };
+  let extrasQueue = Promise.resolve();
+  const extrasAsked = new Set();
+  // A picked car's liveries (rowOnly) update just the livery row, the summary and
+  // the selected card's picture; the car grid is redrawn only when the background
+  // load brings something new (a redraw reloads every card's picture).
+  const loadExtras = (liveries, brands = [], { rowOnly = false } = {}) => {
+    extrasQueue = extrasQueue.then(() => readEvoExtras({ liveries, brands, contentPkg }, cacheDir)).then(x => {
+      const fresh = Object.keys(x.liveries).some(k => !(k in extras.liveries)) || Object.keys(x.brands).some(k => !(k in extras.brands));
+      extras = { ...x, liveries: { ...extras.liveries, ...x.liveries }, brands: { ...extras.brands, ...x.brands } };
+      if (!fresh || !ui?.el.isConnected) return;
+      opts.cars = carEntries();
+      if (rowOnly) ui.sync(); else ui.redraw();
+    }).catch(err => log(`evo extras: ${err?.stack || err?.message || err}`));
+  };
+  // A configuration is a livery (visual preset) with a spec (mechanical preset:
+  // "ABS TC", "No ABS No TC"…). Every one is listed, tagged with its livery and
+  // spec; Quick Drive shows each livery once, in the chosen spec (variantRow).
+  // Names not read from the package yet show as "Loading…", never as preset ids.
+  const specName = (carId, mech) => {
+    let read = false;
+    for (const cfg of knownBy.get(carId)?.configs || []) {
+      if (cfg.mech !== mech || !cfg.visual || /_visual_99$/i.test(cfg.visual)) continue;
+      const x = extras.liveries[extras.liveryKey({ carId, mech: cfg.mech, visual: cfg.visual })];
+      if (x?.mech) return x.mech;
+      if (x) read = true;
+    }
+    return !read && mech ? 'Loading…' : mech ? prettifyId(mech.replace(/^preset_/, '')) : 'Default';
+  };
   const variants = carId => {
+    if (!extrasAsked.has(carId)) { extrasAsked.add(carId); const l = liveriesOf(carId); if (l.length) setTimeout(() => loadExtras(l, [], { rowOnly: true })); }
     const k = knownBy.get(carId), item = carList.find(c => c.carId === carId);
     return (k?.configs || []).map((cfg, i) => {
-      const x = thumb(carId, cfg);
+      const x = thumb(carId, cfg), modded = /_visual_99$/i.test(cfg.visual || '') && x;
       return {
         key: cfg.guid,
-        title: x?.label || (cfg.visual ? prettifyId(cfg.visual.replace(/^preset_/, '')) : i ? `Livery ${i + 1}` : 'Last used livery'),
-        sub: [x?.mech, cfg.current && 'current'].filter(Boolean).join(' · '),
+        title: x?.label || (cfg.visual ? (x ? prettifyId(cfg.visual.replace(/^preset_/, '')) : 'Loading…') : i ? `Livery ${i + 1}` : 'Last used livery'),
+        sub: [modded && x.mech, cfg.current && 'current'].filter(Boolean).join(' · '),
         image: x?.image || item?.image,
+        livery: cfg.visual || cfg.guid, spec: cfg.mech || '-', specLabel: specName(carId, cfg.mech),
       };
     });
   };
 
+  const liveryCount = k => new Set(k.configs.map(c => c.visual || c.guid)).size; // each spec of a livery counts once
   const carEntries = () => [
     ...(currentItem ? [{
       key: '', title: 'Keep current car', sub: currentItem.title, summaryTitle: currentItem.title, brand: '',
@@ -1697,7 +1868,7 @@ async function openEvoQuickDrive({ car, track } = {}) {
       return {
         key: c.carId, title: c.title, sub: c.subtitle, brand: c.brand || '', locked: !k,
         image: latest?.image || c.image,
-        flag: !k ? '<span class="flag off">Not used yet</span>' : k.configs.length > 1 ? `<span class="flag kunos">${k.configs.length} liveries</span>` : '',
+        flag: (c.isNew ? '<span class="flag tag-new">New</span>' : '') + (!k ? '<span class="flag off">New to EVO</span>' : liveryCount(k) > 1 ? `<span class="flag kunos">${liveryCount(k)} liveries</span>` : ''),
       };
     }),
   ];
@@ -1706,7 +1877,7 @@ async function openEvoQuickDrive({ car, track } = {}) {
     const layouts = t.layouts.filter(l => l[container()]);
     return {
       key: t.id, title: t.title, sub: t.subtitle, image: t.image,
-      flag: `<span class="flag kunos">${layouts.length} layout${layouts.length > 1 ? 's' : ''}</span>`,
+      flag: `${t.isNew ? '<span class="flag tag-new">New</span>' : ''}<span class="flag kunos">${layouts.length} layout${layouts.length > 1 ? 's' : ''}</span>`,
       layouts: layouts.map(l => ({ key: l.id, name: l.name, sub: km(l[container()]), outline: l.outline, preview: l.preview })),
     };
   }).filter(t => t.layouts.length);
@@ -1801,11 +1972,13 @@ async function openEvoQuickDrive({ car, track } = {}) {
     brandLogo: name => { const f = extras.brands[extras.brandSlug(name)]; return f ? fileUrl(f) : ''; },
     variantLabel: 'Livery',
     variants: carKey => carKey ? variants(carKey) : [],
-    variantHint: carKey => carKey ? 'Only liveries you have picked in EVO are listed. Pick another one once in EVO and it shows up here.' : '',
+    // Mod cars only have the liveries EVO has used (their IDs come from its logs).
+    variantHint: carKey => carKey && !knownBy.get(carKey)?.configs.some(c => c.stock) ? 'Only liveries you have picked in EVO are listed. Pick another one once in EVO and it shows up here.' : '',
     defaultVariant: carKey => knownBy.get(carKey)?.configs[0]?.guid || '',
     tracks: trackEntries(),
     sel: { car: '', variant: '', track: '', layout: '' },
-    onLocked: c => toast(`${c.title}: pick it once in EVO's car menu, then it can be pre-selected here.`, true),
+    // EVO gives each car its IDs once it has listed it (new mods: after it next starts).
+    onLocked: c => toast(`${c.title}: EVO hasn't set this car up yet. Start EVO and open its car list once, then it can be pre-selected here.`, true),
     onClose: s => {
       state.settings.evoQD = { car: s.car, variant: s.variant, track: s.track, layout: s.layout, session: ss };
       saveSettings();
@@ -1857,35 +2030,37 @@ async function openEvoQuickDrive({ car, track } = {}) {
   opts.sel.track = startTrack.key;
   opts.sel.layout = (!track && startTrack.layouts.find(l => l.key === saved.layout)?.key) || startTrack.layouts[0]?.key || '';
 
+  // Names, pictures and logos decoded before come from the cache before the first draw.
+  const brands = [...new Set(carList.map(c => c.brand).filter(Boolean))];
+  const cached = cacheDir ? await readEvoExtras({ liveries: carList.flatMap(c => liveriesOf(c.carId)), brands, contentPkg, cachedOnly: true }, cacheDir).catch(() => null) : null;
+  if (cached) { extras = cached; opts.cars = carEntries(); }
+
   const ui = quickDriveModal(opts);
   if (car && !knownBy.has(car.carId)) opts.onLocked(car);
 
-  // Background: livery thumbnails/names for every known configuration + brand logos.
-  const liveries = known.flatMap(k => {
-    const item = carList.find(c => c.carId === k.carId);
-    return item ? k.configs.filter(c => c.visual).map(c => ({ carId: k.carId, mech: c.mech, visual: c.visual, pkgPath: pkgOf(item) })) : [];
-  });
-  const brands = [...new Set(carList.map(c => c.brand).filter(Boolean))];
-  readEvoExtras({ liveries, brands, contentPkg }, cacheDir).then(x => {
-    extras = x;
-    if (!ui.el.isConnected) return;
-    opts.cars = carEntries();
-    ui.redraw();
-  }).catch(err => log(`evo extras: ${err?.stack || err?.message || err}`));
+  // Background: livery thumbnails/names of the driven configurations + brand logos.
+  loadExtras(known.filter(k => k.seen || k.current).flatMap(k => liveriesOf(k.carId)), brands);
 }
 
 // ---------------------------------------------------------------------------
 // Quick drive (AC): car, skin, track and session (mode, AI opponents, time,
-// weather, temperatures, grip) written to race.ini, then acs.exe. The selection
-// and session are remembered even when the dialog is closed without driving.
+// weather, wind, temperatures, grip, assists) written to race.ini and assists.ini,
+// then acs.exe. With CSP's WeatherFX the weather is one of CSP's types and the
+// time any hour. The selection and session are remembered even when the dialog
+// is closed without driving.
+
+const COMPASS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+const compass = deg => `${COMPASS[Math.round(((deg % 360) + 360) % 360 / 45) % 8]} · ${deg}°`;
+const todayIso = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 
 async function openQuickDrive({ car, skin, track } = {}) {
   const g = gameByKey('ac');
-  const [cars, allTracks, weathers, fromGame] = await Promise.all([
+  const [cars, allTracks, weathers, csp] = await Promise.all([
     getItems(g, 'cars'), getItems(g, 'tracks'),
     acWeathers(state.paths).catch(() => []),
-    readAcSession(state.paths).catch(() => defaultAcSession()),
+    readCsp(state.paths).catch(() => ({ installed: false, features: {}, controllers: [] })),
   ]);
+  const fromGame = await readAcSession(state.paths, csp).catch(() => defaultAcSession());
   // Tracks without models (unowned DLC placeholders) can't be loaded.
   const tracks = allTracks.filter(t => t.playable !== false);
   if (!cars.length || !tracks.length) { toast('No Assetto Corsa cars or tracks found. Check the folder in Settings.', true); return; }
@@ -1896,13 +2071,35 @@ async function openQuickDrive({ car, skin, track } = {}) {
   const badges = new Map();
   for (const c of cars) if (c.brand && c.badge && !badges.has(c.brand)) badges.set(c.brand, c.badge);
 
+  // CSP: WeatherFX picks the weather by type; times outside 08:00-18:00 and a date need CSP too.
+  const wfx = !!csp.wfx, h24 = !!csp.features.CONDITIONS_24H, dated = !!csp.features.CONDITIONS_SPECIFIC_DATE;
+  const types = CSP_WEATHER_TYPES.filter(t => t.needs !== 'snow' || csp.features.SNOW);
+  const ownWeather = csp.controllers.filter(c => !c.followsWeather); // Live, Schedule…: pick the weather themselves
+  // Controllers for a chosen weather type. CSP's own "base" is the default slot ('');
+  // with Pure, Pure Static takes that slot (readCsp: baseController). Pure's
+  // controllers are only listed while a Pure style is in use (readCsp).
+  const typeControllers = csp.controllers.filter(c => c.followsWeather && (c.id !== 'base' || csp.baseController === 'base'));
+  const controllerName = () => (ss.cspWeather.startsWith('ctrl:') ? '' : csp.controllers.find(c => c.id === (ss.wfxController || csp.baseController))?.name);
   const ss = mergeSettings(fromGame, state.settings.acSession);
-  if (weathers.length && !weathers.some(w => w.id === ss.weather)) ss.weather = weathers.find(w => w.id === '3_clear')?.id || weathers[0].id;
+  const normalize = () => {
+    if (weathers.length && !weathers.some(w => w.id === ss.weather)) ss.weather = weathers.find(w => w.id === '3_clear')?.id || weathers[0].id;
+    const ok = ss.cspWeather.startsWith('ctrl:') ? ownWeather.some(c => `ctrl:${c.id}` === ss.cspWeather) : types.some(t => String(t.id) === ss.cspWeather);
+    if (!ok) ss.cspWeather = '15';
+    if (ss.wfxController === csp.baseController || !typeControllers.some(c => c.id === ss.wfxController)) ss.wfxController = '';
+    if (!h24) ss.time = Math.min(18 * 60, Math.max(8 * 60, ss.time));
+  };
+  normalize();
   const racing = () => ss.mode === 'race' || ss.mode === 'weekend';
   const weather = () => weathers.find(w => w.id === ss.weather);
+  const wfxType = () => (ss.cspWeather.startsWith('ctrl:') ? 15 : Number(ss.cspWeather));
+  const weatherName = () => (wfx
+    ? (ownWeather.find(c => `ctrl:${c.id}` === ss.cspWeather)?.name || cspWeatherLabel(ss.cspWeather))
+    : (weather()?.name || ss.weather));
   const layoutOf = s => findTrack(s.track)?.layouts.find(l => l.id === s.layout);
   const maxOpponents = s => Math.max(1, Math.min(Number(layoutOf(s)?.pitboxes) || 20, 63) - 1);
-  const roadNow = () => roadTemperature(ss.time, ss.air, weather()?.coeff);
+  const roadNow = () => roadTemperature(ss.time, ss.air, (wfx ? presetForType(weathers, wfxType()) : weather())?.coeff);
+  const assistPreset = () => Object.keys(AC_ASSIST_PRESETS).find(k => Object.entries(AC_ASSIST_PRESETS[k]).every(([key, v]) => ss.assists[key] === v)) || 'custom';
+  const onOff = [[1, 'On'], [0, 'Off']];
 
   const trackEntries = () => tracks.map(t => ({
     key: t.id, title: t.title, sub: t.subtitle, image: t.image,
@@ -1915,7 +2112,7 @@ async function openQuickDrive({ car, skin, track } = {}) {
 
   const session = {
     summary: () => {
-      const cond = `${hhmm(ss.time)} · ${weather()?.name || ss.weather} · ${ss.air} °C`;
+      const cond = `${hhmm(ss.time)} · ${weatherName()} · ${ss.air} °C`;
       if (ss.mode === 'practice') return { title: 'Practice', sub: `${ss.practice.minutes ? `${ss.practice.minutes} min` : 'Unlimited'} · ${cond}` };
       if (ss.mode === 'hotlap') return { title: 'Hotlap', sub: cond };
       if (ss.mode === 'race') return { title: 'Race', sub: `${ss.race.laps} laps · ${ss.ai.count} AI · ${cond}` };
@@ -1923,11 +2120,8 @@ async function openQuickDrive({ car, skin, track } = {}) {
       return { title: 'Race Weekend', sub: [wk.practice && `P ${wk.practice}'`, `Q ${wk.qualifying}'`, `R ${wk.laps} laps`, `${ss.ai.count} AI`, cond].filter(Boolean).join(' · ') };
     },
     get: () => ss,
-    set: d => {
-      mergeSettings(ss, d);
-      if (weathers.length && !weathers.some(w => w.id === ss.weather)) ss.weather = weathers.find(w => w.id === '3_clear')?.id || weathers[0].id;
-    },
-    sheetNote: 'Written to race.ini when you drive. Assists and CSP settings are left as they are.',
+    set: d => { mergeSettings(ss, d); normalize(); },
+    sheetNote: `Written to race.ini and assists.ini when you drive.${csp.installed ? ' Weather FX and Rain FX are in Settings.' : ''}`,
     sections: sel => {
       const max = maxOpponents(sel), layout = layoutOf(sel);
       return [
@@ -1956,15 +2150,72 @@ async function openQuickDrive({ car, skin, track } = {}) {
           ],
         }] : []),
         {
-          title: 'Conditions', fields: [
-            { label: 'Time of day', type: 'select', options: timeOptions(ss.time, 8 * 60, 18 * 60), get: () => ss.time, set: v => { ss.time = v; } },
+          title: 'Conditions',
+          note: wfx && isWetWeather(wfxType()) && !csp.rainFx ? 'Rain FX is off (Settings → Custom Shaders Patch), so the track stays dry.' : '',
+          fields: [
+            { label: 'Time of day', hint: h24 ? 'Any hour with Custom Shaders Patch' : '', type: 'select', options: timeOptions(ss.time, h24 ? 0 : 8 * 60, h24 ? 23 * 60 + 45 : 18 * 60), get: () => ss.time, set: v => { ss.time = v; } },
             { label: 'Time speed', type: 'select', options: withCurrent([1, 2, 4, 8, 16, 30, 60].map(x => [x, `${x}×`]), ss.speed, x => `${x}×`), get: () => ss.speed, set: v => { ss.speed = v; } },
-            { label: 'Weather', type: 'select', options: weathers.length ? weathers.map(w => [w.id, w.name]) : [[ss.weather, ss.weather]], get: () => ss.weather, set: v => { ss.weather = v; } },
+            ...(dated ? [
+              { label: 'Date', hint: 'Sun position and season (CSP)', type: 'seg', options: [[false, 'Today'], [true, 'Pick a day']], get: () => !!ss.date, set: v => { ss.date = v ? (ss.date || todayIso()) : ''; } },
+              ...(ss.date ? [{ label: 'Day', type: 'date', get: () => ss.date, set: v => { ss.date = v; } }] : []),
+            ] : []),
+            wfx
+              ? { label: 'Weather', hint: ['CSP Weather FX', csp.style !== 'base' && (csp.styles.find(s => s.id === csp.style)?.name || csp.style), controllerName() !== 'Default' && controllerName()].filter(Boolean).join(' · '),
+                type: 'select', get: () => ss.cspWeather, set: v => { ss.cspWeather = v; },
+                options: [...types.map(t => [String(t.id), t.label]), ...ownWeather.map(c => [`ctrl:${c.id}`, `${c.name} (controller)`])] }
+              : { label: 'Weather', type: 'select', options: weathers.length ? weathers.map(w => [w.id, w.name]) : [[ss.weather, ss.weather]], get: () => ss.weather, set: v => { ss.weather = v; } },
+            // Default unless the user picks another one (with Pure: Pure Static, readCsp).
+            ...(wfx && !ss.cspWeather.startsWith('ctrl:') ? [{
+              label: 'Weather controller', hint: 'Script that sets the conditions from the weather', type: 'select', get: () => ss.wfxController, set: v => { ss.wfxController = v; },
+              options: [['', 'Default'], ...typeControllers.filter(c => c.id !== csp.baseController).map(c => [c.id, c.name])],
+            }] : []),
             { label: 'Air temperature', type: 'select', options: withCurrent(steps(10, 36, 1).map(n => [n, `${n} °C`]), ss.air, n => `${n} °C`), get: () => ss.air, set: v => { ss.air = v; } },
             { label: 'Track temperature', hint: 'Auto uses the formula of AC\'s launcher (air, time, weather)', type: 'select', get: () => ss.road, set: v => { ss.road = v; },
               options: [['auto', `Auto · ${roadNow()} °C`], ...steps(10, 60, 1).map(n => [n, `${n} °C`])] },
             { label: 'Track grip', type: 'select', options: AC_GRIP.map(x => [x.id, x.label]), get: () => ss.grip, set: v => { ss.grip = v; } },
             { label: 'Penalties', type: 'seg', options: [[true, 'On'], [false, 'Off']], get: () => ss.penalties, set: v => { ss.penalties = v; } },
+          ],
+        },
+        {
+          title: 'Wind', fields: [
+            { label: 'Wind speed', type: 'select', get: () => ss.wind.speed, set: v => { ss.wind.speed = v; },
+              options: withCurrent(steps(0, 60, 5).map(n => [n, n ? `${n} km/h` : 'Calm']), ss.wind.speed, n => `${n} km/h`) },
+            ...(ss.wind.speed > 0 ? [
+              { label: 'Gusts', type: 'select', get: () => ss.wind.gusts, set: v => { ss.wind.gusts = v; },
+                options: withCurrent([[0, 'Steady'], [5, '+5 km/h'], [10, '+10 km/h'], [20, '+20 km/h']], ss.wind.gusts, n => `+${n} km/h`) },
+              { label: 'Direction', type: 'select', get: () => ss.wind.dir, set: v => { ss.wind.dir = v; },
+                options: withCurrent(steps(0, 315, 45).map(d => [d, compass(d)]), ss.wind.dir, compass) },
+            ] : []),
+          ],
+        },
+        {
+          title: 'Assists', wide: true, fields: [
+            { label: 'Preset', hint: "AC's own presets", type: 'seg', get: assistPreset, set: v => { if (AC_ASSIST_PRESETS[v]) Object.assign(ss.assists, AC_ASSIST_PRESETS[v]); },
+              options: [['gamer', 'Gamer'], ['racer', 'Racer'], ['pro', 'Pro'], ['custom', 'Custom']] },
+          ],
+        },
+        {
+          title: 'Driving aids', fields: [
+            { label: 'ABS', type: 'seg', options: [[0, 'Off'], [1, 'Factory'], [2, 'On']], get: () => ss.assists.abs, set: v => { ss.assists.abs = v; } },
+            { label: 'Traction control', type: 'seg', options: [[0, 'Off'], [1, 'Factory'], [2, 'On']], get: () => ss.assists.tc, set: v => { ss.assists.tc = v; } },
+            { label: 'Stability control', type: 'select', get: () => ss.assists.stability, set: v => { ss.assists.stability = v; },
+              options: withCurrent(steps(0, 100, 10).map(n => [n, n ? `${n}%` : 'Off']), ss.assists.stability, n => `${n}%`) },
+            { label: 'Clutch', type: 'seg', options: [[1, 'Auto'], [0, 'Manual']], get: () => ss.assists.autoClutch, set: v => { ss.assists.autoClutch = v; } },
+            { label: 'Gear shifts', type: 'seg', options: [[1, 'Auto'], [0, 'Manual']], get: () => ss.assists.autoShift, set: v => { ss.assists.autoShift = v; } },
+            { label: 'Auto blip', hint: 'Throttle blips on downshifts', type: 'seg', options: onOff, get: () => ss.assists.autoBlip, set: v => { ss.assists.autoBlip = v; } },
+            { label: 'Ideal line', type: 'seg', options: onOff, get: () => ss.assists.ideal, set: v => { ss.assists.ideal = v; } },
+          ],
+        },
+        {
+          title: 'Realism', fields: [
+            { label: 'Mechanical damage', type: 'select', get: () => ss.assists.damage, set: v => { ss.assists.damage = v; },
+              options: withCurrent(steps(0, 100, 10).map(n => [n, n ? `${n}%` : 'Off']), ss.assists.damage, n => `${n}%`) },
+            { label: 'Visual damage', type: 'seg', options: onOff, get: () => ss.assists.visualDamage, set: v => { ss.assists.visualDamage = v; } },
+            { label: 'Fuel use', type: 'seg', options: onOff, get: () => ss.assists.fuel, set: v => { ss.assists.fuel = v; } },
+            { label: 'Tyre wear', type: 'seg', options: [[0, 'Off'], [1, '1×'], [2, '2×'], [3, '3×']], get: () => ss.assists.tyreWear, set: v => { ss.assists.tyreWear = v; } },
+            { label: 'Tyre blankets', type: 'seg', options: onOff, get: () => ss.assists.blankets, set: v => { ss.assists.blankets = v; } },
+            { label: 'Slipstream', type: 'select', get: () => ss.assists.slipstream, set: v => { ss.assists.slipstream = v; },
+              options: withCurrent(steps(1, 5, 1).map(n => [n, `${n}×`]), ss.assists.slipstream, n => `${n}×`) },
           ],
         },
       ];
@@ -1983,7 +2234,7 @@ async function openQuickDrive({ car, skin, track } = {}) {
   const skinOk = id => startCar.skins?.some(s => s.id === id);
   const opts = {
     game: 'ac',
-    sub: 'Starts Assetto Corsa directly with the session below. Assists and CSP settings stay as they are.',
+    sub: 'Starts Assetto Corsa directly with the session and assists below.',
     session,
     launchLabel: 'Drive',
     carCount: `${cars.length} cars`,
@@ -2008,7 +2259,7 @@ async function openQuickDrive({ car, skin, track } = {}) {
       try {
         await quickDrive(state.paths, {
           car: s.car, skin: s.variant, skins: (findCar(s.car)?.skins || []).map(x => x.id),
-          track: s.track, layout: s.layout, session: ss, maxOpponents: maxOpponents(s), weatherCoeff: weather()?.coeff,
+          track: s.track, layout: s.layout, session: ss, maxOpponents: maxOpponents(s), csp,
         });
         toast(`Starting ${findCar(s.car)?.title} at ${findTrack(s.track)?.title}…`);
       } catch (err) {
@@ -2107,7 +2358,7 @@ async function importSources(sources) {
   await openInstallReview(items, problems, sessions);
 }
 
-const KIND_LABEL = { car: 'Car', track: 'Track', skin: 'Skin', extras: 'Extras', livery: 'Livery', 'car file': 'Car file' };
+const KIND_LABEL = { car: 'Car', track: 'Track', skin: 'Skin', extras: 'Extras', livery: 'Livery', 'car file': 'Car file', 'pp filter': 'PP filter' };
 
 async function openInstallReview(items, problems, sessions) {
   const cleanup = () => sessions.forEach(discardImport);
@@ -2116,7 +2367,7 @@ async function openInstallReview(items, problems, sessions) {
     modal(`<div class="qd imp">
       <h2>Nothing to install</h2>
       ${problemList}
-      <div class="qd-sub">Supported: Assetto Corsa cars, tracks, skins, apps and CSP · ACC liveries · EVO <code>.kspkg</code> · Rally <code>.pak</code> liveries,
+      <div class="qd-sub">Supported: Assetto Corsa cars, tracks, skins, apps, CSP and PP filters · ACC liveries · EVO <code>.kspkg</code> · Rally <code>.pak</code> liveries,
       as files or inside <code>.zip</code>, <code>.rar</code> and <code>.7z</code> archives.</div>
     </div>`, 'modal imp-modal', cleanup);
     return;
@@ -2127,6 +2378,11 @@ async function openInstallReview(items, problems, sessions) {
     choices[kind] = await carChoices(kind, state.paths, kind === 'ac' ? await getItems(gameByKey('ac'), 'cars').catch(() => []) : []);
   }
   const gameName = key => { const g = gameByKey(key); return `${g.title} ${g.sub || ''}`.trim(); };
+  // The cars a livery's design points to (not sure enough to pick one) come first.
+  const carOptions = i => {
+    const all = choices[i.carPick], likely = (i.likely || []).map(id => all.find(c => c.id === id)).filter(Boolean);
+    return [...likely.map(c => ({ ...c, likely: true })), ...all.filter(c => !likely.includes(c))];
+  };
   const tag = i => i.missing ? `<span class="imp-tag bad">${esc(i.missing)}</span>`
     : i.exists ? '<span class="imp-tag upd">Update</span>' : '<span class="imp-tag new">New</span>';
   const row = (i, idx) => `<div class="imp-row ${i.missing ? 'off' : ''}" data-row="${idx}">
@@ -2138,7 +2394,7 @@ async function openInstallReview(items, problems, sessions) {
       <code>${esc(i.detail)}</code>
       ${i.note ? `<small class="imp-note">${esc(i.note)}</small>` : ''}
       ${i.carPick ? `<select data-car="${idx}"><option value="">Choose the car for this ${i.kind === 'skin' ? 'skin' : 'livery'}…</option>
-        ${choices[i.carPick].map(c => `<option value="${esc(c.id)}" ${c.id === i.car ? 'selected' : ''}>${esc(c.title)}${i.carPick === 'ac' ? ` (${esc(c.id)})` : ''}</option>`).join('')}</select>` : ''}
+        ${carOptions(i).map(c => `<option value="${esc(c.id)}" ${c.id === i.car ? 'selected' : ''}>${esc(c.title)}${i.carPick === 'ac' ? ` (${esc(c.id)})` : ''}${c.likely ? ' · probably' : ''}</option>`).join('')}</select>` : ''}
     </div>
     <span data-tag="${idx}">${tag(i)}</span>
   </div>`;
@@ -2199,12 +2455,14 @@ async function openInstallReview(items, problems, sessions) {
     close();
     for (const g of new Set(done.map(i => i.game))) for (const k of Object.keys(state.cache)) if (k.startsWith(`${g}:`)) delete state.cache[k];
     if (failed.length) toast(`Could not install ${failed.join('; ')}`, true);
+    else if (done.length && done.every(i => i.kind === 'pp filter')) toast(`Installed ${done.map(i => i.title).join(', ')}. Pick it in Settings → Assetto Corsa · Video.`);
     else toast(`Installed ${done.length} mod${done.length > 1 ? 's' : ''}`);
     const first = done.find(i => i.tab);
     if (first) {
       state.game = first.game; state.tab[first.game] = first.tab; state.search = ''; state.view = 'mods';
       saveSettings(); renderSidebar(); render();
     } else if (state.view === 'mods') render();
+    else if (state.view === 'settings') renderSettings();
   };
 }
 
@@ -2261,7 +2519,204 @@ const PATH_SETTINGS = [
 const REPO_URL = 'https://github.com/Zelbrad/AssettoLauncher';
 const KOFI_URL = 'https://ko-fi.com/gperpas';
 
+// ---------------------------------------------------------------------------
+// Settings for Assetto Corsa: Custom Shaders Patch (install/update from
+// acstuff.club, Weather FX and its style, Rain FX, Sol and Pure) and the main
+// video settings. CSP's are written where Content Manager writes them.
+
+const CSP_TOGGLES = [
+  ['wfxEnabled', 'Weather FX', 'Dynamic sky, light and weather. Sol and Pure need it.', 'weather_fx.ini', 'BASIC', 'ENABLED'],
+  ['style'],
+  ['rainFxEnabled', 'Rain FX', 'Rain, wet track and puddles.', 'rain_fx.ini', 'BASIC', 'ENABLED'],
+  ['rainTyres', 'Rain tyres at the start', 'Fits wet tyres when the drive starts in the rain.', 'rain_fx.ini', 'BASIC', 'AUTOSELECT_RAIN_TYRES'],
+  ['autoWipers', 'Automatic wipers', 'Wipers switch on and off by themselves.', 'weather_fx.ini', 'MISCELLANEOUS', 'SWITCH_WIPERS_WITH_AI'],
+  ['aiHeadlights', 'AI headlights', 'AI cars always drive with their headlights on.', 'weather_fx.ini', 'MISCELLANEOUS', 'FORCE_HEADLIGHTS'],
+];
+let shownCsp = null; // the CSP state the Settings page shows
+
+// The CSP row: the installed version, and the public versions (acstuff.club,
+// read once per run) in a picker coloured by the developer's tags: green the
+// newest stable, red unstable (buggy), gray older or not rated yet; "Latest" on
+// the newest, "Installed" on yours. The button installs the picked version.
+const CSP_KIND = { stable: 'Stable', unstable: 'Unstable', previous: 'Previous', untested: 'Untested' };
+const cspPicked = () => state.cspVersions?.list.find(v => v.version === state.cspPick);
+
+function cspStatus(csp, versions) {
+  if (state.cspInstalling) return { val: state.cspInstalling, btns: '' };
+  const preview = csp.installed && /preview/i.test(csp.version);
+  const parts = [csp.installed ? `v${csp.version}${preview ? ' (preview)' : ''}` : 'Not installed'];
+  if (versions === undefined) parts.push('checking acstuff.club…');
+  else if (!versions) parts.push("couldn't reach acstuff.club");
+  else if (csp.installed) {
+    const cmp = compareVersions(versions.recommended, csp.version);
+    parts.push(cmp > 0 ? `${versions.recommended} available` : cmp < 0 ? `newer than the stable ${versions.recommended}` : 'up to date');
+  }
+  if (!versions) return { val: parts.join(' · '), btns: `<button class="btn small subtle" data-url="${CSP_PAGE}">acstuff.club ↗</button>` };
+
+  const pick = cspPicked() || versions.list.find(v => v.version === versions.recommended) || versions.list[0];
+  state.cspPick = pick.version;
+  const cmp = csp.installed ? compareVersions(pick.version, csp.version) : 1;
+  const action = !csp.installed ? 'Install' : cmp > 0 ? 'Update to' : cmp < 0 ? 'Downgrade to' : 'Reinstall';
+  const tags = v => `<span class="csp-tag ${v.kind}">${CSP_KIND[v.kind]}</span>${v.version === versions.latest ? '<span class="csp-badge latest">Latest</span>' : ''}${csp.installed && v.version === csp.version ? '<span class="csp-badge">Installed</span>' : ''}`;
+  const options = versions.list.map(v => `<button class="csp-opt ${v.version === pick.version ? 'sel' : ''}" data-csp-version="${esc(v.version)}"><b>${esc(v.version)}</b>${tags(v)}<small>${esc(v.size)}</small></button>`);
+  // A preview (Patreon) or custom build isn't on the public list: shown, not installable.
+  if (csp.installed && !versions.list.some(v => v.version === csp.version)) {
+    options.unshift(`<div class="csp-opt off"><b>${esc(csp.version)}</b><span class="csp-tag previous">${preview ? 'Preview' : 'Custom'}</span><span class="csp-badge">Installed</span><small>${preview ? 'Patreon build' : ''}</small></div>`);
+  }
+  options.push(`<button class="csp-opt csp-link" data-url="${CSP_PAGE}">All versions on acstuff.club ↗</button>`);
+  const btns = `<div class="csp-picker"><button class="btn small subtle csp-pick" data-act="csp-menu"><b>${esc(pick.version)}</b>${tags(pick)}<span class="csp-caret">▾</span></button><div class="csp-menu" hidden>${options.join('')}</div></div>
+    <button class="btn small ${pick.kind === 'unstable' || cmp < 0 ? 'subtle' : 'primary'}" data-act="csp-install">${action} ${esc(pick.version)}</button>
+    <button class="btn small subtle" data-act="csp-changes">What's new</button>`;
+  return { val: parts.join(' · '), btns };
+}
+
+function updateCspRow() {
+  const row = document.getElementById('csp-row');
+  if (!row || !shownCsp) return;
+  const st = cspStatus(shownCsp, state.cspVersions);
+  row.querySelector('.val').textContent = st.val;
+  row.querySelector('.btns').innerHTML = st.btns;
+}
+
+// The picked version's changelog (acstuff.club/patch/?info=<version>), under the CSP row.
+async function showCspChanges() {
+  const panel = document.getElementById('csp-changes');
+  const v = state.cspPick;
+  if (!panel || !v) return;
+  panel.hidden = false;
+  panel.innerHTML = `<p class="settings-note">Loading what's new in ${esc(v)}…</p>`;
+  const info = await cspVersionInfo(v).catch(() => null);
+  if (state.cspPick !== v || !panel.isConnected) return;
+  panel.innerHTML = info?.changes.length
+    ? `<h4>What's new in ${esc(v)}${info.build ? ` <small>build ${info.build}</small>` : ''}</h4>
+      <ul>${info.changes.map(c => `<li style="margin-left:${c.depth * 18}px">${esc(c.text)}</li>`).join('')}</ul>`
+    : `<p class="settings-note">${info ? `No changelog listed for ${esc(v)}.` : "Couldn't load the changelog from acstuff.club."}</p>`;
+}
+
+async function cspSettingsHTML() {
+  if (!state.paths?.ac.install) return '';
+  if (!state.cspVersionsP) state.cspVersionsP = cspVersions().catch(() => null).then(r => { state.cspVersions = r; updateCspRow(); return r; });
+  const csp = shownCsp = await readCsp(state.paths).catch(() => ({ installed: false, styles: [], settings: {} }));
+  const st = cspStatus(csp, state.cspVersions);
+  const note = (text, warn) => `<div class="val note ${warn ? 'warn' : ''}">${esc(text)}</div>`;
+  const rows = [
+    `<div class="setting" id="csp-row"><label>Custom Shaders Patch</label><div class="val">${esc(st.val)}</div><div class="btns">${st.btns}</div></div>`,
+    `<div class="csp-changes" id="csp-changes" hidden></div>`,
+  ];
+  if (csp.installed) {
+    for (const [k, label, hint, file, section, key] of CSP_TOGGLES) {
+      if (k === 'style') {
+        const styles = csp.styles.some(s => s.id === csp.style) ? csp.styles : [...csp.styles, { id: csp.style, name: `${csp.style} (missing)` }];
+        rows.push(`<div class="setting"><label>Weather style</label>${note('How the sky, light and clouds look (Weather FX).')}
+          <select data-csp-style>${styles.map(s => `<option value="${esc(s.id)}" ${s.id === csp.style ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}</select></div>`);
+        continue;
+      }
+      rows.push(`<div class="setting"><label>${label}</label>${note(hint)}<button class="toggle ${csp.settings[k] ? 'on' : ''}" data-csp="${file}|${section}|${key}"></button></div>`);
+    }
+  }
+  // Peter Boese's weather mods: Sol (free, discontinued) and Pure (Patreon). Neither
+  // can be downloaded by the launcher (Get opens their page); dropping their zip
+  // installs them. Installed: Use, or Selected (in use) with Deselect (back to
+  // AC's Default style), and Uninstall (Recycle Bin, second click confirms).
+  const inUse = mod => mod?.styles.find(s => s.id === csp.style && csp.settings.wfxEnabled);
+  const modRow = (key, name, mod, url, about, warn) => {
+    const used = inUse(mod);
+    const text = !mod ? about
+      : [used ? `In use · ${used.name}` : `Installed · ${mod.styles.map(s => s.name).join(', ')}`, mod.version && `v${mod.version}`, warn].filter(Boolean).join(' · ');
+    const btns = !mod ? `<button class="btn small subtle" data-url="${url}">Get ${name} ↗</button>`
+      : [
+        !csp.installed ? '' : used
+          ? `<button class="btn small primary csp-selected" disabled>✓ Selected</button><button class="btn small subtle" data-csp-deselect="${key}">Deselect</button>`
+          : `<button class="btn small primary" data-csp-use="${esc(mod.styles[0].id)}">Use ${name}</button>`,
+        `<button class="btn small danger" data-csp-uninstall="${key}" title="Moves ${name}'s files to the Recycle Bin">Uninstall</button>`,
+      ].join('');
+    return `<div class="setting"><label>${name}</label>${note(text, !!warn)}<div class="btns">${btns}</div></div>`;
+  };
+  rows.push(modRow('sol', 'Sol', csp.sol, SOL_URL,
+    'Free and no longer updated (last version 2.2.9). Overtake needs an account to download it; then drop the zip on the launcher.',
+    csp.solBroken && `doesn't work with CSP ${csp.version}: Sol needs CSP 0.2.9 or older, or 0.3`));
+  rows.push(modRow('pure', 'Pure', csp.pure, PURE_URL,
+    "Peter Boese's current weather and graphics mod, for his Patreon supporters. Drop its zip on the launcher to install it."));
+  if (IS_LINUX && csp.installed) {
+    const opt = `WINEDLLOVERRIDES="${PROTON_DLL_OVERRIDE}" %command%`;
+    rows.push(`<div class="setting"><label>Steam launch option</label><div class="val" title="Quick Drive sets this itself; Steam needs it to load CSP when you start AC from Steam.">${esc(opt)}</div><div class="btns"><button class="btn small subtle" data-copy="${esc(opt)}">Copy</button></div></div>`);
+  }
+  return `<div class="settings-group"><h3>Assetto Corsa · Custom Shaders Patch</h3>
+    <p class="settings-note">Saved in AC's cfg/extension folder in Documents, the same files Content Manager uses. AC reads them when it starts.${csp.installed ? '' : ` CSP needs Microsoft's <button class="link" data-url="${VCREDIST_URL}">Visual C++ 2015 (x86) runtime</button>.`}</p>
+    ${rows.join('')}</div>`;
+}
+
+async function videoSettingsHTML() {
+  if (!state.paths?.ac.install) return '';
+  const head = '<div class="settings-group"><h3>Assetto Corsa · Video</h3>';
+  const v = await readVideo(state.paths).catch(() => null);
+  if (!v) return `${head}<p class="settings-note">Start Assetto Corsa once so it creates its video settings.</p></div>`;
+  const modes = [...await displayModes()];
+  if (!modes.some(m => m.width === v.width && m.height === v.height)) modes.unshift({ width: v.width, height: v.height, rates: [] });
+  const rates = [...new Set([...(modes.find(m => m.width === v.width && m.height === v.height)?.rates || []), v.refresh])].sort((a, b) => b - a);
+  const sel = (key, options, value) => `<select data-video="${key}">${options.map(([val, label]) => `<option value="${esc(val)}" ${String(val) === String(value) ? 'selected' : ''}>${esc(label)}</option>`).join('')}</select>`;
+  const row = (label, hint, control) => `<div class="setting"><label>${label}</label><div class="val note">${esc(hint)}</div>${control}</div>`;
+  const known = (list, value, label) => (list.some(([x]) => x === value) ? list : [...list, [value, label(value)]]);
+  return `${head}
+    <p class="settings-note">AC's video.ini in Documents; AC reads it when it starts. The first change keeps the original as video.ini.launcher-backup. Content Manager has the rest.</p>
+    ${row('Display', '', sel('fullscreen', [[1, 'Fullscreen'], [0, 'Windowed']], v.fullscreen ? 1 : 0))}
+    ${row('Resolution', '', sel('resolution', modes.map(m => [`${m.width}x${m.height}`, `${m.width} × ${m.height}`]), `${v.width}x${v.height}`))}
+    ${row('Refresh rate', '', sel('refresh', rates.map(r => [r, `${r} Hz`]), v.refresh))}
+    ${row('Vertical sync', 'Matches frames to the screen: no tearing, a little more input lag.', `<button class="toggle ${v.vsync ? 'on' : ''}" data-video-toggle="vsync"></button>`)}
+    ${row('Frame rate limit', '', sel('fps', known(FPS_LIMITS.map(n => [n, n ? `${n} FPS` : 'No limit']), v.fps, n => `${n} FPS`), v.fps))}
+    ${row('Anti-aliasing', 'MSAA: smoother edges, costs performance.', sel('aa', known(AA_LEVELS, v.aa, n => `${n}×`), v.aa))}
+    ${row('Anisotropic filtering', 'Sharper textures at an angle.', sel('aniso', known(ANISO_LEVELS, v.aniso, n => `${n}×`), v.aniso))}
+    ${row('Shadows', 'Shadow map resolution.', sel('shadows', known(SHADOW_SIZES, v.shadows, n => `${n} px`), v.shadows))}
+    ${await ppFilterRow().catch(err => { log(`settings pp filters: ${err?.message || err}`); return ''; })}
+  </div>`;
+}
+
+// AC's post-processing filter (ppfilters.js), a row of the Video group: a list of
+// the installed filters (Off = [POST_PROCESS] ENABLED=0), with Restore when the
+// chosen one has a backup and Uninstall (backed up, then Recycle Bin) unless it
+// comes with AC or with Pure.
+let shownPp = null;
+async function ppFilterRow() {
+  const pp = shownPp = await listPpFilters(state.paths);
+  const installed = pp.filters.filter(f => f.installed);
+  const current = pp.enabled ? installed.find(f => f.id.toLowerCase() === pp.active.toLowerCase()) : null;
+  const opt = f => `<option value="${esc(f.id)}" ${f === current ? 'selected' : ''}>${esc(f.id)}${f.author && !f.builtin && !f.owner ? ` · ${esc(f.author)}` : ''}</option>`;
+  const group = (label, list) => (list.length ? `<optgroup label="${label}">${list.map(opt).join('')}</optgroup>` : '');
+  const missing = pp.enabled && !current ? `<option selected>${esc(pp.active)} (missing)</option>` : '';
+  const select = `<select data-video="ppfilter"><option value="" ${pp.enabled ? '' : 'selected'}>Off</option>${missing}
+    ${group('Added', installed.filter(f => !f.builtin && !f.owner))}${group('Pure', installed.filter(f => f.owner))}${group('Assetto Corsa', installed.filter(f => f.builtin))}</select>`;
+  const last = current?.backups[0];
+  const btns = [
+    last && `<button class="btn small subtle" data-pp-restore="${esc(current.id)}" title="Puts back the version from ${esc(new Date(last.at).toLocaleString())}; the installed one is backed up first">Restore</button>`,
+    current && !current.builtin && !current.owner && `<button class="btn small danger" data-pp-uninstall="${esc(current.id)}" title="Backed up, then moved to the Recycle Bin">Uninstall</button>`,
+  ].filter(Boolean).join('');
+  return `<div class="setting"><label>Post-processing filter</label><div class="val note">Drop a filter's zip or .ini on the launcher to install it. Replacing or uninstalling one keeps a backup.</div><div class="btns">${select}${btns}</div></div>`;
+}
+
+async function runCspInstall() {
+  const pick = cspPicked();
+  if (!pick || state.cspInstalling) return;
+  const status = text => { state.cspInstalling = text; updateCspRow(); };
+  status('Backing up AC settings…');
+  try {
+    await createBackup('ac', state.paths).catch(err => log(`csp: backup before install failed: ${err?.message || err}`));
+    const version = await installCsp(state.paths, pick, p => status(
+      p.stage === 'download' ? `Downloading ${pick.version}… ${p.total ? `${Math.floor(p.done / p.total * 100)} %` : `${Math.round(p.done / 1048576)} MB`}`
+        : p.stage === 'extract' ? 'Unpacking…' : p.stage === 'copy' ? 'Copying into the AC folder…' : 'Finishing…'));
+    toast(`Custom Shaders Patch ${version} installed`);
+  } catch (err) {
+    toast(err.message || 'Could not install Custom Shaders Patch', true);
+  } finally {
+    state.cspInstalling = '';
+    if (state.view === 'settings') renderSettings();
+  }
+}
+
 async function renderSettings() {
+  const [cspGroup, videoGroup] = await Promise.all([
+    cspSettingsHTML().catch(err => { log(`settings csp: ${err?.message || err}`); return ''; }),
+    videoSettingsHTML().catch(err => { log(`settings video: ${err?.message || err}`); return ''; }),
+  ]);
   const rows = await Promise.all(PATH_SETTINGS.map(async s => {
     const v = s.get(state.paths);
     const ok = v && await exists(v);
@@ -2285,10 +2740,15 @@ async function renderSettings() {
       </div></div>`;
   }));
   if (state.view !== 'settings') return;
-  main.innerHTML = `<div class="view scaled"><div class="page">
+  // Drawn again after a change: same scroll position, no fade.
+  const again = $('#app').classList.contains('settings-mode') ? main.querySelector('.view.settings') : null;
+  const scroll = again?.scrollTop || 0;
+  $('#app').classList.add('settings-mode');
+  main.innerHTML = `<div class="view scaled settings ${again ? 'still' : ''}"><div class="page">
     <h1>Settings</h1>
     <p class="lead">Folders are detected from your Steam libraries. Override any of them if you moved things around.</p>
     <div class="settings-group"><h3>Game folders</h3>${rows.join('')}</div>
+    ${cspGroup}${videoGroup}
     <div class="settings-group"><h3>Game settings backups</h3>
       <p class="settings-note">Controls, graphics, audio, car setups and progress, never mods. The launcher also makes one automatically each week and keeps the last 4 automatic ones. <button class="link" data-act="open-backups">Open backups folder</button></p>
       ${backupRows.join('')}</div>
@@ -2306,8 +2766,11 @@ async function renderSettings() {
       <div class="setting"><label>Support</label><div class="val">The launcher is free. If you'd like to support it, you can buy me a coffee.</div><div class="btns"><button class="btn small primary" data-url="${KOFI_URL}">Support on Ko-fi ↗</button></div></div>
     </div>
   </div></div>`;
+  if (scroll) main.querySelector('.view').scrollTop = scroll;
 
   main.querySelector('.page').onclick = async e => {
+    // Any click but the picker's own button closes the CSP version list.
+    if (!e.target.closest('[data-act="csp-menu"]')) for (const m of main.querySelectorAll('.csp-menu')) m.hidden = true;
     const t = e.target.closest('button');
     if (!t) return;
     if (t.dataset.browse) {
@@ -2348,7 +2811,98 @@ async function renderSettings() {
       if (state.view === 'settings') renderSettings();
     } else if (t.dataset.restore) {
       openRestoreDialog(gameByKey(t.dataset.restore));
+    } else if (t.dataset.act === 'csp-menu') {
+      const menu = t.parentElement.querySelector('.csp-menu');
+      menu.hidden = !menu.hidden;
+      if (!menu.hidden) menu.querySelector('.sel')?.scrollIntoView({ block: 'nearest' });
+    } else if (t.dataset.cspVersion) {
+      state.cspPick = t.dataset.cspVersion;
+      updateCspRow();
+      if (!document.getElementById('csp-changes')?.hidden) showCspChanges();
+    } else if (t.dataset.act === 'csp-changes') {
+      const panel = document.getElementById('csp-changes');
+      if (panel && !panel.hidden) panel.hidden = true;
+      else showCspChanges();
+    } else if (t.dataset.act === 'csp-install') {
+      // Unstable versions and downgrades take a second click to confirm.
+      const pick = cspPicked(), downgrade = shownCsp?.installed && pick && compareVersions(pick.version, shownCsp.version) < 0;
+      if (pick && (pick.kind === 'unstable' || downgrade) && !t.dataset.armed) {
+        t.dataset.armed = '1';
+        t.textContent = pick.kind === 'unstable' ? `${pick.version} is marked buggy. Install anyway?` : `Downgrade to ${pick.version}? Your CSP settings stay.`;
+        return;
+      }
+      runCspInstall();
+    } else if (t.dataset.cspDeselect) {
+      try {
+        await deselectWeatherMod(state.paths, t.dataset.cspDeselect);
+        toast("Back to AC's Default weather style. It applies the next time AC starts.");
+      } catch (err) { toast(err.message || 'Could not save the setting', true); }
+      renderSettings();
+    } else if (t.dataset.cspUninstall) {
+      const name = t.dataset.cspUninstall === 'pure' ? 'Pure' : 'Sol';
+      if (!t.dataset.armed) { t.dataset.armed = '1'; t.textContent = `Uninstall ${name}?`; return; }
+      t.disabled = true; t.textContent = 'Uninstalling…';
+      try {
+        const n = await uninstallWeatherMod(state.paths, t.dataset.cspUninstall);
+        toast(`${name} uninstalled (${n} folders and files moved to the Recycle Bin)`);
+      } catch (err) { toast(err.message || `Could not uninstall ${name}`, true); }
+      renderSettings();
+    } else if (t.dataset.csp) {
+      const [file, section, key] = t.dataset.csp.split('|');
+      const on = !t.classList.contains('on');
+      try { await writeCspSetting(state.paths, file, section, key, on ? 1 : 0); t.classList.toggle('on', on); }
+      catch (err) { toast(err.message || 'Could not save the setting', true); }
+    } else if (t.dataset.cspUse) {
+      try {
+        await writeCspSetting(state.paths, 'weather_fx.ini', 'BASIC', 'IMPLEMENTATION', t.dataset.cspUse);
+        await writeCspSetting(state.paths, 'weather_fx.ini', 'BASIC', 'ENABLED', 1);
+        toast('Weather style set. It applies the next time AC starts.');
+      } catch (err) { toast(err.message || 'Could not save the setting', true); }
+      renderSettings();
+    } else if (t.dataset.ppUninstall) {
+      const id = t.dataset.ppUninstall;
+      if (!t.dataset.armed) { t.dataset.armed = '1'; t.textContent = `Uninstall ${id}?`; return; }
+      t.disabled = true; t.textContent = 'Uninstalling…';
+      try { await uninstallPpFilter(state.paths, id); toast(`${id} uninstalled. A backup is kept: Restore puts it back.`); }
+      catch (err) { toast(err.message || `Could not uninstall ${id}`, true); }
+      renderSettings();
+    } else if (t.dataset.ppRestore) {
+      const f = shownPp?.filters.find(x => x.id === t.dataset.ppRestore);
+      if (!f?.backups[0]) return;
+      t.disabled = true; t.textContent = 'Restoring…';
+      try { await restorePpFilter(state.paths, f.backups[0]); toast(`${f.id} restored from the backup of ${new Date(f.backups[0].at).toLocaleString()}`); }
+      catch (err) { toast(err.message || `Could not restore ${f.id}`, true); }
+      renderSettings();
+    } else if (t.dataset.videoToggle) {
+      const on = !t.classList.contains('on');
+      try { await writeVideo(state.paths, { [t.dataset.videoToggle]: on }); t.classList.toggle('on', on); }
+      catch (err) { toast(err.message || 'Could not save the setting', true); }
+    } else if (t.dataset.copy) {
+      const text = t.dataset.copy;
+      navigator.clipboard?.writeText(text).then(() => toast('Copied. Paste it in AC\'s Properties → Launch options in Steam.'), () => toast(text));
     }
+  };
+  main.querySelector('.page').onchange = async e => {
+    const s = e.target.closest('select');
+    if (!s) return;
+    try {
+      if (s.matches('[data-csp-style]')) {
+        await writeCspSetting(state.paths, 'weather_fx.ini', 'BASIC', 'IMPLEMENTATION', s.value);
+        renderSettings();
+      } else if (s.dataset.video === 'resolution') {
+        const [width, height] = s.value.split('x').map(Number);
+        const rates = (await displayModes()).find(m => m.width === width && m.height === height)?.rates || [];
+        const current = (await readVideo(state.paths))?.refresh;
+        await writeVideo(state.paths, { width, height, ...(rates.length && !rates.includes(current) ? { refresh: rates[0] } : {}) });
+        renderSettings();
+      } else if (s.dataset.video === 'ppfilter') {
+        // Off turns post-processing off; a filter turns it on.
+        await writeVideo(state.paths, s.value ? { filter: s.value, pp: true } : { pp: false });
+        renderSettings();
+      } else if (s.dataset.video) {
+        await writeVideo(state.paths, { [s.dataset.video]: Number(s.value) });
+      }
+    } catch (err) { toast(err.message || 'Could not save the setting', true); }
   };
 }
 
@@ -2391,7 +2945,7 @@ async function openRestoreDialog(g) {
 
 async function applyPaths() {
   saveSettings();
-  state.paths = await resolvePaths(state.installed, state.settings.overrides);
+  state.paths = await resolvePaths(state.installed, state.settings.overrides, state.steamPath);
   state.paths.steam = state.steamPath; // Steam screenshots (media.js)
   state.cache = {};
   renderSidebar();
@@ -2401,10 +2955,13 @@ async function applyPaths() {
 // ---------------------------------------------------------------------------
 // Routing / boot
 
-// Navbar highlight, and the game sidebar hidden on the Quick Drive page.
+// Navbar highlight, and the game sidebar hidden on the Quick Drive page and on
+// Settings (which cover every game). Settings drops it when its page is drawn
+// (renderSettings), so the page being left doesn't stretch while Settings loads.
 function syncChrome() {
   document.querySelectorAll('#nav button').forEach(b => b.classList.toggle('active', b.dataset.view === state.view));
   $('#app').classList.toggle('qd-mode', state.view === 'quickdrive');
+  if (state.view !== 'settings') $('#app').classList.remove('settings-mode');
 }
 
 function render() {
@@ -2478,7 +3035,7 @@ function openQuickDriveDialog() {
 // internet, so a small note says so. OFFLINE_NOTICE_PREVIEW shows it while online too.
 const OFFLINE_NOTICE_PREVIEW = false;
 async function checkOnline() {
-  const r = await run('curl.exe -s -I --max-time 6 -o NUL -w "%{http_code}" https://store.steampowered.com/');
+  const r = await run(`${CURL} -s -I --max-time 6 -o ${NULL_DEV} -w "%{http_code}" https://store.steampowered.com/`);
   return r.exitCode === 0 && /^[23]/.test(r.stdOut.trim());
 }
 function showOfflineNotice() {
@@ -2493,32 +3050,33 @@ function showOfflineNotice() {
   document.body.appendChild(el);
 }
 
-// A newer launcher on GitHub (appupdate.js): top-right offer to install it, skip
-// that version (not offered again) or close it (offered again next launch).
+// A newer launcher on GitHub (appupdate.js): a red bar along the bottom offers to
+// install it, skip that version (not offered again) or close it (offered again next
+// launch). While it shows, the page is that much shorter (fitToWindow), so it covers nothing.
 async function checkAppUpdate({ manual = false } = {}) {
   const rel = await latestRelease().catch(() => null);
   if (!rel || !isNewer(rel.version, window.NL_APPVERSION || '0')) return null;
   if (manual || state.settings.skipVersion !== rel.version) showUpdateOffer(rel, await isInstalledCopy());
   return rel;
 }
+const UPDATE_BAR_H = 50; // design px, as in app.css
 function showUpdateOffer(rel, installed) {
-  $('#app-update')?.remove();
+  $('#app-update-bar')?.remove();
   const el = document.createElement('div');
-  el.id = 'app-update';
-  el.innerHTML = `<div class="upd-text"><b>Assetto Launcher ${esc(rel.version)} is out</b>
-      <small>You have ${esc(window.NL_APPVERSION || '')}. <button class="link" data-u="notes">What's new ↗</button></small></div>
-    <div class="upd-btns">
-      <button class="btn small primary" data-u="install">${installed && rel.setup ? 'Install update' : 'Download ↗'}</button>
-      <button class="btn small subtle" data-u="skip">Skip this version</button>
-    </div>
-    <button class="net-close" data-u="close" title="Not now" aria-label="Not now"><svg viewBox="0 0 12 12"><path d="M2.5 2.5l7 7M9.5 2.5l-7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>`;
+  el.id = 'app-update-bar';
+  el.innerHTML = `<span class="upd-bar-text"><b>Assetto Launcher ${esc(rel.version)} is available.</b> You have ${esc(window.NL_APPVERSION || '')}.</span>
+    <button class="upd-bar-main" data-u="install">${installed && rel.setup ? 'Update now' : 'Download ↗'}</button>
+    <button class="upd-bar-link" data-u="notes">What's new ↗</button>
+    <button class="upd-bar-link" data-u="skip">Skip this version</button>
+    <button class="upd-bar-close" data-u="close" title="Not now" aria-label="Not now"><svg viewBox="0 0 12 12"><path d="M2.5 2.5l7 7M9.5 2.5l-7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>`;
+  const close = () => { el.remove(); fitToWindow(); };
   el.onclick = async e => {
     const b = e.target.closest('[data-u]');
     if (!b) return;
     const act = b.dataset.u;
     if (act === 'notes') openExternal(rel.page);
-    if (act === 'close') el.remove();
-    if (act === 'skip') { state.settings.skipVersion = rel.version; saveSettings(); el.remove(); }
+    if (act === 'close') close();
+    if (act === 'skip') { state.settings.skipVersion = rel.version; saveSettings(); close(); }
     if (act === 'install') {
       if (!installed || !rel.setup) { openExternal(rel.page); return; }
       b.disabled = true; b.textContent = 'Downloading…';
@@ -2529,11 +3087,12 @@ function showUpdateOffer(rel, installed) {
         setTimeout(() => Neutralino.app.exit(), 800);
       } catch (err) {
         toast(err.message || 'The update failed', true);
-        b.disabled = false; b.textContent = 'Install update';
+        b.disabled = false; b.textContent = 'Update now';
       }
     }
   };
   document.body.appendChild(el);
+  fitToWindow();
 }
 
 // Snapshot runs click through dialogs; they mustn't change the user's settings.
@@ -2542,7 +3101,7 @@ function saveSettings() { if (!state.snapshotRun) storageSet('settings', state.s
 async function detect() {
   state.steamPath = await findSteamPath();
   state.installed = await findInstalledApps(state.steamPath);
-  state.paths = await resolvePaths(state.installed, state.settings.overrides);
+  state.paths = await resolvePaths(state.installed, state.settings.overrides, state.steamPath);
   state.paths.steam = state.steamPath; // Steam screenshots (media.js)
   state.cache = {};
   checkGameUpdates();
@@ -2552,23 +3111,27 @@ async function detect() {
 
 // Scale the 1920x991 design canvas to the window. The canvas keeps Figma pixel
 // sizes; extra width or height in the window becomes extra canvas space.
-// The UI is laid out on the 1920x991 design canvas, zoomed to fit the startup
-// window. A bigger window (maximized or resized) keeps that zoom and gets more
-// room instead: the navbar, sidebar, buttons and news cards stay the same size,
-// the hero image grows and the mod grids get more columns. Smaller windows zoom out.
+// The UI is laid out on the 1920x991 design canvas, zoomed to fit the smallest
+// (and default) window, MIN_WIN. A bigger window (maximized or resized) keeps that
+// zoom and gets more room instead: the navbar, sidebar, buttons and news cards stay
+// the same size, the hero image grows and the mod grids get more columns. Smaller
+// windows zoom out. The zoom comes from MIN_WIN, not from the window at startup:
+// the window reopens at its last size, maximized too, which would make it bigger.
 const DESIGN_W = 1920, DESIGN_H = 991;
-let baseZoom = 0;
+// k: window px per CSS px (Windows display scaling); devicePixelRatio until the
+// window's real size is known (setupWindow).
+const minWindowZoom = k => Math.min(MIN_WIN.width / k / DESIGN_W, MIN_WIN.height / k / DESIGN_H);
+let baseZoom = minWindowZoom(window.devicePixelRatio || 1);
 function fitToWindow() {
   const fit = Math.min(innerWidth / DESIGN_W, innerHeight / DESIGN_H);
-  if (!baseZoom && fit > 0.3) baseZoom = fit;
-  const z = Math.min(fit, baseZoom || fit);
+  const z = fit > 0 ? Math.min(fit, baseZoom) : baseZoom;
   document.body.style.zoom = z;
   // The home page's logo and text grow with the extra room (a little less than it).
   const grow = Math.min(innerWidth / z / DESIGN_W, innerHeight / z / DESIGN_H);
   document.documentElement.style.setProperty('--hero-scale', (1 + Math.max(0, grow - 1) * 0.75).toFixed(3));
   const root = document.documentElement.style;
   root.setProperty('--app-w', `${innerWidth / z}px`);
-  root.setProperty('--app-h', `${innerHeight / z}px`);
+  root.setProperty('--app-h', `${innerHeight / z - ($('#app-update-bar') ? UPDATE_BAR_H : 0)}px`);
 }
 fitToWindow();
 window.addEventListener('resize', fitToWindow);
@@ -2580,9 +3143,12 @@ async function setupWindow() {
   $('#titlebar').ondblclick = e => { if (!e.target.closest('button')) $('#win-max').click(); };
   windowGrips();
   await dropResizeFrame();
+  try {
+    const k = (await Neutralino.window.getSize()).width / outerWidth;
+    if (k > 0.5 && k < 5) { baseZoom = minWindowZoom(k); fitToWindow(); }
+  } catch (err) { log(`window scale: ${JSON.stringify(err)}`); }
   syncMaximized();
   window.addEventListener('resize', syncMaximized);
-  roundCorners();
   try {
     await Neutralino.window.setDraggableRegion('titlebar', { exclude: [$('#nav'), $('.win-controls')] });
   } catch (e) { log(`drag region failed ${JSON.stringify(e)}`); }
@@ -2610,6 +3176,8 @@ Neutralino.events.on('ready', async () => {
     const snapArg = (window.NL_ARGS || []).find(a => a.startsWith('--snapshots='));
     if (snapArg) { state.snapshotRun = true; runSnapshots(snapArg.slice('--snapshots='.length)); }
     else setTimeout(() => autoBackups(GAMES.filter(isInstalled).map(g => g.key), state.paths), 15000);
+    // The display's modes take a PowerShell / xrandr call; asked early so Settings opens at once.
+    if (state.paths?.ac.install) setTimeout(() => displayModes().catch(() => {}), 4000);
     const importArg = (window.NL_ARGS || []).find(a => a.startsWith('--import-test='));
     if (importArg) import('./dev-import-test.js').then(m => m.runImportTest(importArg.slice('--import-test='.length)));
   } catch (e) {
@@ -2629,6 +3197,43 @@ async function runSnapshots(dir) {
     await snap(`${prefix}-session-race`);
     $('.qd-sheet [data-done]')?.click();
   };
+  // --check-livery=<dir>: Rally car detection on copies laid out as <dir>\<CorrectCar>\<livery>\ (read only).
+  const liveryArg = (window.NL_ARGS || []).find(a => a.startsWith('--check-livery='));
+  if (liveryArg) {
+    const dir = norm(liveryArg.slice('--check-livery='.length)), ids = await rallyCarIds(state.paths);
+    let t = performance.now();
+    const { guessLiveryCar } = await import('./rallylivery.js');
+    for (const car of (await listDir(dir)).filter(e => e.type === 'DIRECTORY' && !e.entry.startsWith('.'))) {
+      for (const l of (await listDir(join(dir, car.entry))).filter(e => e.type === 'DIRECTORY' && !e.entry.startsWith('.'))) {
+        const g = await guessLiveryCar(join(dir, car.entry, l.entry), state.paths, ids).catch(err => ({ error: err?.message || String(err) }));
+        const ok = g?.car?.toLowerCase() === car.entry.toLowerCase();
+        log(`check-livery ${car.entry}/${l.entry}: ${g?.error ? `error ${g.error}` : `${ok ? 'RIGHT' : 'WRONG'} ${g?.car || '-'} ${g?.sure ? 'sure' : 'unsure'} likely ${g?.likely?.join(',')}`} ${Math.round(performance.now() - t)}ms`);
+        t = performance.now();
+      }
+    }
+    await Neutralino.app.exit();
+    return;
+  }
+  // --preview-update: the update bar with a made-up newer version.
+  if ((window.NL_ARGS || []).includes('--preview-update')) {
+    showUpdateOffer({ version: '0.3.0', page: '', setup: 'preview' }, true);
+    state.game = 'ac'; renderSidebar(); state.view = 'games'; render(); await snap('update-bar-games');
+    state.view = 'mods'; render(); await snap('update-bar-mods');
+    const h = () => getComputedStyle(document.documentElement).getPropertyValue('--app-h');
+    log(`preview-update: page height ${h()} with the bar`);
+    $('#app-update-bar [data-u="close"]').click();
+    log(`preview-update: page height ${h()} after closing it`);
+    await Neutralino.app.exit();
+    return;
+  }
+  // --check-zoom: the zoom and window size at startup (the same at any startup size, maximized or not).
+  if ((window.NL_ARGS || []).includes('--check-zoom')) {
+    await wait(1500);
+    log(`check-zoom: maximized ${await Neutralino.window.isMaximized()}, inner ${innerWidth}x${innerHeight}, dpr ${devicePixelRatio}, zoom ${document.body.style.zoom}`);
+    await snap('check-zoom');
+    await Neutralino.app.exit();
+    return;
+  }
   // --maximize: a short pass in a maximized window (layout with more room than the canvas).
   if ((window.NL_ARGS || []).includes('--maximize')) {
     await Neutralino.window.maximize(); await wait(1000);
@@ -2649,6 +3254,76 @@ async function runSnapshots(dir) {
       await installUpdate({ name: 'check13-LICENSE.txt', url: 'https://github.com/Zelbrad/AssettoLauncher/raw/main/LICENSE', sha256: '00' });
       log('check13 install: NOT refused');
     } catch (err) { log(`check13 install refused: ${err.message}`); }
+    await Neutralino.app.exit();
+    return;
+  }
+  // --check14: Assetto Corsa's CSP and video settings and the AC session sheet
+  // (WeatherFX weather, 24 hours, date, wind, assists). Writes nothing.
+  if ((window.NL_ARGS || []).includes('--check14')) {
+    const csp = await readCsp(state.paths);
+    log(`check14 csp: ${JSON.stringify({ ...csp, styles: csp.styles.map(s => s.id), controllers: csp.controllers.map(c => `${c.id}:${c.followsWeather}`) })}`);
+    const versions = await cspVersions();
+    log(`check14 versions: ${versions?.list.map(v => `${v.version}:${v.kind}`).join(' ')}; latest ${versions?.latest}; stable ${versions?.recommended}`);
+    const info = await cspVersionInfo('0.2.10');
+    log(`check14 info 0.2.10: build ${info?.build}, ${info?.changes.length} items, first ${JSON.stringify(info?.changes.slice(0, 3))}`);
+    const { weatherModFiles } = await import('./csp.js');
+    log(`check14 pure files: ${(await weatherModFiles(state.paths, 'pure')).join(' | ')}; sol files: ${(await weatherModFiles(state.paths, 'sol')).join(' | ')}`);
+    log(`check14 video ${JSON.stringify(await readVideo(state.paths))}; modes ${(await displayModes()).slice(0, 4).map(m => `${m.width}x${m.height}@${m.rates.join('/')}`).join(' ')}`);
+    // Games -> Settings: the sidebar stays until Settings is drawn, then both change in one frame.
+    state.view = 'games'; render(); await wait(2500);
+    const t0 = performance.now();
+    $('#nav [data-view="settings"]').click();
+    const atClick = $('#app').classList.contains('settings-mode');
+    await new Promise(res => { const tick = () => (main.querySelector('.view.settings') ? res() : requestAnimationFrame(tick)); tick(); });
+    log(`check14 to settings: sidebar hidden at click ${atClick}, drawn after ${Math.round(performance.now() - t0)}ms, sidebar hidden then ${$('#app').classList.contains('settings-mode')}`);
+    await wait(1000);
+    main.querySelector('.view').scrollTop = 900;
+    await renderSettings();
+    log(`check14 redraw: scroll ${main.querySelector('.view').scrollTop}, still ${main.querySelector('.view').classList.contains('still')}`);
+    main.querySelector('.view').scrollTop = 0;
+    const group = [...document.querySelectorAll('.settings-group h3')].find(h => /Custom Shaders/.test(h.textContent));
+    group?.scrollIntoView(); await snap('check14-settings-csp');
+    $('#csp-row [data-act="csp-menu"]')?.click(); await snap('check14-csp-picker');
+    $('#csp-row [data-act="csp-changes"]')?.click(); await wait(1500);
+    log(`check14 version list after What's new: ${[...document.querySelectorAll('.csp-menu')].map(m => getComputedStyle(m).display).join(',')}`);
+    for (const el of [main, $('#main .view')]) if (el) el.scrollTop += 1; // repaint before the snapshot
+    await snap('check14-csp-changes');
+    $('#csp-row [data-act="csp-changes"]')?.click();
+    for (const el of [main, $('#main .view')]) if (el) el.scrollTop = [...document.querySelectorAll('.settings-group')].find(g => /Video/.test(g.textContent))?.offsetTop || 0;
+    await snap('check14-settings-video');
+    const ppl = await listPpFilters(state.paths);
+    log(`check14 pp filters: active ${ppl.active}, enabled ${ppl.enabled}; ${ppl.filters.map(f => `${f.id}${f.builtin ? '(ac)' : f.owner ? `(${f.owner})` : ''}`).join(' ')}`);
+    const ppRow = $('[data-video="ppfilter"]')?.closest('.setting');
+    log(`check14 pp row: ${ppRow ? [...ppRow.querySelectorAll('option, optgroup')].map(o => o.label || o.textContent).join(' | ') : 'missing'}`);
+    for (const el of [main, $('#main .view')]) if (el) el.scrollTop = Math.max(0, (ppRow?.offsetTop || 0) - 400);
+    await snap('check14-settings-pp');
+    state.game = 'ac'; renderSidebar(); openQuickDriveDialog(); await wait(4000);
+    $('#main .qd-session-btn')?.click(); await snap('check14-session');
+    const body = $('.qd-sheet-body');
+    if (body) { body.scrollTop = body.scrollHeight; await snap('check14-session-bottom'); }
+    $('.qd-sheet [data-done]')?.click();
+    await Neutralino.app.exit();
+    return;
+  }
+  // --check15: CSP install end to end (acstuff.club download, unpack, copy,
+  // installed.log) into <snapshots>/csp-sandbox instead of the real AC folder.
+  if ((window.NL_ARGS || []).includes('--check15')) {
+    const ac = `${norm(dir)}/csp-sandbox`;
+    await Neutralino.filesystem.remove(ac).catch(() => {});
+    await Neutralino.filesystem.createDirectory(ac).catch(() => {});
+    await Neutralino.filesystem.writeFile(`${ac}/acs.exe`, '');
+    const sandbox = { ac: { install: ac, content: `${ac}/content`, cfg: `${ac}/cfg` } };
+    const versions = await cspVersions();
+    const latest = versions?.list.find(v => v.version === versions.recommended);
+    log(`check15 latest ${JSON.stringify(latest)}`);
+    let last = '';
+    const t0 = Date.now();
+    try {
+      const v = await installCsp(sandbox, latest, p => { const s = p.stage === 'download' ? `download ${p.total ? Math.floor(p.done / p.total * 10) * 10 : 0}%` : p.stage; if (s !== last) log(`check15 ${s} at ${Date.now() - t0} ms`); last = s; });
+      const csp = await readCsp(sandbox);
+      const logText = await Neutralino.filesystem.readFile(`${ac}/extension/installed.log`);
+      log(`check15 installed ${v} in ${Date.now() - t0} ms; readCsp ${csp.installed} ${csp.version} ${csp.build}, styles ${csp.styles.map(s => s.id)}; log lines ${logText.split('\n').length}; head ${JSON.stringify(logText.split('\n').slice(2, 6))}`);
+    } catch (err) { log(`check15 failed: ${err?.message || err}`); }
     await Neutralino.app.exit();
     return;
   }
@@ -2718,6 +3393,10 @@ async function runSnapshots(dir) {
     $('#main [data-car="LanciaStratosHF"]')?.click(); await wait(300);
     [...document.querySelectorAll('#qd-tracks [data-track]')].find(b => b.dataset.track === 'Greece')?.click();
     await snap('check8-rally');
+    // The livery hint's popup, shown as on hover.
+    const tipStyle = document.createElement('style');
+    tipStyle.textContent = '.qd-variant-hint::after { opacity: 1 !important; transform: none !important; }';
+    document.head.append(tipStyle); await wait(300); await snap('check8-rally-hint'); tipStyle.remove();
     log(`rally: ${$('#main .qd-panel-head h3 small')?.textContent} | tracks ${[...document.querySelectorAll('#qd-tracks [data-track] b')].map(b => b.textContent).join(', ')} | greece ${document.querySelectorAll('#qd-layouts [data-layout]').length} | liveries ${[...document.querySelectorAll('.qd-variant')].map(b => b.title).join(' | ')}`);
     openQuickDriveFor('acc'); await wait(5000); await snap('check8-acc');
     state.game = 'ac'; state.tab.ac = 'replays'; renderSidebar(); state.view = 'mods'; render(); await wait(3000); await snap('check8-ac-replays');
@@ -2836,6 +3515,33 @@ async function runSnapshots(dir) {
     log(`992 cup configs: ${JSON.stringify(known.find(k => k.carId === 'ks_porsche_992_gt3_cup')?.configs)}`);
     await openQuickDriveFor('evo', { car: cup }); await wait(8000); await snap('check2-evo-cup');
     log(`cup variants: ${[...document.querySelectorAll('.qd-variant')].map(b => b.title).join(' | ')}`);
+    log(`cup flag: ${$('#qd-cars .active .flag.kunos')?.textContent}; spec ${$('.qd-spec-btn')?.textContent.trim()}; specs ${[...document.querySelectorAll('[data-spec]')].map(b => b.textContent).join(' | ')}`);
+    $('[data-spec-menu]')?.click(); await wait(300); await snap('check2-evo-cup-specs');
+    [...document.querySelectorAll('[data-spec]')].find(b => !b.classList.contains('active'))?.click(); await wait(500);
+    log(`cup selected: ${$('#qd-cars .active')?.dataset.car}`);
+    log(`cup after spec switch: menu hidden ${$('.qd-spec-menu')?.hidden}; ${$('.qd-spec-btn')?.title} | ${[...document.querySelectorAll('.qd-variant')].map(b => `${b.disabled ? '(off) ' : ''}${b.title}`).join(' | ')} | summary ${$('#qd-summary small')?.textContent}`);
+    await snap('check2-evo-cup-switched');
+    // Another car: its liveries on the first draw (cached names, no preset ids) and after loading.
+    const m2 = [...document.querySelectorAll('#qd-cars [data-car]')].find(b => /m2/i.test(b.dataset.car));
+    if (m2) {
+      m2.click();
+      log(`m2 (${m2.dataset.car}) first draw: ${[...document.querySelectorAll('.qd-variant')].map(b => b.title).join(' | ')}; spec ${$('.qd-spec-btn')?.title || '-'}`);
+      await wait(4000);
+      log(`m2 after 4s: ${[...document.querySelectorAll('.qd-variant')].map(b => b.title).join(' | ')}; spec ${$('.qd-spec-btn')?.title || '-'}; specs ${[...document.querySelectorAll('[data-spec]')].map(b => b.textContent).join(' | ')}`);
+      // A livery shown with another spec: clicking it switches the spec.
+      const other = [...document.querySelectorAll('.qd-variant')].find(b => !b.classList.contains('active'));
+      other?.click();
+      log(`m2 picked "${other?.title}": spec now ${$('.qd-spec-btn')?.title || '-'}, summary ${$('#qd-summary small')?.textContent}`);
+    }
+    // A car whose liveries aren't decoded yet: they load into the row while the car grid stays (no redraw).
+    for (const b of [...document.querySelectorAll('#qd-cars [data-car]')].filter(x => !x.querySelector('.flag.off'))) {
+      b.click();
+      if (![...document.querySelectorAll('.qd-variant')].some(v => /Loading/.test(v.title))) continue;
+      const cards = [...document.querySelectorAll('#qd-cars [data-car]')];
+      await wait(6000);
+      log(`uncached ${b.dataset.car}: grid kept ${cards.every(c => c.isConnected)}; row ${[...document.querySelectorAll('.qd-variant')].map(v => v.title).join(' | ')}`);
+      break;
+    }
     $('#modal-root [data-close]')?.click();
     state.game = 'ac'; state.tab.ac = 'cars'; renderSidebar(); render(); await wait(1500);
     const rail = $('#mods-brands'); if (rail) rail.scrollTop = rail.scrollHeight;

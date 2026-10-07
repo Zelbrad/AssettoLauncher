@@ -8,6 +8,19 @@ export const basename = p => norm(p).split('/').pop();
 
 export const log = msg => { try { Neutralino.debug.log(String(msg)); } catch { /* not ready */ } };
 
+// Windows runs the games natively; Linux runs them through Steam's Proton, so
+// their user folders live in each game's Wine prefix (see games.js) and the
+// helpers below use sh, pgrep and xdg-open instead of PowerShell.
+export const IS_LINUX = typeof NL_OS !== 'undefined' && NL_OS === 'Linux';
+export const CURL = IS_LINUX ? 'curl' : 'curl.exe';
+export const NULL_DEV = IS_LINUX ? '/dev/null' : 'NUL';
+// POSIX single quotes; an embedded ' becomes '"'"' (no backslashes: see run()).
+export const shQuote = s => `'${String(s).replace(/'/g, `'"'"'`)}'`;
+
+// Game save folders resolved by resolvePaths (games.js), for modules that
+// aren't handed the paths object: { evo: '<Saved Games>/ACE' }.
+export const userRoots = {};
+
 export async function exists(path) {
   try { await Neutralino.filesystem.getStats(norm(path)); return true; } catch { return false; }
 }
@@ -185,20 +198,82 @@ export function powershellEncoded(script, opts) {
   return Neutralino.os.execCommand(`powershell -NoProfile -NonInteractive -WindowStyle Hidden -EncodedCommand ${btoa(bin)}`, opts);
 }
 
+// Linux: a POSIX shell command (execCommand runs it through /bin/sh).
+export function sh(script, opts) {
+  return Neutralino.os.execCommand(script, opts);
+}
+
 export async function openFolder(path) {
-  await powershell(`Invoke-Item -LiteralPath ${psQuote(path)}`, { background: true });
+  if (IS_LINUX) await sh(`xdg-open ${shQuote(norm(path))} </dev/null >/dev/null 2>&1 &`);
+  else await powershell(`Invoke-Item -LiteralPath ${psQuote(path)}`, { background: true });
+}
+
+// Whether a game's process is running; name without ".exe". Under Proton the
+// command line holds the Windows exe path, e.g. "Z:\...\acs.exe".
+export async function isProcessRunning(name) {
+  if (IS_LINUX) {
+    const r = await sh(`pgrep -i -f ${shQuote(`(^|[^a-z0-9_-])${name}[.]exe`)}`);
+    return r.exitCode === 0 && r.stdOut.trim() !== '';
+  }
+  const r = await powershell(`(Get-Process ${name} -ErrorAction SilentlyContinue | Measure-Object).Count`);
+  return Number(r.stdOut.trim()) > 0;
+}
+
+export async function removeDirTree(path) {
+  const r = IS_LINUX
+    ? await sh(`rm -rf -- ${shQuote(norm(path))}`)
+    : await powershell(`Remove-Item -LiteralPath ${psQuote(path)} -Recurse -Force`);
+  return r.exitCode === 0;
+}
+
+// Upper-case hex SHA-256 of a file, or '' when it can't be read.
+export async function sha256File(path) {
+  const r = IS_LINUX
+    ? await sh(`sha256sum -- ${shQuote(norm(path))}`)
+    : await powershell(`(Get-FileHash -Algorithm SHA256 -LiteralPath ${psQuote(path)}).Hash`);
+  return (r.stdOut.trim().split(/\s+/)[0] || '').toUpperCase();
 }
 
 // Windows 10+ ships bsdtar (libarchive) as System32\tar.exe; it reads zip, 7z,
-// rar and rar5, so the launcher doesn't need to bundle an extractor.
+// rar and rar5, so the launcher doesn't need to bundle an extractor. Linux uses
+// whichever of bsdtar, 7-Zip, unzip or unrar is installed.
 export async function extractArchive(archive, dest) {
-  const r = await powershell(`& (Join-Path $env:SystemRoot 'System32/tar.exe') -xf ${psQuote(archive)} -C ${psQuote(dest)} 2>&1 | Out-String -Width 400; exit $LASTEXITCODE`);
+  // Windows: characters outside the system code page (Polish ź, Czech ř…) don't
+  // survive the command line to tar.exe ("Rzeźnik.zip" arrives as "Rzeznik.zip"),
+  // so such an archive is extracted from a plain-named copy next to dest.
+  let src = norm(archive), copy = '';
+  if (!IS_LINUX && /[^\x20-\x7e]/.test(src)) {
+    copy = `${norm(dest).replace(/\/[^/]*$/, '')}/archive-${Date.now().toString(36)}.${src.split('.').pop()}`;
+    await Neutralino.filesystem.copy(src, copy, { overwrite: true });
+    src = copy;
+  }
+  let r;
+  try {
+    r = IS_LINUX
+      ? await extractLinux(src, norm(dest))
+      : await powershell(`& (Join-Path $env:SystemRoot 'System32/tar.exe') -xf ${psQuote(src)} -C ${psQuote(dest)} 2>&1 | Out-String -Width 400; exit $LASTEXITCODE`);
+  } finally {
+    if (copy) await Neutralino.filesystem.remove(copy).catch(() => {});
+  }
   if (r.exitCode !== 0) {
     const out = r.stdOut + r.stdErr;
-    if (/encrypt/i.test(out)) throw new Error('the archive is password-protected. Extract it with WinRAR or 7-Zip first, then drop the files.');
-    const msg = out.split(/\r?\n/).map(s => s.replace(/^tar(\.exe)?:\s*/i, '').trim()).filter(s => s && !/^Error exit delayed/i.test(s))[0];
+    if (/encrypt|password/i.test(out)) throw new Error('the archive is password-protected. Extract it with an archive manager first, then drop the files.');
+    const msg = out.split(/\r?\n/).map(s => s.replace(/^(bsd)?tar(\.exe)?:\s*/i, '').trim()).filter(s => s && !/^Error exit delayed/i.test(s))[0];
     throw new Error(msg || `could not extract ${basename(archive)}`);
   }
+}
+
+async function extractLinux(archive, dest) {
+  const have = async tool => (await sh(`command -v ${tool}`)).exitCode === 0;
+  // stdin closed, so a password prompt fails instead of waiting forever.
+  const x = cmd => sh(`${cmd} </dev/null 2>&1`);
+  const a = shQuote(archive), d = shQuote(dest);
+  if (await have('bsdtar')) return x(`bsdtar -xf ${a} -C ${d}`);
+  for (const z of ['7zz', '7z', '7za']) if (await have(z)) return x(`${z} x -y -p- -o${d} ${a}`);
+  if (/\.zip$/i.test(archive) && await have('unzip')) return x(`unzip -o -q ${a} -d ${d}`);
+  if (/\.rar$/i.test(archive) && await have('unrar')) return x(`unrar x -o+ -p- ${a} ${shQuote(`${dest}/`)}`);
+  if (/\.(tar(\.(gz|bz2|xz))?|tgz)$/i.test(archive)) return x(`tar -xf ${a} -C ${d}`);
+  return { exitCode: 1, stdOut: '', stdErr: 'no extractor found: install bsdtar (libarchive-tools) or 7-Zip (p7zip), then try again.' };
 }
 
 // Creates a folder and any missing parents.
@@ -211,7 +286,17 @@ export async function ensureDir(path) {
   }
 }
 
+// Starts a program detached. On Linux, steam.exe means the native `steam`
+// client; Windows game exes go through runWithProton (steam.js) instead.
 export async function startProcess(exe, cwd, args = []) {
+  if (IS_LINUX) {
+    const steam = /(^|\/)steam\.exe$/i.test(norm(exe));
+    if (!steam && /\.exe$/i.test(exe)) throw new Error(`${basename(exe)} is a Windows program: it has to run through Proton`);
+    const cmd = [steam ? 'steam' : shQuote(norm(exe)), ...args.map(a => shQuote(a))].join(' ');
+    const r = await sh(`cd ${shQuote(norm(cwd) || '/')} && nohup ${cmd} </dev/null >/dev/null 2>&1 &`);
+    if (r.exitCode !== 0) throw new Error(r.stdErr?.trim() || `Could not start ${basename(exe)}`);
+    return;
+  }
   const argList = args.length ? ` -ArgumentList ${args.map(a => `'${String(a).replace(/'/g, "''")}'`).join(',')}` : '';
   const r = await powershell(`Start-Process -FilePath ${psQuote(exe)} -WorkingDirectory ${psQuote(cwd)}${argList}`);
   if (r.exitCode !== 0) throw new Error(r.stdErr.trim() || `Could not start ${basename(exe)}`);

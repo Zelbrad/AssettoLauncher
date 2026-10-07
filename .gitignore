@@ -12,3 +12,6 @@ neutralinojs.log
 *.fig
 ACL.png
 ACRCover.png
+
+# README screenshots (uploaded to GitHub separately)
+docs/screenshots/

@@ -12,7 +12,7 @@
 //   globalSeasonTrackName[season], globalOpponentCount/Skill/Aggro, globalPositionOnGrid
 //   weatherType                                EWeatherPresetType: Sunny, Cloudy, LightRain, MediumRain, HeavyRain, ThunderStorm, Random
 // Mode names are ACC's EGuiGameModes values; track ids are those of the ACC server.
-import { join, exists, listDir, readTextAnyEncoding, parseLooseJson, fileUrl, mountDir, log, powershell } from './util.js';
+import { join, exists, listDir, readTextAnyEncoding, parseLooseJson, fileUrl, mountDir, log, isProcessRunning } from './util.js';
 
 export const ACC_TRACKS = [
   ['barcelona', 'Barcelona', 'Spain'], ['brands_hatch', 'Brands Hatch', 'United Kingdom'], ['cota', 'Circuit of the Americas', 'USA'],
@@ -216,8 +216,7 @@ export const accSeasonOwned = (season, owned) => inOwned(ACC_DLC_SEASONS, season
 export const accModelClass = id => id >= 80 ? 'GT2' : id >= 50 ? 'GT4' : ({ 9: 'Cup', 28: 'Cup', 18: 'Super Trofeo', 29: 'Super Trofeo', 26: 'Challenge', 27: 'TCX' })[id] || 'GT3';
 
 export async function isAccRunning() {
-  const r = await powershell('(Get-Process AC2-Win64-Shipping -ErrorAction SilentlyContinue | Measure-Object).Count');
-  return Number(r.stdOut.trim()) > 0;
+  return isProcessRunning('AC2-Win64-Shipping');
 }
 
 // Write the session into ACC's menu settings. `car` is a custom car file name
