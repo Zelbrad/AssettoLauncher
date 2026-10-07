@@ -4,7 +4,7 @@ I started this project roughly a year ago with a design in mind, made in Figma. 
 
 This is basically just a launcher where you can see all your installed mods from any Assetto Corsa game, and on top of that you can start races with a predefined car and track, like in Content Manager. For the games that aren't the original Assetto Corsa, the car and track are added to a save file, so that when you go into the game after choosing them and launching the game through the launcher, it'll set them as the default. So you already have everything selected. For some games, you can even change the time, weather, opponents and more.
 
-Support for Linux will come with 0.2.0 (comming soon)
+Support for Linux has come with v0.2.0. Still in beta stage until it is fully polished
 
 Personally, I really like the project, and I hope the community does too.
 
