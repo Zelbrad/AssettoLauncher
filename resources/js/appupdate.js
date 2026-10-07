@@ -1,12 +1,12 @@
 // Launcher updates from the GitHub repo's Releases. At startup (online, in the
 // background) the latest release is compared with this version; a newer one
-// offers Install / Skip this version / later (main.js, showUpdateOffer).
+// offers Update now / Skip this version / later in a bar along the bottom (main.js, showUpdateOffer).
 //   Install (installed copies): downloads the release's Assetto-Launcher-Setup-*.exe,
 //     checks its SHA-256 against the one GitHub lists for the file, runs it silently
 //     and quits; the installer updates in place (settings kept) and starts the
 //     launcher again (build/installer.iss).
 //   Portable copies (the zip) can't replace themselves: they open the release page.
-import { run, log, join, exists, psQuote, powershell, startProcess, norm } from './util.js';
+import { run, log, join, exists, startProcess, norm, CURL, IS_LINUX, sha256File } from './util.js';
 
 export const REPO = 'Zelbrad/AssettoLauncher';
 const API = `https://api.github.com/repos/${REPO}/releases/latest`;
@@ -23,7 +23,7 @@ export function isNewer(candidate, current) {
 // { version, notes, page, setup: { name, url, size, sha256 } | null } or null
 // (no release yet, offline, or GitHub's hourly limit for anonymous calls).
 export async function latestRelease() {
-  const r = await run(`curl.exe -s -L --max-time 8 -H "Accept: application/vnd.github+json" -H "User-Agent: AssettoLauncher" ${API}`);
+  const r = await run(`${CURL} -s -L --max-time 8 -H "Accept: application/vnd.github+json" -H "User-Agent: AssettoLauncher" ${API}`);
   if (r.exitCode !== 0) return null;
   let j;
   try { j = JSON.parse(r.stdOut); } catch { return null; }
@@ -40,6 +40,7 @@ export async function latestRelease() {
 // Installed by the setup (it leaves its uninstaller next to the exe), so a new
 // setup can update it; otherwise it's the portable zip.
 export async function isInstalledCopy() {
+  if (IS_LINUX) return false; // Linux builds are portable: the release page has them
   let dir = window.NL_PATH;
   try { dir = await Neutralino.filesystem.getAbsolutePath(dir); } catch { /* keep */ }
   return exists(join(dir, 'unins000.exe'));
@@ -50,11 +51,10 @@ export async function installUpdate(setup) {
   const temp = norm(await Neutralino.os.getEnv('TEMP'));
   const file = join(temp, setup.name.replace(/[^\w.-]/g, '_'));
   if (!/^https:\/\/github\.com\//i.test(setup.url)) throw new Error('Unexpected download address');
-  const dl = await run(`curl.exe -s -L -f --max-time 300 -o "${file}" "${setup.url}"`);
+  const dl = await run(`${CURL} -s -L -f --max-time 300 -o "${file}" "${setup.url}"`);
   if (dl.exitCode !== 0) throw new Error('The download failed. Check your connection and try again.');
   if (setup.sha256) {
-    const h = await powershell(`(Get-FileHash -Algorithm SHA256 -LiteralPath ${psQuote(file)}).Hash`);
-    const got = h.stdOut.trim().toLowerCase();
+    const got = (await sha256File(file)).toLowerCase();
     if (got !== setup.sha256) {
       await Neutralino.filesystem.remove(file).catch(() => {});
       log(`update: hash mismatch ${got} vs ${setup.sha256}`);

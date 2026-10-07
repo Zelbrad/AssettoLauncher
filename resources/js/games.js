@@ -4,9 +4,11 @@
 //     isMod, enabled, path, url, version, meta }
 import {
   join, norm, basename, listDir, readText, readTextAnyEncoding, parseLooseJson,
-  cleanText, prettifyId, mapLimit, mountDir, fileUrl, exists, log, ensureDir as ensureDirs,
+  cleanText, prettifyId, mapLimit, mountDir, fileUrl, exists, log, ensureDir as ensureDirs, IS_LINUX, userRoots, storageGet, storageSet,
 } from './util.js';
+import { compatDataDir } from './steam.js';
 import { readModInfo, pruneCache, readEvoCatalog } from './kspkg.js';
+import { readRallyContent, rallyFileStages } from './rallyfiles.js';
 import { ddsThumbnail } from './dds.js';
 import { scanScreenshots, scanReplays, mediaFolders } from './media.js';
 
@@ -42,25 +44,41 @@ export const gameByKey = key => GAMES.find(g => g.key === key);
 // ---------------------------------------------------------------------------
 // Paths
 
+// The Windows user folders a game writes to (Documents, Saved Games,
+// AppData\Local). On Linux each Proton game has its own, inside its prefix:
+// steamapps/compatdata/<appid>/pfx/drive_c/users/steamuser.
+async function userDirs(appid, installed, steamPath) {
+  if (!IS_LINUX) {
+    const home = norm(await Neutralino.os.getEnv('USERPROFILE'));
+    let docs = home + '/Documents';
+    try { docs = norm(await Neutralino.os.getPath('documents')); } catch { /* default */ }
+    const local = norm(await Neutralino.os.getEnv('LOCALAPPDATA').catch(() => '')) || home + '/AppData/Local';
+    return { docs, saved: join(home, 'Saved Games'), local };
+  }
+  const compat = await compatDataDir(appid, installed[appid], steamPath);
+  const user = join(compat, 'pfx/drive_c/users/steamuser');
+  // Older Proton prefixes use "My Documents".
+  const docs = !(await exists(join(user, 'Documents'))) && await exists(join(user, 'My Documents')) ? join(user, 'My Documents') : join(user, 'Documents');
+  return { docs, saved: join(user, 'Saved Games'), local: join(user, 'AppData/Local') };
+}
+
 // Resolved per game: install dir (from Steam) and content dirs. Settings can
 // override any of them.
-export async function resolvePaths(installed, overrides = {}) {
-  const home = norm(await Neutralino.os.getEnv('USERPROFILE'));
-  let docs = home + '/Documents';
-  try { docs = norm(await Neutralino.os.getPath('documents')); } catch { /* default */ }
-  const local = norm(await Neutralino.os.getEnv('LOCALAPPDATA').catch(() => '')) || home + '/AppData/Local';
+export async function resolvePaths(installed, overrides = {}, steamPath = '') {
+  const [acU, accU, evoU, rallyU] = await Promise.all(['244210', '805550', '3058630', '3917090'].map(id => userDirs(id, installed, steamPath)));
 
   const p = {};
   const ac = overrides.ac_install || installed['244210'];
-  p.ac = { install: ac || '', content: ac ? join(ac, 'content') : '', cfg: join(docs, 'Assetto Corsa/cfg') };
+  p.ac = { install: ac || '', content: ac ? join(ac, 'content') : '', cfg: join(acU.docs, 'Assetto Corsa/cfg') };
 
   p.acc = {
     install: overrides.acc_install || installed['805550'] || '',
-    customs: overrides.acc_customs || join(docs, 'Assetto Corsa Competizione/Customs'),
-    config: join(docs, 'Assetto Corsa Competizione/Config'),
+    customs: overrides.acc_customs || join(accU.docs, 'Assetto Corsa Competizione/Customs'),
+    config: join(accU.docs, 'Assetto Corsa Competizione/Config'),
   };
 
-  const ace = join(home, 'Saved Games/ACE');
+  const ace = join(evoU.saved, 'ACE');
+  userRoots.evo = ace;
   p.evo = {
     install: overrides.evo_install || installed['3058630'] || '',
     mods: overrides.evo_mods || join(ace, 'mods'),
@@ -75,9 +93,9 @@ export async function resolvePaths(installed, overrides = {}) {
     install: rally,
     paks: overrides.rally_paks || (rally ? join(rally, 'acr/Content/Paks') : ''),
     // Native custom liveries: <liveries>\<CarId>\<LiveryName>\livery.json + icon.png + body_livery_*.dds
-    liveries: overrides.rally_liveries || join(docs, 'My Games/acr/Liveries'),
+    liveries: overrides.rally_liveries || join(rallyU.docs, 'My Games/acr/Liveries'),
     // Player data, including the Free Practice selection (see rallylaunch.js).
-    save: join(local, 'acr/Saved/SaveGames/PlayerDataSaveSlot.sav'),
+    save: join(rallyU.local, 'acr/Saved/SaveGames/PlayerDataSaveSlot.sav'),
   };
   return p;
 }
@@ -426,7 +444,24 @@ export async function scanEvoCars(paths, onProgress) {
     tags: [c.brand].filter(Boolean), description: '',
     isMod: false, enabled: true, path: paths.evo.install, carId: c.id, brand: c.brand || '',
   }));
+  await markFresh('evo_cars', official);
   return [...mods.sort(byTitle), ...official.sort(byTitle)];
+}
+
+// Official content a game update added gets isNew (a "New" tag) for FRESH_DAYS, or
+// until the next update adds more. The first scan only records what's there; the
+// record only grows, so a failed or partial scan can't make everything look new.
+const FRESH_DAYS = 30;
+export async function markFresh(key, items) {
+  const ids = items.map(i => i.id).filter(Boolean);
+  if (!ids.length) return;
+  const prev = await storageGet(`fresh_${key}`, null);
+  const seen = new Set(prev?.ids || []);
+  const added = prev ? ids.filter(id => !seen.has(id)) : [];
+  const rec = added.length ? { ids: [...seen, ...added], fresh: added, at: Date.now() } : prev || { ids, fresh: [], at: 0 };
+  if (!prev || added.length) await storageSet(`fresh_${key}`, rec);
+  const live = new Set(Date.now() - rec.at < FRESH_DAYS * 864e5 ? rec.fresh : []);
+  for (const i of items) if (live.has(i.id)) i.isNew = true;
 }
 
 export async function scanEvoTracks(paths, onProgress) {
@@ -442,10 +477,28 @@ export async function scanEvoTracks(paths, onProgress) {
       tags: layouts.map(l => l.name), description: `${layouts.length} layout${layouts.length > 1 ? 's' : ''}: ${layouts.map(l => l.name).join(', ')}`,
       isMod: false, enabled: true, path: paths.evo.install, layouts,
       evoTrack: { name: t.name, country: t.country, region: t.region },
+      flag: evoFlag(t.country, t.region),
     };
   });
+  await markFresh('evo_tracks', official);
   return [...mods.sort(byTitle), ...official.sort(byTitle)];
 }
+
+// EVO gives countries as 3-letter codes; flags are bundled in img/flags.
+// ISO codes of every country with a circuit, plus the sports codes EVO also uses (RSA).
+const EVO_FLAGS = Object.fromEntries(('GBR gb BEL be USA us JPN jp ITA it RSA za ZAF za AUS au DEU de GER de FRA fr AUT at ' +
+  'NLD nl NED nl ESP es HUN hu GRC gr GRE gr PRT pt POR pt CHE ch SUI ch SWE se FIN fi NOR no DNK dk DEN dk POL pl ' +
+  'CZE cz SVK sk SVN si SLO si HRV hr CRO hr IRL ie ROU ro BGR bg SRB rs TUR tr RUS ru UKR ua EST ee LVA lv LTU lt ' +
+  'LUX lu MCO mc MON mc AND ad SMR sm MLT mt CYP cy ISL is CAN ca MEX mx BRA br ARG ar CHL cl CHI cl URY uy COL co ' +
+  'PER pe VEN ve ECU ec CHN cn HKG hk MAC mo TWN tw KOR kr PRK kp IND in IDN id INA id MYS my MAS my SGP sg THA th ' +
+  'VNM vn VIE vn PHL ph PHI ph ARE ae UAE ae SAU sa KSA sa BHR bh BRN bh QAT qa OMN om KWT kw ISR il JOR jo EGY eg ' +
+  'MAR ma TUN tn DZA dz NGA ng KEN ke AZE az GEO ge KAZ kz ARM am NZL nz SCO gb-sct WLS gb-wls WAL gb-wls ENG gb-eng').split(' ')
+  .reduce((pairs, x, i, a) => (i % 2 ? pairs : [...pairs, [x, a[i + 1]]]), []));
+// Mount Panorama is tagged "Australia · AUT" (Austria's code), so the region wins there.
+const evoFlag = (country, region) => {
+  const code = /^(australia|oceania)$/i.test(region || '') ? 'au' : EVO_FLAGS[String(country || '').toUpperCase()];
+  return code ? `/img/flags/${code}.png` : '';
+};
 
 // ---------------------------------------------------------------------------
 // Assetto Corsa Rally
@@ -492,9 +545,18 @@ export function guessRallyCar(names, ids = Object.keys(RALLY_CARS)) {
 // Every car the game knows: the built-in list plus any folder the game created.
 export async function rallyCarIds(paths) {
   const ids = new Set(Object.keys(RALLY_CARS));
-  if (paths.rally.liveries) for (const e of await listDir(paths.rally.liveries)) if (e.type === 'DIRECTORY' && e.entry !== '.' && e.entry !== '..') ids.add(e.entry);
+  // Cars the game files list (new ones from an update; ids compared ignoring case,
+  // the game's "HyundaiI20NRally2" is the launcher's "Hyundaii20NRally2").
+  const has = id => [...ids].some(x => x.toLowerCase() === id.toLowerCase());
+  const files = await rallyContent(paths).catch(() => null);
+  for (const c of files?.cars || []) if (!has(c.id)) ids.add(c.id);
+  if (paths.rally.liveries) for (const e of await listDir(paths.rally.liveries)) if (e.type === 'DIRECTORY' && e.entry !== '.' && e.entry !== '..' && !has(e.entry)) ids.add(e.entry);
   return [...ids].sort((a, b) => rallyCarName(a).localeCompare(rallyCarName(b)));
 }
+
+// Rally's own file index (rallyfiles.js), cached per game build.
+export const rallyContent = async paths => readRallyContent(paths.rally.paks, await appCacheDir('rally'));
+export const rallyGameStages = async (paths, known = []) => rallyFileStages(await rallyContent(paths).catch(() => null), known);
 
 // Disabled folder liveries are parked outside the folder the game reads.
 const rallyDisabledRoot = paths => `${paths.rally.liveries} (disabled)`;

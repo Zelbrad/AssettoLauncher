@@ -9,9 +9,10 @@
 //     weather_data: { type = 1, weather_data = 3 { mean_ambient_temperature_c = 4, ambient_temperature_c = 21 } }
 //   ProfileData\<profile>\OpenData\garage.drivergarage  field 4 = current car GUID
 // EVO's Single Player page opens on LastGameMode.type with its weather.
-// Car GUIDs are generated per car configuration by the game, so we can only reuse
-// GUIDs it has already used; those are logged as "Set new car <guid> <preset>".
-import { join, exists, listDir, readText, writeText, log, startProcess, powershell } from './util.js';
+// Car GUIDs are generated per car configuration by the game: the ones it has used
+// are logged as "Set new car <guid> <preset>", and guid_map.carhashguid holds one
+// for every configuration in its car list (withAllConfigs).
+import { join, exists, listDir, readText, writeText, log, startProcess, isProcessRunning, userRoots, IS_LINUX } from './util.js';
 import { readPackageFile } from './kspkg.js';
 
 const EVO_APPID = '3058630';
@@ -81,6 +82,7 @@ async function backupOnce(path, data) {
 // Locations
 
 async function saveRoot() {
+  if (userRoots.evo) return userRoots.evo; // set by resolvePaths (the Proton prefix on Linux)
   const home = (await Neutralino.os.getEnv('USERPROFILE')).replace(/\\/g, '/');
   return join(home, 'Saved Games/ACE');
 }
@@ -99,8 +101,7 @@ async function garagePath(root) {
 const guidHex = (hi, lo) => hi.toString(16).padStart(16, '0') + lo.toString(16).padStart(16, '0');
 
 export async function isEvoRunning() {
-  const r = await powershell('(Get-Process AssettoCorsaEVO -ErrorAction SilentlyContinue | Measure-Object).Count');
-  return Number(r.stdOut.trim()) > 0;
+  return isProcessRunning('AssettoCorsaEVO');
 }
 
 // ---------------------------------------------------------------------------
@@ -180,6 +181,55 @@ export async function currentCarGuid() {
   if (!car) return '';
   const g = parseRaw(car.value);
   return guidHex(g.find(x => x.f === 1)?.value ?? 0n, g.find(x => x.f === 2)?.value ?? 0n);
+}
+
+// ---------------------------------------------------------------------------
+// Every car configuration, driven or not. EVO keeps an ID per configuration in
+// Saved Games\ACE\guid_map.carhashguid (CarHashGUIDData { map<uint64, GUID> map = 1 }),
+// filled in for the whole car list, not only for cars the player has driven. The
+// key is FNV-1a 64 over the configuration's paths as the game stores them,
+// concatenated: <car>.actor + mechanical preset + visual preset, then "1" for the
+// player's car (without it: the stock car the game uses elsewhere).
+
+const U64 = (1n << 64n) - 1n;
+function fnv1a64(s) {
+  let h = 0xcbf29ce484222325n;
+  for (const b of new TextEncoder().encode(s)) { h ^= BigInt(b); h = (h * 0x100000001b3n) & U64; }
+  return h;
+}
+const configHash = (carId, mechPath, visualPath) => fnv1a64(`content\\cars\\${carId}\\${carId}.actor${mechPath}${visualPath}1`);
+
+async function readGuidMap() {
+  const data = await readBin(join(await saveRoot(), 'guid_map.carhashguid'));
+  const map = new Map(); // hash (BigInt) -> guid hex
+  for (const e of data ? msgs(parseRaw(data), 1) : []) {
+    const f = parseRaw(e.value), key = f.find(x => x.f === 1 && x.w === 0)?.value, g = msgs(f, 2)[0];
+    if (key == null || !g) continue;
+    const gf = parseRaw(g.value);
+    map.set(key, guidHex(gf.find(x => x.f === 1)?.value ?? 0n, gf.find(x => x.f === 2)?.value ?? 0n));
+  }
+  return map;
+}
+
+// known: knownCars() output; presets: readCarPresets() (kspkg.js). Returns known with
+// every configuration EVO has an ID for added after the driven ones ({ stock: true },
+// seen ''), and cars never driven appended.
+export async function withAllConfigs(known, presets) {
+  const [map, current] = await Promise.all([readGuidMap().catch(() => new Map()), currentCarGuid().catch(() => '')]);
+  if (!map.size) return known;
+  const short = p => p.split('\\').pop().replace(/\.[^.]+$/, '');
+  const byCar = new Map(known.map(k => [k.carId, { ...k, configs: [...k.configs] }]));
+  for (const { carId, mech, visuals } of presets) {
+    for (const visual of visuals) {
+      const guid = map.get(configHash(carId, mech, visual));
+      if (!guid) continue;
+      const car = byCar.get(carId) || byCar.set(carId, { carId, configs: [], seen: '', current: false }).get(carId);
+      if (car.configs.some(c => c.guid === guid)) continue;
+      car.configs.push({ guid, mech: short(mech), visual: short(visual), seen: '', current: guid === current, stock: true });
+      if (guid === current) car.current = true;
+    }
+  }
+  return [...byCar.values()];
 }
 
 
@@ -413,6 +463,7 @@ export async function prepareEvoSession({ session, track, layout, carGuid, conte
 // check ("user has no permission to run this product").
 export async function launchEvo({ steamPath, installDir, ...selection }) {
   await prepareEvoSession({ contentPkg: installDir ? join(installDir, 'content.kspkg') : '', ...selection });
-  if (steamPath) await startProcess(join(steamPath, 'steam.exe'), steamPath, ['-applaunch', EVO_APPID, '-no_intro']);
+  // On Linux `steam -applaunch` starts it under the game's Proton setup.
+  if (steamPath || IS_LINUX) await startProcess(join(steamPath, 'steam.exe'), steamPath || '/', ['-applaunch', EVO_APPID, '-no_intro']);
   else await startProcess(join(installDir, 'AssettoCorsaEVO.exe'), installDir, ['-no_intro']);
 }

@@ -1,23 +1,27 @@
 // Mod installer, Content Manager style: drop (or pick) an archive or a mod file
 // and the launcher works out which game it is for and where it goes.
-//   Archives  .zip .rar .7z (and tar variants), extracted with Windows' tar.exe
-//   Files     .kspkg (EVO), .pak/.utoc/.ucas (Rally), Customs car .json (ACC)
+//   Archives  .zip .rar .7z (and tar variants), extracted with Windows' tar.exe (Linux: bsdtar, 7-Zip, unzip or unrar)
+//   Files     .kspkg (EVO), .pak/.utoc/.ucas (Rally), Customs car .json (ACC), PP filter .ini (AC)
 // Layouts recognised at any depth inside an archive:
 //   AC     car folder (ui/ui_car.json, data.acd or data/car.ini), track folder
 //          (ui/[layout/]ui_track.json, models*.ini, or .kn5 + data/surfaces.ini),
 //          skin folder (ui_skin.json, or livery.png + preview.jpg), or an AC-root
-//          layout (content/..., apps/, extension/) that is merged into the install
+//          layout (content/..., apps/, extension/) that is merged into the install,
+//          post-processing filter (.ini with AC's PP sections, plus its .lua or
+//          <name>_scripts folder), loose or in a zip, installed to system/cfg/ppfilters
 //   ACC    livery folder (decals/sponsors .json/.png), car file (*.json with carModelType)
 //   EVO    *.kspkg, external livery folder (external_livery.json + its SavedCar)
 //   Rally  livery folder (livery.json + icon.png / body_livery_*.dds), or *.pak + .utoc + .ucas
 import {
   norm, join, basename, exists, listDir, readText, readTextAnyEncoding, parseLooseJson, cleanText,
-  prettifyId, log, mountDir, fileUrl, extractArchive, ensureDir,
+  prettifyId, log, mountDir, fileUrl, extractArchive, ensureDir, IS_LINUX,
 } from './util.js';
 import { readModInfo } from './kspkg.js';
+import { isPpFilterIni, ppFilterAbout, ppFilterCompanions, beforePpFilterInstall, KUNOS_FILTERS } from './ppfilters.js';
+import { guessLiveryCar } from './rallylivery.js';
 import { rallyCarIds, rallyCarName, guessRallyCar, evoSavedCarsDir, utocVersion, rallyGameTocVersion } from './games.js';
 
-export const IMPORT_RE = /\.(zip|rar|7z|tar|tgz|gz|xz|bz2|kspkg|pak|utoc|ucas|json)$/i;
+export const IMPORT_RE = /\.(zip|rar|7z|tar|tgz|gz|xz|bz2|kspkg|pak|utoc|ucas|json|ini)$/i;
 const ARCHIVE_RE = /\.(zip|rar|7z|tar|tgz|gz|xz|bz2)$/i;
 const IMG_RE = /\.(png|jpe?g|webp)$/i;
 const MOUNT = '/m/import';
@@ -39,7 +43,7 @@ async function staging() {
   if (stagingRoot) return stagingRoot;
   let tmp = '';
   try { tmp = await Neutralino.os.getPath('temp'); } catch { /* older runtime */ }
-  if (!tmp) tmp = await Neutralino.os.getEnv('TEMP');
+  if (!tmp) tmp = await Neutralino.os.getEnv(IS_LINUX ? 'TMPDIR' : 'TEMP').catch(() => '') || (IS_LINUX ? '/tmp' : '');
   const root = join(norm(tmp), 'acl-import');
   await Neutralino.filesystem.remove(root).catch(() => {}); // leftovers from a previous run
   await ensureDir(root);
@@ -75,7 +79,7 @@ export async function resolveDropped(file, onProgress) {
 }
 
 async function locate(file) {
-  const home = norm(await Neutralino.os.getEnv('USERPROFILE'));
+  const home = norm(await Neutralino.os.getEnv(IS_LINUX ? 'HOME' : 'USERPROFILE'));
   const dirs = [];
   for (const k of ['downloads', 'desktop', 'documents']) {
     try { dirs.push(norm(await Neutralino.os.getPath(k))); } catch { /* unsupported */ }
@@ -174,8 +178,33 @@ class Detector {
     if (this.isRallyLivery(n)) return this.addRallyLivery(rel);
     if (this.isAccLivery(n)) return this.addAccLivery(rel);
     if (this.isAcSkin(n)) return this.addAcSkin(rel, this.guessCar(rel));
+    const filterDirs = await this.addPpFilters(rel);
     await this.addFiles(this.abs(rel), n.files);
-    for (const d of n.dirs) await this.walk(sub(rel, d));
+    for (const d of n.dirs) if (!filterDirs.has(d)) await this.walk(sub(rel, d));
+  }
+
+  // Post-processing filters among the folder's .ini files, each with its script
+  // (<name>.lua, or a <name> / <name>_scripts folder). Returns the folders used.
+  async addPpFilters(rel) {
+    const n = this.node(rel), used = new Set();
+    const entries = [...n.files.map(entry => ({ entry, type: 'FILE' })), ...n.dirs.map(entry => ({ entry, type: 'DIRECTORY' }))];
+    const dir = this.paths.ac.install && join(this.paths.ac.install, 'system/cfg/ppfilters');
+    for (const f of n.files.filter(x => /\.ini$/i.test(x))) {
+      const text = await readTextAnyEncoding(join(this.abs(rel), f));
+      if (!isPpFilterIni(text)) continue;
+      const id = stem(f), parts = [f, ...ppFilterCompanions(entries, id)];
+      for (const p of parts) if (n.dirs.includes(p)) used.add(p);
+      const { author, version } = ppFilterAbout(text);
+      this.add({
+        game: 'ac', kind: 'pp filter', tab: null, title: id,
+        sub: [author && `by ${cleanText(author)}`, version && `v${version}`].filter(Boolean).join(' · '),
+        detail: `system/cfg/ppfilters/${parts.join(', ')}`, mode: 'ppfilter', filterId: id, paths: this.paths,
+        files: parts.map(p => ({ src: join(this.abs(rel), p), target: dir && join(dir, p), dir: n.dirs.includes(p) })),
+        note: KUNOS_FILTERS.has(id.toLowerCase()) ? `Replaces AC's own ${id} filter.` : '',
+        missing: dir ? '' : 'Assetto Corsa not found',
+      });
+    }
+    return used;
   }
 
   // --- Assetto Corsa
@@ -268,12 +297,18 @@ class Detector {
   // --- AC Rally native liveries: <Liveries>\<CarId>\<LiveryName>\ (livery.json,
   // icon.png, body_livery_*.dds). The folder doesn't say which car it is for.
 
-  addRallyLivery(rel) {
+  // The car comes from the livery's design (rallylivery.js) when that's sure, else
+  // from the folder or archive name; when neither is, the likely cars are listed first.
+  async addRallyLivery(rel) {
     const id = rel ? basename(rel) : stem(this.archiveName), n = this.node(rel);
     const icon = kid(n, 'icon.png', 'files') || n.files.find(f => IMG_RE.test(f));
+    const byName = this.guessRallyCar([...(rel ? rel.split('/') : []), this.archiveName]);
+    const byDesign = await guessLiveryCar(this.abs(rel), this.paths, this.rallyCars).catch(err => { log(`livery car: ${err?.message || err}`); return null; });
     this.add({
       game: 'rally', kind: 'livery', tab: 'liveries', title: id, skinId: id, carPick: 'rally',
-      car: this.guessRallyCar([...(rel ? rel.split('/') : []), this.archiveName]),
+      car: byDesign?.sure ? byDesign.car : byName,
+      detected: byDesign?.sure ? byDesign.car : '',
+      likely: byDesign && !byDesign.sure ? byDesign.likely : [],
       sub: 'Custom livery', detail: '', mode: 'dir', src: this.abs(rel), target: '',
       image: icon ? fileUrl(join(this.abs(rel), icon)) : '',
       missing: this.paths.rally.install || this.paths.rally.liveries ? '' : 'Assetto Corsa Rally not found',
@@ -309,6 +344,8 @@ class Detector {
 
   async addAcRoot(rel) {
     const n = this.node(rel), extras = [];
+    // A filter next to an AC-root layout ("X.ini" + extension/textures/...).
+    await this.addPpFilters(rel);
     for (const d of n.dirs) {
       const dRel = sub(rel, d), dl = d.toLowerCase();
       if (dl === 'content') {
@@ -333,10 +370,24 @@ class Detector {
 
     const apps = extras.filter(e => /^apps\/(python|lua)\/[^/]+/i.test(e.to) || /^apps$/i.test(e.to));
     const appNames = apps.length ? this.node(apps[0].rel).dirs.flatMap(k => this.node(sub(apps[0].rel, k))?.dirs || []) : [];
-    const title = kid(n, 'extension') && extras.some(e => /\.dll$/i.test(e.to)) ? 'Custom Shaders Patch'
+    // CSP weather styles (extension/weather/<style>): Peter Boese's Sol and Pure are named after themselves.
+    const ext = kid(n, 'extension'), weatherDir = ext && kid(this.node(sub(rel, ext)), 'weather');
+    const styles = [];
+    if (weatherDir) {
+      const wRel = sub(sub(rel, ext), weatherDir);
+      for (const d of this.node(wRel).dirs) {
+        const name = (await readText(this.abs(sub(sub(wRel, d), 'manifest.ini'))))?.match(/^\s*NAME\s*=\s*(.+?)\s*$/mi)?.[1];
+        styles.push({ id: d, name: name || prettifyId(d) });
+      }
+    }
+    const style = styles.find(s => /pure/i.test(`${s.id} ${s.name}`)) ? 'Pure' : styles.find(s => /^sol\b/i.test(s.id) || /^sol\b/i.test(s.name)) ? 'Sol' : '';
+    const title = ext && extras.some(e => /\.dll$/i.test(e.to)) ? 'Custom Shaders Patch'
+      : style ? `${style} by Peter Boese`
+      : styles.length ? `Weather style: ${styles.map(s => s.name).join(', ')}`
       : appNames.length ? `App: ${appNames.map(prettifyId).join(', ')}` : 'Assetto Corsa extras';
     this.add({
-      game: 'ac', kind: 'extras', tab: null, title, sub: 'Merged into the Assetto Corsa folder',
+      game: 'ac', kind: 'extras', tab: null, title,
+      sub: styles.length && !/^Custom/.test(title) ? 'Merged into the Assetto Corsa folder. Pick it as the weather style in Settings (needs CSP).' : 'Merged into the Assetto Corsa folder',
       detail: extras.map(e => e.to).join(', '), mode: 'merge',
       pairs: extras.map(e => ({ src: this.abs(e.rel), target: this.paths.ac.install && join(this.paths.ac.install, e.to), file: !!e.file })),
       missing: this.paths.ac.install ? '' : 'Assetto Corsa not found',
@@ -436,6 +487,7 @@ async function itemExists(item) {
   if (item.mode === 'files') {
     for (const f of item.files) if (f.target && (await exists(f.target) || await exists(`${f.target}.disabled`))) return true;
   }
+  if (item.mode === 'ppfilter') return !!item.files[0].target && exists(item.files[0].target);
   return false;
 }
 
@@ -445,7 +497,8 @@ export async function setItemCar(item, paths, car) {
   if (item.carPick === 'rally') {
     item.target = car && paths.rally.liveries ? join(paths.rally.liveries, car, item.skinId) : '';
     item.detail = `My Games/acr/Liveries/${car || '<car>'}/${item.skinId}`;
-    item.sub = car ? `Custom livery · ${rallyCarName(car)}` : 'Custom livery · choose the car';
+    item.sub = !car ? 'Custom livery · choose the car'
+      : `Custom livery · ${rallyCarName(car)}${car === item.detected ? ' (detected)' : ''}`;
   } else {
     item.target = car && paths.ac.content ? join(paths.ac.content, 'cars', car, 'skins', item.skinId) : '';
     item.detail = `content/cars/${car || '<car>'}/skins/${item.skinId}`;
@@ -511,13 +564,19 @@ async function detectSource(source, session, paths, { evoCache, onStatus } = {})
         if (f !== name && await exists(join(dir, f))) files.push(f);
       }
     }
-    det = new Detector({ ...ctx, root: dir, nodes: new Map() });
-    await det.addFiles(dir, files);
+    // A PP filter .ini, with its <name>.lua when it sits next to it.
+    if (/\.ini$/i.test(name)) {
+      for (const e of await listDir(dir)) if (e.type !== 'DIRECTORY' && e.entry !== name && ppFilterCompanions([e], stem(name)).length) files.push(e.entry);
+    }
+    det = new Detector({ ...ctx, root: dir, nodes: new Map([['', { files, dirs: [] }]]) });
+    if (/\.ini$/i.test(name)) await det.addPpFilters('');
+    else await det.addFiles(dir, files);
   }
 
   for (const item of det.items) {
     if (item.carPick) await setItemCar(item, paths, item.car);
     else item.exists = await itemExists(item);
+    if (item.mode === 'ppfilter' && item.exists) item.note = [item.note, 'The installed version is backed up first.'].filter(Boolean).join(' ');
   }
   log(`import ${name}: ${det.items.map(i => `${i.game}/${i.kind} ${i.detail}`).join(' | ') || 'nothing recognised'}`);
   return det.items;
@@ -565,6 +624,13 @@ export async function installItem(item) {
     await placeDir(item.src, item.target, item.copyOnly);
     for (const e of await listDir(item.target)) {
       if (e.type === 'DIRECTORY' && /^savedcars?$/i.test(e.entry)) await Neutralino.filesystem.remove(join(item.target, e.entry)).catch(() => {});
+    }
+  } else if (item.mode === 'ppfilter') {
+    // The installed version is backed up and removed first (ppfilters.js).
+    await beforePpFilterInstall(item.paths, item.filterId);
+    for (const f of item.files) {
+      if (f.dir) { await ensureDir(f.target); await Neutralino.filesystem.copy(f.src, f.target, { recursive: true, overwrite: true }); }
+      else await placeFile(f.src, f.target, item.copyOnly);
     }
   } else if (item.mode === 'merge') {
     for (const p of item.pairs) {

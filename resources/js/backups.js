@@ -5,7 +5,7 @@
 // { at, kind: 'manual' | 'auto' | 'restore', items }. Restoring copies them back
 // over the game's files (files the backup doesn't have are left alone), after a
 // backup of the current state, and refuses while the game is running.
-import { join, exists, listDir, log, powershell, psQuote, readText, norm } from './util.js';
+import { join, exists, listDir, log, powershell, psQuote, readText, norm, isProcessRunning, removeDirTree, IS_LINUX, sh, shQuote } from './util.js';
 
 const up = p => p.replace(/\/[^/]+$/, '');
 
@@ -24,8 +24,7 @@ export const backupsRoot = async () => join(norm(await Neutralino.os.getPath('do
 export async function isGameRunning(key, paths) {
   const s = spec(key, paths);
   if (!s) return false;
-  const r = await powershell(`(Get-Process ${s.process} -ErrorAction SilentlyContinue | Measure-Object).Count`);
-  return Number(r.stdOut.trim()) > 0;
+  return isProcessRunning(s.process);
 }
 
 // The items of a game that exist right now.
@@ -40,6 +39,7 @@ const stamp = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0
 
 // Copy `items` from one root to another, merging into existing folders.
 async function copyItems(from, to, items, intoBackup = false) {
+  if (IS_LINUX) return copyItemsSh(from, to, items, intoBackup);
   const steps = [];
   for (const i of items) {
     const src = join(from, i), dst = join(to, i);
@@ -53,6 +53,21 @@ async function copyItems(from, to, items, intoBackup = false) {
   // The launcher's own safety copies in the game folders aren't part of a backup.
   if (intoBackup) steps.push(`Get-ChildItem -LiteralPath ${psQuote(to)} -Recurse -Filter '*.launcher-backup' -ErrorAction SilentlyContinue | Remove-Item -Force`);
   const r = await powershell(`$ErrorActionPreference='Stop'; ${steps.join('; ')}`);
+  if (r.exitCode !== 0) throw new Error(r.stdErr.trim().split(/\r?\n/)[0] || 'Copy failed');
+}
+
+async function copyItemsSh(from, to, items, intoBackup) {
+  const steps = [];
+  for (const i of items) {
+    const src = join(from, i), dst = join(to, i);
+    const st = await Neutralino.filesystem.getStats(src).catch(() => null);
+    if (!st) continue;
+    steps.push(`mkdir -p ${shQuote(st.isDirectory ? dst : up(dst))}`);
+    // "src/." copies the folder's contents, hidden files included, into dst.
+    steps.push(st.isDirectory ? `cp -a ${shQuote(`${src}/.`)} ${shQuote(dst)}` : `cp -a ${shQuote(src)} ${shQuote(dst)}`);
+  }
+  if (intoBackup) steps.push(`find ${shQuote(to)} -name '*.launcher-backup' -type f -delete`);
+  const r = await sh(`set -e; ${steps.join('; ')}`);
   if (r.exitCode !== 0) throw new Error(r.stdErr.trim().split(/\r?\n/)[0] || 'Copy failed');
 }
 
@@ -91,8 +106,7 @@ export async function restoreBackup(key, paths, backup) {
 }
 
 export async function deleteBackup(backup) {
-  const r = await powershell(`Remove-Item -LiteralPath ${psQuote(backup.dir)} -Recurse -Force`);
-  if (r.exitCode !== 0) throw new Error('Could not delete the backup');
+  if (!(await removeDirTree(backup.dir))) throw new Error('Could not delete the backup');
 }
 
 // A weekly automatic backup of each installed game; the last 4 automatic ones are kept.

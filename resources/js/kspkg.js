@@ -77,6 +77,30 @@ export async function readPackageFile(pkgPath, name) {
   return e ? new Uint8Array(await pkg.read(e)) : null;
 }
 
+// Every car's mechanical presets with the visual presets each one allows (field 8):
+// [{ carId, mech, visuals }], paths as stored in the package. Cached per package build.
+export async function readCarPresets(pkgPath, cacheDir) {
+  const st = await Neutralino.filesystem.getStats(pkgPath);
+  const key = cacheKey(pkgPath, st), file = join(cacheDir, `presets-${key}.json`);
+  try { const j = JSON.parse(await readText(file) || 'null'); if (Array.isArray(j)) return j; } catch { /* rebuild */ }
+  if (!openPkgs.has(pkgPath)) openPkgs.set(pkgPath, openPackage(pkgPath));
+  const pkg = await openPkgs.get(pkgPath);
+  if (!pkg) return [];
+  const out = [];
+  for (const e of pkg.find(/^content\\cars\\[^\\]+\\presets\\[^\\]+\.mechanicalcarpreset$/i)) {
+    const visuals = protoFields(await pkg.read(e)).filter(x => x.f === 8 && x.v instanceof Uint8Array).map(x => utf8.decode(x.v));
+    out.push({ carId: e.name.split('\\')[2], mech: e.name, visuals });
+  }
+  await ensureDir(cacheDir);
+  // This package's lists from older versions of it aren't needed any more.
+  const older = `presets-${key.replace(/-\d+-\d+-[^-]+$/, '')}-`;
+  for (const x of await Neutralino.filesystem.readDirectory(cacheDir).catch(() => [])) {
+    if (x.entry.startsWith(older) && join(cacheDir, x.entry) !== file) await Neutralino.filesystem.remove(join(cacheDir, x.entry)).catch(() => {});
+  }
+  await writeText(file, JSON.stringify(out)).catch(err => log(`car presets: ${err?.message || err}`));
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // Protobuf helpers (EVO data files are protobuf messages)
 
@@ -473,7 +497,8 @@ async function toPng(img) {
 
 // liveries: [{ carId, mech, visual, pkgPath }], brands: [brand name] (read from contentPkg)
 // -> { liveries: { key: { image, label } }, brands: { slug: image } } (absolute paths)
-export async function readEvoExtras({ liveries = [], brands = [], contentPkg = '' }, cacheDir, onProgress = () => {}) {
+// cachedOnly: only what's already in the cache (nothing is decoded; missing ones are left out).
+export async function readEvoExtras({ liveries = [], brands = [], contentPkg = '', cachedOnly = false }, cacheDir, onProgress = () => {}) {
   const dir = join(cacheDir, 'extras');
   await ensureDir(cacheDir); await ensureDir(dir);
   const indexPath = join(dir, 'index.json');
@@ -489,8 +514,10 @@ export async function readEvoExtras({ liveries = [], brands = [], contentPkg = '
   // Group missing work by package so each package's table is read once.
   const todo = new Map(); // pkgPath -> { liveries: [], brands: [] }
   const job = p => todo.get(p) || todo.set(p, { liveries: [], brands: [] }).get(p);
-  for (const r of liveries) if (r.pkgPath && !(liveryKey(r) in index.liveries)) job(r.pkgPath).liveries.push(r);
-  for (const b of brands) if (contentPkg && !(brandSlug(b) in index.brands)) job(contentPkg).brands.push(b);
+  if (!cachedOnly) {
+    for (const r of liveries) if (r.pkgPath && !(liveryKey(r) in index.liveries)) job(r.pkgPath).liveries.push(r);
+    for (const b of brands) if (contentPkg && !(brandSlug(b) in index.brands)) job(contentPkg).brands.push(b);
+  }
 
   for (const [pkgPath, work] of todo) {
     onProgress(`Reading ${basename(pkgPath)}…`);
@@ -535,8 +562,8 @@ export async function readEvoExtras({ liveries = [], brands = [], contentPkg = '
 
   const abs = f => f ? join(dir, f) : '';
   return {
-    liveries: Object.fromEntries(liveries.map(r => [liveryKey(r), { ...(index.liveries[liveryKey(r)] || {}), image: abs(index.liveries[liveryKey(r)]?.image) }])),
-    brands: Object.fromEntries(brands.map(b => [brandSlug(b), abs(index.brands[brandSlug(b)])])),
+    liveries: Object.fromEntries(liveries.filter(r => liveryKey(r) in index.liveries).map(r => [liveryKey(r), { ...index.liveries[liveryKey(r)], image: abs(index.liveries[liveryKey(r)].image) }])),
+    brands: Object.fromEntries(brands.filter(b => brandSlug(b) in index.brands).map(b => [brandSlug(b), abs(index.brands[brandSlug(b)])])),
     liveryKey, brandSlug,
   };
 }
