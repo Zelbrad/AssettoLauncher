@@ -580,6 +580,21 @@ async function rallyLiveryThumb(ddsPath) {
   }
 }
 
+// A livery's rally plates (livery.json "UseStickers") and its look: livery.json
+// without that key, plus the sizes of its textures and icon. Authors often ship a
+// livery twice, with and without the plates; those two have the same look.
+async function rallyLiveryLook(dir, files) {
+  const json = files.find(f => /^livery\.json$/i.test(f));
+  let j = null;
+  // Some liveries write TRUE/FALSE in capitals, which the game accepts.
+  try { j = JSON.parse((await readText(join(dir, json)) || 'null').replace(/^﻿/, '').replace(/:\s*(TRUE|FALSE)\b/gi, m => m.toLowerCase())); } catch { /* unreadable: no plates info */ }
+  if (!j || typeof j !== 'object') return { stickers: null, look: '' };
+  const { UseStickers, ...rest } = j;
+  const sizes = await Promise.all(files.filter(f => /\.(dds|png|jpe?g)$/i.test(f)).sort()
+    .map(async f => `${f.toLowerCase()}:${(await Neutralino.filesystem.getStats(join(dir, f)).catch(() => null))?.size ?? ''}`));
+  return { stickers: typeof UseStickers === 'boolean' ? UseStickers : null, look: `${JSON.stringify(rest)}|${sizes.join(',')}` };
+}
+
 // Native custom liveries: <Liveries>\<CarId>\<LiveryName>\ with livery.json,
 // icon.png and body_livery_*.dds.
 async function scanRallyFolderLiveries(paths) {
@@ -595,6 +610,7 @@ async function scanRallyFolderLiveries(paths) {
         const icon = files.find(f => /^icon\.(png|jpe?g)$/i.test(f)) || files.find(f => IMG_RE.test(f));
         const albedo = files.find(f => /^body_livery_albedo\.dds$/i.test(f));
         const thumb = albedo ? await rallyLiveryThumb(join(dir, albedo)) : '';
+        const { stickers, look } = await rallyLiveryLook(dir, files);
         items.push({
           id: `${car.entry}/${liv.entry}`, kind: 'livery', game: 'rally',
           title: liv.entry, subtitle: rallyCarName(car.entry),
@@ -603,7 +619,7 @@ async function scanRallyFolderLiveries(paths) {
           tags: ['Custom livery', rallyCarName(car.entry)],
           description: `Custom livery for the ${rallyCarName(car.entry)}.\nFiles: ${files.join(', ')}`,
           isMod: true, enabled, path: dir, toggle: 'rally-folder',
-          meta: { car: car.entry, name: liv.entry, paths },
+          meta: { car: car.entry, name: liv.entry, paths, stickers, look },
         });
       }
     }

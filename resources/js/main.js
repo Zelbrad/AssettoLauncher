@@ -891,7 +891,9 @@ function openDetail(g, item, onChange) {
 //   o.brandLogo(name) -> image url ('' shows initials)
 //   o.variants(carKey) -> [{ key, title, sub, image, livery?, spec?, specLabel? }]   (liveries / skins)
 //              with specs (EVO: the same livery per mechanical preset), the row shows
-//              each livery once in the chosen spec, and a Spec menu switches the whole row
+//              each livery once in the chosen spec, and a Spec menu switches the whole row;
+//              variants without a spec (Rally: a livery with no plates/no-plates twin) stay as they are
+//   o.specName name of that menu ('Spec'; Rally: 'Plates')
 //   o.tracks   [{ key, title, sub, image, flag, layouts: [{ key, name, sub, outline, preview }] }]
 //   o.sel      { car, variant, track, layout }; o.defaultVariant(carKey)
 //   o.onLocked(car), o.onLaunch(sel), o.onClose(sel) (also when switching game or launching)
@@ -970,22 +972,27 @@ function quickDriveModal(o) {
   const variantOf = () => (o.variants(sel.car) || []).find(v => v.key === sel.variant);
   // The livery row: with specs, every livery once, in the selected spec. A livery
   // the spec doesn't have shows the spec it comes with; picking it switches to it.
+  // A variant without a spec is shown as it is; while one is selected, the menu
+  // keeps the spec picked last (sel.spec).
   const specsOf = all => [...new Map(all.filter(x => x.spec).map(x => [x.spec, { key: x.spec, label: x.specLabel || x.spec }])).values()];
   const variantRow = () => {
     const all = o.variants(sel.car) || [];
     const specs = specsOf(all);
     if (specs.length < 2) return { variants: all, specs, spec: specs[0]?.key };
-    const spec = all.find(x => x.key === sel.variant)?.spec ?? specs[0].key;
-    const liveries = [...new Map(all.map(x => [x.livery, x])).values()];
+    const spec = all.find(x => x.key === sel.variant)?.spec ?? (specs.some(s => s.key === sel.spec) ? sel.spec : specs[0].key);
+    const liveries = [...new Map(all.map(x => [x.spec ? x.livery : `key:${x.key}`, x])).values()];
     return {
       specs, spec,
-      variants: liveries.map(l => all.find(x => x.livery === l.livery && x.spec === spec)
+      variants: liveries.map(l => !l.spec ? l : all.find(x => x.livery === l.livery && x.spec === spec)
         || { ...l, sub: [l.sub, l.specLabel !== l.title && l.specLabel].filter(Boolean).join(' · ') }),
     };
   };
-  // Another spec: the same livery with it, else its first livery.
+  // Another spec: the same livery with it, else its first livery (a variant
+  // without a spec stays selected).
   const pickSpec = spec => {
     const all = o.variants(sel.car) || [], cur = all.find(x => x.key === sel.variant);
+    sel.spec = spec;
+    if (cur && !cur.spec) return sel.variant;
     return (all.find(x => x.spec === spec && x.livery === cur?.livery) || all.find(x => x.spec === spec))?.key ?? sel.variant;
   };
   const withSpec = (v, all) => [v.title, specsOf(all).length > 1 && v.specLabel !== v.title && v.specLabel].filter(Boolean).join(' · ');
@@ -1042,8 +1049,9 @@ function quickDriveModal(o) {
     stripCar = sel.car;
     const hint = o.variantHint?.(sel.car);
     const chevron = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-    const specMenu = specs.length > 1 ? `<div class="qd-spec"><button class="qd-spec-btn" data-spec-menu title="${esc(`Spec: ${specs.find(s => s.key === spec)?.label || ''}`)}">Spec${chevron}</button>
-      <div class="qd-spec-menu" hidden><small>Spec</small>${specs.map(s => `<button class="${s.key === spec ? 'active' : ''}" data-spec="${esc(s.key)}">${esc(s.label)}</button>`).join('')}</div></div>` : '';
+    const specName = o.specName || 'Spec';
+    const specMenu = specs.length > 1 ? `<div class="qd-spec"><button class="qd-spec-btn" data-spec-menu title="${esc(`${specName}: ${specs.find(s => s.key === spec)?.label || ''}`)}">${esc(specName)}${chevron}</button>
+      <div class="qd-spec-menu" hidden><small>${esc(specName)}</small>${specs.map(s => `<button class="${s.key === spec ? 'active' : ''}" data-spec="${esc(s.key)}">${esc(s.label)}</button>`).join('')}</div></div>` : '';
     el.querySelector('#qd-variants').innerHTML = variants.length || hint
       ? `<span class="qd-layouts-name">${esc(o.variantLabel)}</span>${specMenu}<div class="qd-variant-strip">${variants.map(x => `<button class="qd-variant ${x.key === sel.variant ? 'active' : ''}" data-variant="${esc(x.key)}" title="${esc([x.title, x.sub].filter(Boolean).join(' · '))}">
           <div class="thumb">${imgTag(x.image, '')}</div><span>${esc(x.title)}${x.sub ? `<small>${esc(x.sub)}</small>` : ''}</span></button>`).join('')}</div>
@@ -1650,9 +1658,35 @@ async function openRallyQuickDrive() {
     return [
       { key: id, title: pak ? pak.title : 'Default livery', sub: pak ? '.pak livery' : 'Game livery', image: pak?.image || rallyCarImage(id) },
       ...(learned[id] || []).map(l => ({ key: l, title: prettifyId(l.replace(new RegExp(`^${id}_?`), '')) || l, sub: 'Game livery', image: rallyCarImage(id) })),
-      ...modLiveries.filter(i => i.toggle === 'rally-folder' && i.enabled && i.meta.car === id)
-        .map(i => ({ key: `usergen_${i.meta.name}`, title: i.title, sub: 'Your livery', image: i.image })),
+      ...withPlates(modLiveries.filter(i => i.toggle === 'rally-folder' && i.enabled && i.meta.car === id)),
     ];
+  };
+  // Your liveries. A livery shipped twice, with and without the rally plates (the
+  // same look, games.js rallyLiveryLook), is one tile with both versions: the
+  // Plates menu picks which (Quick Drive's specs), with rally plates first.
+  const withPlates = items => {
+    const byLook = new Map();
+    for (const i of items) if (i.meta.look && typeof i.meta.stickers === 'boolean') byLook.set(i.meta.look, [...(byLook.get(i.meta.look) || []), i]);
+    const paired = new Map();
+    for (const twins of byLook.values()) {
+      if (twins.length !== 2 || twins[0].meta.stickers === twins[1].meta.stickers) continue;
+      // The tile's name: the words both folder names start with ("Polo R5 Red Bull"
+      // from "... Rally Plates" and "... No Rally Plates").
+      const [a, b] = twins.map(i => i.title.split(/\s+/));
+      let n = 0;
+      while (n < a.length && n < b.length && a[n].toLowerCase() === b[n].toLowerCase()) n++;
+      const title = a.slice(0, n).join(' ').replace(/[\s\-_(·]+$/, '') || twins[0].title;
+      twins.sort((x, y) => Number(y.meta.stickers) - Number(x.meta.stickers));
+      for (const i of twins) paired.set(i, { livery: `plates:${twins[0].meta.name}`, title, spec: i.meta.stickers ? 'plates' : 'no-plates', specLabel: i.meta.stickers ? 'With rally plates' : 'Without rally plates' });
+    }
+    const out = [];
+    for (const i of items) {
+      const p = paired.get(i);
+      if (p && out.some(v => v.livery === p.livery)) continue; // added with its twin
+      const twins = p ? items.filter(x => paired.get(x)?.livery === p.livery).sort((x, y) => Number(y.meta.stickers) - Number(x.meta.stickers)) : [i];
+      for (const x of twins) out.push({ key: `usergen_${x.meta.name}`, title: x.title, sub: 'Your livery', image: x.image, ...paired.get(x) });
+    }
+    return out;
   };
   const liveryOf = id => {
     const v = liveryVariants(id), want = saved.liveries?.[id] || selectedLiveries[id];
@@ -1706,6 +1740,7 @@ async function openRallyQuickDrive() {
     sub: 'Rally can\'t be started straight on a stage, so this sets up its Free Practice menu (stage, car, livery, start time) and the main menu car, then starts the game: open Free Practice and press Start.',
     session,
     launchLabel: 'Set up & start Rally',
+    specName: 'Plates',
     carCount: `${cars.length} cars`,
     trackCount: `${tracks.length} locations · ${seen.length} stages`,
     cars,
@@ -3383,6 +3418,30 @@ async function runSnapshots(dir) {
     state.game = 'acc'; renderSidebar(); state.view = 'games'; render(); await wait(4000);
     log(`news row: ${document.querySelectorAll('#news-row .news-card:not(.skeleton)').length} cards; checks ${Object.keys(newsChecks).join(',')}`);
     await snap('check10-acc-games');
+    await Neutralino.app.exit();
+    return;
+  }
+  // --check16[=<Liveries copy>]: Rally liveries shipped with and without plates (one
+  // tile, Plates menu), read from a copy of the Liveries folder when given. Doesn't launch.
+  const c16 = (window.NL_ARGS || []).find(a => a === '--check16' || a.startsWith('--check16='));
+  if (c16) {
+    if (c16.includes('=')) { state.paths.rally.liveries = norm(c16.slice(c16.indexOf('=') + 1)); state.cache = {}; }
+    state.game = 'rally'; renderSidebar(); state.view = 'quickdrive'; render(); await wait(4000);
+    $('#main [data-car="VWPoloGTIR5"]')?.click(); await wait(500);
+    const row = () => `${$('.qd-spec-btn')?.title || 'no menu'} | ${[...document.querySelectorAll('.qd-variant')].map(b => `${b.classList.contains('active') ? '*' : ''}${b.dataset.variant}`).join(' | ')} | summary ${$('#qd-summary small')?.textContent}`;
+    log(`check16 polo: ${row()}`);
+    for (const i of (await getItems(GAMES.find(g => g.key === 'rally'), 'liveries')).filter(i => /polo/i.test(i.id))) log(`check16 item ${i.id} toggle ${i.toggle} enabled ${i.enabled} car ${i.meta?.car} stickers ${i.meta?.stickers} look ${String(i.meta?.look).slice(0, 40)}…${String(i.meta?.look).slice(-60)}`);
+    await snap('check16-polo');
+    $('[data-spec-menu]')?.click(); await wait(300);
+    log(`check16 menu: ${[...document.querySelectorAll('[data-spec]')].map(b => `${b.classList.contains('active') ? '*' : ''}${b.textContent}`).join(' | ')}`);
+    await snap('check16-polo-menu');
+    const pair = [...document.querySelectorAll('.qd-variant')].find(b => /Rally_?Plates|Rally Plates/i.test(b.dataset.variant));
+    pair?.click(); await wait(300); log(`check16 picked a pair: ${row()}`);
+    $('[data-spec-menu]')?.click(); await wait(200);
+    [...document.querySelectorAll('[data-spec]')].find(b => !b.classList.contains('active'))?.click(); await wait(300);
+    log(`check16 switched: ${row()}`); await snap('check16-polo-switched');
+    $('.qd-variant')?.click(); await wait(300); log(`check16 default livery: ${row()}`);
+    $('#main [data-car="LanciaStratosHF"]')?.click(); await wait(500); log(`check16 stratos: ${row()}`);
     await Neutralino.app.exit();
     return;
   }

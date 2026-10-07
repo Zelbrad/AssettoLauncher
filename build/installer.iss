@@ -9,7 +9,7 @@
 
 #define AppName "Assetto Launcher"
 #ifndef AppVersion
-  #define AppVersion "0.2.0"
+  #define AppVersion "0.2.1"
 #endif
 #define AppExe "assetto-launcher-win_x64.exe"
 
