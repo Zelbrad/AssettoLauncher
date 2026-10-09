@@ -1,7 +1,7 @@
 // Steam integration: install detection from local library manifests, plus
 // public Web API calls (news, store details). The Steam API sends no CORS
 // headers, so HTTP goes through curl (shipped with Windows 10+, standard on Linux).
-import { norm, join, readText, run, powershell, log, storageGet, storageSet, cleanText, IS_LINUX, CURL, exists, listDir, sh, shQuote, basename } from './util.js';
+import { norm, join, readText, run, powershell, log, storageGet, storageSet, cleanText, IS_LINUX, CURL, NULL_DEV, exists, listDir, sh, shQuote, basename } from './util.js';
 
 export async function findSteamPath() {
   if (IS_LINUX) return findLinuxSteam();
@@ -153,10 +153,25 @@ export async function getNews(appid, { force = false } = {}) {
     label: n.feedlabel || 'News',
     image: firstImage(n.contents),
     summary: snippet(n.contents || ''),
-    url: `https://store.steampowered.com/news/app/${appid}/view/${n.gid}`,
+    url: newsPostUrl(n.gid),
   }));
   await storageSet(key, { at: Date.now(), items });
   return items;
+}
+
+// A post has three ids: the news API's gid, its announcement's and its event's.
+// The store's news page (/news/app/<appid>/view/<id>) only shows the event:
+// any other id gives the empty News Hub, which loads forever. The store's event
+// list has each event's name and start time, so the post is found by title
+// (the nearest time breaks ties). Steam's external post link, which redirects
+// to the announcement on the community site, is the fallback.
+const newsPostUrl = gid => `https://store.steampowered.com/news/externalpost/steam_community_announcements/${gid}`;
+
+export async function newsPageUrl(appid, { gid, title, date }) {
+  const data = await curlJson(`https://store.steampowered.com/events/ajaxgetadjacentpartnerevents/?appid=${appid}&count_before=0&count_after=20&lang_list=0`);
+  const event = (data?.events || []).filter(e => e.event_name === title)
+    .sort((a, b) => Math.abs(a.rtime32_start_time - date) - Math.abs(b.rtime32_start_time - date))[0];
+  return event?.gid ? `https://store.steampowered.com/news/app/${appid}/view/${event.gid}` : newsPostUrl(gid);
 }
 
 // Cached news only (null when there is none yet): shown at once, online or not.

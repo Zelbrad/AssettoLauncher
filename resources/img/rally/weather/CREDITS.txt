@@ -1,0 +1,4 @@
+Weather icons (Quick Drive's Rally session settings) and clock.png are Assetto Corsa
+Rally's own interface icons (Data/UITextures/WeatherIcons, MenuImages/CarSelection/
+Utilities/T_Time), exported unchanged from the game's files. They belong to Kunos
+Simulazioni / 505 Games.

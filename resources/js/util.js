@@ -219,6 +219,27 @@ export async function isProcessRunning(name) {
   return Number(r.stdOut.trim()) > 0;
 }
 
+// Which of these processes (names without ".exe") are running, from one process
+// listing (tasklist is much quicker to start than PowerShell, so it can be polled).
+export async function runningProcesses(names) {
+  if (IS_LINUX) {
+    const r = await sh('ps -eo args=');
+    return new Set(names.filter(n => new RegExp(`(^|[^a-z0-9_-])${n}[.]exe`, 'im').test(r.stdOut || '')));
+  }
+  const r = await run('tasklist /FO CSV /NH');
+  const have = new Set([...(r.stdOut || '').matchAll(/^"([^"]+)"/gm)].map(m => m[1].toLowerCase()));
+  return new Set(names.filter(n => have.has(`${n.toLowerCase()}.exe`)));
+}
+
+// Asks a process to close, as its window's close button would (so a game can
+// save on the way out), or with `force` ends it at once.
+export async function stopProcess(name, force = false) {
+  if (IS_LINUX) return sh(`pkill ${force ? '-KILL' : '-TERM'} -i -f ${shQuote(`(^|[^a-z0-9_-])${name}[.]exe`)}`);
+  return powershell(force
+    ? `Stop-Process -Name '${name}' -Force -ErrorAction SilentlyContinue`
+    : `Get-Process -Name '${name}' -ErrorAction SilentlyContinue | ForEach-Object { [void]$_.CloseMainWindow() }`);
+}
+
 export async function removeDirTree(path) {
   const r = IS_LINUX
     ? await sh(`rm -rf -- ${shQuote(norm(path))}`)

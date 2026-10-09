@@ -16,3 +16,6 @@ ACRCover.png
 
 # README screenshots (uploaded to GitHub separately)
 docs/screenshots/
+
+# Python bytecode from tools/
+__pycache__/

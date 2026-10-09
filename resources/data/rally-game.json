@@ -1,0 +1,746 @@
+{
+ "updated": "2026-10-08T17:40:58Z",
+ "build": "25170642",
+ "languages": [
+  "en",
+  "es",
+  "fr",
+  "de",
+  "it"
+ ],
+ "groups": {
+  "AlsaceS2Munster": {
+   "name": {
+    "en": "Vallée de Munster"
+   },
+   "description": {
+    "en": "Discover all the details of the special stage Vallée de Munster. A very technical stage, with many curves in the inner part of the forest, while the section through the fields is extremely fast.",
+    "es": "Descubre todos los detalles de la etapa especial de Vallée de Munster. Una etapa muy técnica, con muchas curvas en la parte interior del bosque, mientras que el tramo que atraviesa los campos es extremadamente rápido.",
+    "fr": "Découvrez tous les détails de l'étape spéciale de la vallée de Munster. Étape très technique aux nombreux virages dans la partie intérieure de la forêt, tandis que sa section traversant les champs est extrêmement rapide.",
+    "de": "Entdecke alle Details der Sonderetappe Vallée de Munster. Eine technische sehr anspruchsvolle Etappe mit vielen Kurven im inneren Waldabschnitt, auf den ein äußerst schneller Streckenabschnitt über die Felder folgt.",
+    "it": "Scopri tutti i dettagli della prova speciale Vallée de Munster. Una prova molto tecnica, con tante curve all'interno della foresta e una sezione ad alta velocità che attraversa i campi."
+   }
+  },
+  "AlsaceS4Saverne": {
+   "name": {
+    "en": "Saverne"
+   },
+   "description": {
+    "en": "Discover all the details of the Saverne special stage. Narrow and fast, with several junctions and a section inside the town. Be careful of the low walls at the edges of the road and the sudden braking points.",
+    "es": "Descubre todos los detalles de la etapa especial de Saverne, una zona estrecha y rápida, con varios cruces y un tramo dentro de la ciudad. Ten cuidado con los muros bajos a los lados de la carretera y los puntos de frenada repentinos.",
+    "fr": "Découvrez tous les détails de l'étape spéciale de Saverne. Étroite et rapide avec plusieurs embranchements et une section à l'intérieur de la ville, cette étape exige de faire particulièrement attention aux murs bas en bord de route et aux points de freinage soudains.",
+    "de": "Entdecke alle Details der Saverne-Sonderetappe. Schmal und schnell, mit mehreren Abzweigen und einem Abschnitt in der Stadt. Vorsicht vor den niedrigen Mauern am Straßenrand und den plötzlichen Bremszonen.",
+    "it": "Scopri tutti i dettagli della prova speciale Saverne, stretta e rapida con numerosi svincoli e una sezione all'interno della città. Attenzione ai muretti ai bordi della strada e agli improvvisi punti di frenata."
+   }
+  },
+  "GreeceS3Elatia": {
+   "name": {
+    "en": "Elatia"
+   },
+   "description": {
+    "en": "Learn the special stage of Elatia: wide roads, fast corners that invite controlled slides, and broad hairpins where you can show off vehicle control. The course rewards drivers who blend speed with precision: smooth lines through the high-speed sections and careful setup management in the sharper direction changes.",
+    "es": "Aprende el tramo especial de Elatia: carreteras anchas, curvas rápidas que invitan a derrapes controlados y horquillas amplias donde puedes demostrar tu control del vehículo. El recorrido recompensa a los pilotos que combinan velocidad y precisión: trazadas suaves en las secciones de alta velocidad y una gestión cuidadosa de la puesta a punto en los cambios de dirección más cerrados.",
+    "fr": "Apprenez la spéciale d’Elatia : des routes larges, des virages rapides qui invitent aux glisses contrôlées et de grandes épingles où vous pouvez démontrer votre maîtrise du véhicule. Le parcours récompense les pilotes qui allient vitesse et précision : des trajectoires fluides dans les sections rapides et une gestion soignée des réglages dans les changements de direction plus serrés.",
+    "de": "Lerne die Wertungsprüfung Elatia kennen: breite Straßen, schnelle Kurven, die zu kontrollierten Drifts einladen, und weite Haarnadeln, in denen du deine Fahrzeugkontrolle unter Beweis stellen kannst. Der Kurs belohnt Fahrer, die Tempo und Präzision verbinden: saubere Linien in den Hochgeschwindigkeitsabschnitten und sorgfältiges Setup-Management bei den engeren Richtungswechseln.",
+    "it": "Impara a conoscere la prova speciale di Elatia: strade ampie, curve veloci che favoriscono derapate controllate e tornanti generosi dove mettere in mostra la padronanza del veicolo. Il tracciato premia chi sa combinare velocità e controllo: traiettorie fluide nelle porzioni veloci e gestione precisa dell’assetto nei cambi di direzione più netti."
+   }
+  },
+  "GreeceS4Loutraki": {
+   "name": {
+    "en": "Loutraki"
+   },
+   "description": {
+    "en": "Discover every detail of the dusty roads that define the Loutraki special stage. Wide and strewn with debris and rocks, these sections keep a relentless pace full of slides, testing drivers' ability to stay focused and avoid sudden hazards.",
+    "es": "Descubre todos los detalles de las carreteras polvorientas que definen el tramo especial de Loutraki. Anchas y cubiertas de escombros y rocas, estas secciones mantienen un ritmo implacable lleno de derrapes y ponen a prueba la capacidad de los pilotos para mantener la concentración y evitar peligros repentinos.",
+    "fr": "Découvrez tous les détails des routes poussiéreuses qui définissent la spéciale de Loutraki. Larges et jonchées de débris et de rochers, ces sections imposent un rythme soutenu plein de glisses, mettant à l’épreuve la capacité des pilotes à rester concentrés et à éviter les dangers soudains.",
+    "de": "Entdecke jedes Detail der staubigen Straßen, die die Wertungsprüfung Loutraki prägen. Diese breiten, mit Geröll und Felsen übersäten Abschnitte sorgen für ein unerbittliches Tempo voller Drifts und stellen die Fähigkeit der Fahrer auf die Probe, konzentriert zu bleiben und plötzliche Gefahren zu vermeiden.",
+    "it": "Scopri ogni dettaglio delle strade polverose che caratterizzano la prova speciale di Loutraki. Ampie e costellate di detriti e massi, queste sezioni mantengono un ritmo serrato e ricco di derapate, mettendo alla prova la capacità dei piloti di restare concentrati per evitare pericoli improvvisi."
+   }
+  },
+  "LivignoTestTrack01": {
+   "name": {
+    "en": "Ice Track",
+    "es": "Pista de hielo",
+    "fr": "Piste glacée",
+    "de": "Eisstrecke",
+    "it": "Ghiacciodromo"
+   },
+   "description": {
+    "en": "Explore every detail of the Livigno Circuit. Located among the mountains of northern Italy, this circuit features permanent snow, providing a unique opportunity to challenge yourself on a this technical surface.",
+    "es": "Explora cada detalle del circuito de Livigno. Ubicado en la sierra del norte de Italia, este circuito está cubierto permanentemente por nieve, lo que te ofrece una oportunidad única para ponerte a prueba en una superficie muy técnica.",
+    "fr": "Découvrez chaque détail du circuit de Livigno. Localisé dans les montagnes du nord de l'Italie, ce circuit couvert de neige offre l'opportunité unique de se tester sur une surface technique.",
+    "de": "Erkunde jedes Detail der Livigno-Strecke. Diese Strecke in den Bergen Norditaliens ist das ganze Jahr über mit Schnee bedeckt und bietet die einzigartige Gelegenheit, das eigene Können auf dieser technisch anspruchsvollen Oberfläche auf die Probe zu stellen.",
+    "it": "Esplora ogni dettaglio del Circuito di Livigno. Situato tra le montagne del nord Italia, questo circuito è dotato di neve permanente, offrendo un'opportunità unica per mettersi alla prova su una superficie tecnica come questa."
+   }
+  },
+  "MonteCarloS1Bollene": {
+   "name": {
+    "en": "Col de Turini"
+   },
+   "description": {
+    "en": "Discover the beautiful roads of the legendary Col de Turini, one of the most iconic special stages in the world. A winding route full of hairpins and narrow roads that demands driving precision, skill, and concentration.",
+    "es": "Descubre las hermosas carreteras del mítico Col de Turini, una de las etapas especiales más icónicas del mundo. Es una ruta zigzagueante repleta de curvas cerradas y carreteras estrechas que exigen una conducción precisa, maña y concentración.",
+    "fr": "Découvrez les routes sublimes du col de Turini, l'une des étapes les plus mythiques au monde. Un tracé sinueux, ponctué d'épingles et de routes étroites, qui exige précision de pilotage, maîtrise technique et concentration constante.",
+    "de": "Entdecke die wunderschönen Straßen des legendären Col de Turini und gleichzeitig eine der berühmtesten Sonderetappen der Welt. Eine Serpentinenstraße voller Haarnadelkurven und schmalen Streckenabschnitten, die Präzision, Geschick und Konzentration erfordert.",
+    "it": "Scopri le bellissime strade del leggendario Col de Turini, uno degli special stage più iconici al mondo. Un tortuoso percorso pieno di tornanti e strade strette che richiede precisione di guida, tecnica e concentrazione."
+   }
+  },
+  "MonteCarloS2Sisteron": {
+   "name": {
+    "en": "Sisteron"
+   },
+   "description": {
+    "en": "Get to know the details of this special stage, featuring fast and wide corners, as well as sudden changes in direction. The pace is very high, alternating between extremely fast sections and highly technical parts.",
+    "es": "Conoce todos los detalles de esta etapa especial, que incluye curvas rápidas y anchas, así como cambios bruscos de dirección. Conducirás a un ritmo muy alto, alternando secciones extremadamente rápidas con partes muy técnicas.",
+    "fr": "Apprenez en plus sur cette étape spéciale comprenant des virages larges et rapides ainsi que des changements de trajectoire soudains. L'allure y est soutenue, entre sections extrêmement vives et parties hautement techniques.",
+    "de": "Mache dich mit den Details dieser Sonderetappe und mit ihren schnellen und breiten Kurven sowie ihren plötzlichen Richtungswechseln vertraut. Diese temporeiche Strecke wechselt zwischen extrem schnellen und technisch sehr anspruchsvollen Abschnitten.",
+    "it": "Impara a conoscere i dettagli di questa prova speciale, caratterizzata da curve veloci e larghe, ma anche da improvvisi cambi di direzione. Il ritmo è molto elevato e si alternano tratti estremamente veloci a sezioni molto tecniche."
+   }
+  },
+  "WelesS3HafrenNorth": {
+   "name": {
+    "en": "Hafren North",
+    "it": "Hafren Nord"
+   },
+   "description": {
+    "en": "Discover all the details of the Hafren North special stage. In the middle of the Hafren forest, it is a technical and fast stage, characterized by continuous ups and downs and numerous fast and dangerous junctions.",
+    "es": "Descubre todos los detalles de la etapa especial de Hafren North. En medio del bosque de Hafren, se trata de una etapa técnica y rápida, caracterizada por continuas subidas y bajadas y numerosos cruces rápidos y peligrosos.",
+    "fr": "Découvrez tous les détails de l'étape spéciale de Hafren North. Située au cœur de Hafren Forest, c'est une section technique à la vitesse élevée, caractérisée par une succession de montées et de descentes, ainsi que de nombreux embranchements rapides et dangereux.",
+    "de": "Entdecke alle Details der Hafren North-Sonderetappe. Es handelt sich um eine technisch anspruchsvolle und schnelle Etappe mitten im Hafren Forest, die von ständigen Auf- und Abfahrten sowie zahlreichen schnellen und gefährlichen Abzweigen geprägt ist.",
+    "it": "Scopri tutti i dettagli della prova speciale Hafren Nord. Situata nel cuore della foresta di Hafren, questa prova tecnica e veloce è caratterizzata da continue salite e discese e numerosi svincoli rapidi e pericolosi."
+   }
+  },
+  "WelesS4HafrenSouth": {
+   "name": {
+    "en": "Hafren South",
+    "it": "Hafren Sud"
+   },
+   "description": {
+    "en": "Discover all the details of the Hafren South special stage. A short and twisty special stage that winds through the forests of Wales, featuring dangerous gates, logs, and ditches alongside the road.",
+    "es": "Descubre todos los detalles de la etapa especial de Hafren South. Una etapa especial corta y con muchas curvas que serpentea por los bosques de Gales, con peligrosas puertas, troncos y zanjas junto a la carretera.",
+    "fr": "Découvrez tous les détails de l'étape spéciale de Hafren South. Section courte et tortueuse qui serpente dans les forêts du Pays de Galles, elle comporte des portes dangereuses, des troncs coupés et des fossés le long de son parcours.",
+    "de": "Entdecke alle Details der Hafren South-Sonderetappe. Eine kurze und kurvenreiche Etappe durch die Wälder von Wales mit gefährlichen Viehgattern, Baumstämmen und Gräben entlang der Strecke.",
+    "it": "Scopri tutti i dettagli della prova speciale Hafren Sud, una breve e tortuosa prova speciale che attraversa le foreste del Galles e presenta porte pericolose, tronchi e fossi ai bordi della strada."
+   }
+  }
+ },
+ "stages": {
+  "AlsaceS2MunsterFullForward": {
+   "en": "Vallée de Munster Montée"
+  },
+  "AlsaceS2MunsterFullReverse": {
+   "en": "Vallée de Munster Descente"
+  },
+  "AlsaceS2MunsterShort1Forward": {
+   "en": "Luttenbach près Munster",
+   "it": "Luttenbach-près-Munster"
+  },
+  "AlsaceS2MunsterShort1Reverse": {
+   "en": "Forêt de Munster"
+  },
+  "AlsaceS2MunsterShort2Forward": {
+   "en": "Sommet de Munster"
+  },
+  "AlsaceS2MunsterShort2Reverse": {
+   "en": "Col du petit Ballon"
+  },
+  "AlsaceS4SaverneFullForward": {
+   "en": "Forêt de Saverne"
+  },
+  "AlsaceS4SaverneFullReverse": {
+   "en": "Steigenbach"
+  },
+  "AlsaceS4SaverneShort1Forward": {
+   "en": "Obersteigen"
+  },
+  "AlsaceS4SaverneShort1Reverse": {
+   "en": "La traversée de La Mossig"
+  },
+  "GreeceS3ElatiaFullForward": {
+   "en": "Elatia - Zeli"
+  },
+  "GreeceS3ElatiaFullReverse": {
+   "en": "Zeli - Elatia"
+  },
+  "GreeceS3ElatiaCut1Forward": {
+   "en": "Elatia"
+  },
+  "GreeceS3ElatiaCut1Reverse": {
+   "en": "Elatia Reverse",
+   "es": "Elatia inverso",
+   "fr": "Elatia inversé",
+   "de": "Elatia Rückwärts",
+   "it": "Elatia al contrario"
+  },
+  "GreeceS3ElatiaCut2Forward": {
+   "en": "Zeli"
+  },
+  "GreeceS3ElatiaCut2Reverse": {
+   "en": "Zeli Reverse",
+   "es": "Zeli inverso",
+   "fr": "Zeli inversé",
+   "de": "Zeli Rückwärts",
+   "it": "Zeli Inversa"
+  },
+  "GreeceS4LoutrakiFullForward": {
+   "en": "Loutraki - Aghii Theodori"
+  },
+  "GreeceS4LoutrakiFullReverse": {
+   "en": "Aghii Theodori - Loutraki"
+  },
+  "GreeceS4LoutrakiCut1Forward": {
+   "en": "New Loutraki",
+   "es": "Nuevo Loutraki",
+   "fr": "Nouveau Loutraki",
+   "de": "Neues Loutraki"
+  },
+  "GreeceS4LoutrakiCut1Reverse": {
+   "en": "New Loutraki Reverse",
+   "es": "Nuevo Loutraki inverso",
+   "fr": "Nouveau Loutraki inversé",
+   "de": "Neues Loutraki Rückwärts",
+   "it": "New Loutraki al contrario"
+  },
+  "GreeceS4LoutrakiCut2Forward": {
+   "en": "Aghii Theodori"
+  },
+  "GreeceS4LoutrakiCut2Reverse": {
+   "en": "Aghii Theodori Reverse",
+   "es": "Aghii Theodori inverso",
+   "fr": "Aghii Theodori inversé",
+   "de": "Aghii Theodori Rückwärts",
+   "it": "Aghii Theodori al contrario"
+  },
+  "LivignoTestTrack01FullForward": {
+   "en": "Main Circuit",
+   "es": "Circuito principal",
+   "fr": "Circuit de Livigno",
+   "de": "Hauptstrecke",
+   "it": "Circuito Principale"
+  },
+  "LivignoTestTrack01FullReverse": {
+   "en": "Main Circuit Reverse",
+   "es": "Circuito principal invertido",
+   "fr": "Circuit de Livigno : inversé",
+   "de": "Hauptstrecke in entgegengesetzter Richtung",
+   "it": "Circuito Principale Senso Inverso"
+  },
+  "MonteCarloS1BolleneFullForward": {
+   "en": "La Bollène-Vésubie - Peïra Cava",
+   "de": "La Bollène-Vésubie – Peïra Cava"
+  },
+  "MonteCarloS1BolleneFullReverse": {
+   "en": "Peïra Cava - La Bollène-Vésubie",
+   "de": "Peïra Cava – La Bollène-Vésubie"
+  },
+  "MonteCarloS1BolleneCut1Forward": {
+   "en": "La Bollène-Vésubie - Turini",
+   "de": "La Bollène-Vésubie – Turini"
+  },
+  "MonteCarloS1BolleneCut1Reverse": {
+   "en": "Turini - La Bollène-Vésubie",
+   "de": "Turini – La Bollène-Vésubie"
+  },
+  "MonteCarloS1BolleneCut2Forward": {
+   "en": "Turini - Peïra Cava",
+   "de": "Turini –Peïra Cava"
+  },
+  "MonteCarloS1BolleneCut2Reverse": {
+   "en": "Peïra Cava - Turini",
+   "de": "Peïra Cava – Turini"
+  },
+  "MonteCarloS1BolleneCut3Forward": {
+   "en": "Pra d'Alart"
+  },
+  "MonteCarloS1BolleneCut3Reverse": {
+   "en": "Sommet de Turini"
+  },
+  "MonteCarloS2SisteronFullForward": {
+   "en": "Sisteron - St. Geniez"
+  },
+  "MonteCarloS2SisteronFullReverse": {
+   "en": "St. Geniez - Sisteron",
+   "it": "St. Geniez - Mézien"
+  },
+  "MonteCarloS2SisteronCut1Forward": {
+   "en": "Sisteron - Mézien"
+  },
+  "MonteCarloS2SisteronCut1Reverse": {
+   "en": "Mézien - Sisteron"
+  },
+  "MonteCarloS2SisteronCut2Forward": {
+   "en": "Mézien - St. Geniez"
+  },
+  "MonteCarloS2SisteronCut2Reverse": {
+   "en": "St. Geniez - Mézien"
+  },
+  "WelesS3HafrenNorthFullForward": {
+   "en": "Cwmbiga - Afon Biga",
+   "de": "Cwmbiga – Afon Biga"
+  },
+  "WelesS3HafrenNorthFullReverse": {
+   "en": "Afon Biga - Cwmbiga",
+   "de": "Afon Biga – Cwmbiga"
+  },
+  "WelesS3HafrenNorthCut1Forward": {
+   "en": "Cwmbiga - Fedw Fain",
+   "de": "Cwmbiga – Fedw Fain"
+  },
+  "WelesS3HafrenNorthCut1Reverse": {
+   "en": "Fedw Fain - Cwmbiga",
+   "de": "Fedw Fain – Cwmbiga"
+  },
+  "WelesS3HafrenNorthCut2Forward": {
+   "en": "Banc Gwyn - Afon Biga",
+   "de": "Banc Gwyn – Afon Biga"
+  },
+  "WelesS3HafrenNorthCut2Reverse": {
+   "en": "Afon Biga - Banc Gwyn",
+   "de": "Afon Biga – Banc Gwyn"
+  },
+  "WelesS4HafrenSouthFullForward": {
+   "en": "Afon Bidno - Severn",
+   "de": "Afon Bidno – Severn"
+  },
+  "WelesS4HafrenSouthFullReverse": {
+   "en": "Severn - Afon Bidno",
+   "de": "Severn – Afon Bidno"
+  }
+ },
+ "cars": {
+  "AlfaRomeoGTA1300": {
+   "livery": {
+    "en": "Quadrifoglio Red",
+    "es": "Quadrifoglio en rojo",
+    "fr": "Rouge Quadrifoglio",
+    "de": "Quadrifoglio – rot",
+    "it": "Quadrifoglio Rossa"
+   },
+   "description": {
+    "en": "The GTA 1300, an iconic car of the 1960s and 1970s, was capable of winning on the track, hill climbs, and rally. With 163 hp and rear-wheel drive, it offered advanced performance for its time.",
+    "es": "El GTA 1300, un coche emblemático de los años 60 y 70, era capaz de ganar en pista, en carreras de montaña y en rallies. Con 163 CV y tracción trasera, ofrecía un rendimiento avanzado para su época.",
+    "fr": "Voiture emblématique des années 60 et 70, la GTA 1300 était capable de gagner sur circuit, en côte et en rallye. Avec ses 163 CV et sa transmission par propulsion, elle fournissait des performances avancées pour son époque.",
+    "de": "Der GTA 1300, eine Ikone der 1960er und 1970er, war auf der Rundstrecke, in Bergrennen und in der Rallye erfolgreich. Mit 163 PS und Hinterradantrieb bot er eine für seine Zeit fortschrittliche Leistung.",
+    "it": "La GTA 1300, iconica auto degli anni '60 e '70, era capace di vincere su pista, nelle cronoscalate e nel rally. Con 163 cavalli di potenza e la trazione posteriore, offriva prestazioni incredibili per l'epoca."
+   }
+  },
+  "AlpineA110": {
+   "livery": {
+    "en": "Alpine Blue/White",
+    "es": "Alpine azul/blanco",
+    "fr": "Alpine bleu/blanc",
+    "de": "Alpine Blau/Weiß",
+    "it": "Alpine Blu/Bianco"
+   },
+   "description": {
+    "en": "Undisputed icon of the rally world in the 1960s, it played a key role in the rise of this sport. Its lightness and excellent performance fully offset the complexity and high technical demands required when driving.",
+    "es": "Icono indiscutible del mundo de los rallies en la década de 1960 que fue decisivo para el auge de esta disciplina. Su ligereza y rendimiento excepcional compensaban por completo la complejidad y las exigencias técnicas elevadas que requería su pilotaje.",
+    "fr": "Icône indiscutable du monde du rallye des années 60, elle a joué un rôle crucial dans la montée en puissance de ce sport. Sa légèreté et ses performances excellentes compensent totalement la complexité et les nécessités techniques requises de son pilotage.",
+    "de": "Als unangefochtene Legende der Rallyewelt der 1960er-Jahre spielte dieser Wagen eine Schlüsselrolle im Aufstieg des Rallyesports. Sein geringes Gewicht und seine hervorragende Leistung gleichen die Komplexität und die hohen technischen Anforderungen beim Fahren vollständig aus.",
+    "it": "Icona indiscussa del mondo dei rally negli anni '60, contribuì significativamente alla crescita di questo sport. La sua leggerezza e le ottime prestazioni compensavano pienamente la complessità e le elevate esigenze tecniche richieste alla guida."
+   }
+  },
+  "AudiQuattroGr4": {
+   "livery": {
+    "en": "Audi Sport"
+   },
+   "description": {
+    "en": "With the Group 4 Quattro, Audi revolutionized the world of rallying. It was the first all-wheel-drive car to compete and win, forever changing the direction of development for cars in this category.",
+    "es": "Con el Quattro Grupo 4, Audi revolucionó el mundo de los rallies. Fue el primer coche de tracción total en competir y ganar, cambiando para siempre la dirección del desarrollo de los coches de esta categoría.",
+    "fr": "Avec la Quattro Groupe 4, Audi a révolutionné le monde du rallye. Ce fut la première voiture à transmission intégrale à participer à des compétitions et à les remporter, changeant à jamais l’orientation du développement des voitures de cette catégorie.",
+    "de": "Mit dem Quattro Gruppe 4 revolutionierte Audi die Welt des Rallyesports. Es war das erste Fahrzeug mit Allradantrieb, das antrat und gewann, und veränderte damit dauerhaft die Entwicklungsrichtung der Fahrzeuge dieser Kategorie.",
+    "it": "Con la Quattro Gruppo 4, Audi ha rivoluzionato il mondo dei rally. È stata la prima vettura a trazione integrale a competere e a vincere, cambiando per sempre la direzione dello sviluppo delle auto di questa categoria."
+   }
+  },
+  "CitroenXsaraWRC": {
+   "livery": {
+    "en": "Team Citroën - 2003"
+   },
+   "description": {
+    "en": "The Citroën Xsara WRC, made legendary by Sébastien Loeb’s victories, dominated rallying from 2000 to 2006 with advanced aerodynamics, more than 300 hp, and the  remarkable reliability.",
+    "es": "El Citroën Xsara WRC, que se hizo legendario gracias a las victorias de Sébastien Loeb, dominó los rallies entre 2000 y 2006 con una aerodinámica avanzada, más de 300 CV y una fiabilidad extraordinaria.",
+    "fr": "La Citroën Xsara WRC, rendue légendaire par les victoires de Sébastien Loeb, a dominé le rallye de 2000 à 2006 avec son aérodynamisme avancé, sa puissance supérieure à 300 CV et sa fiabilité remarquable.",
+    "de": "Der Citroën Xsara WRC wurde durch Sébastien Loebs Siege zur Legende und dominierte von 2000 bis 2006 mit fortschrittlicher Aerodynamik, über 300 PS und bemerkenswerter Zuverlässigkeit.",
+    "it": "La Citroën Xsara WRC, resa leggendaria dalle vittorie di Sébastien Loeb, ha dominato il mondo del rally dal 2000 al 2006 grazie alle sue proprietà aerodinamiche avanzate, ai suoi oltre 300 cavalli di potenza e alla sua incredibile affidabilità."
+   }
+  },
+  "Fiat124Abarth": {
+   "livery": {
+    "en": "FIAT Abarth Red",
+    "es": "FIAT Abarth rojo",
+    "fr": "FIAT Abarth rouge",
+    "de": "FIAT Abarth Rot",
+    "it": "FIAT Abarth Rosso"
+   },
+   "description": {
+    "en": "A symbol of Fiat’s rally ambition, the 124 Abarth 16V proved small makers could compete. Made with ultralight materials, rear-wheel drive, and 200 hp, it delivered excellent performance, durability, and great reliability in competition.",
+    "es": "Símbolo de la ambición de Fiat en los rallies, el 124 Abarth 16V demostró que los constructores pequeños podían competir. Fabricado con materiales ultraligeros, tracción trasera y 200 CV, ofrecía un rendimiento excelente, durabilidad y gran fiabilidad en competición.",
+    "fr": "Symbole de l'ambition de Fiat en rallye, la 124 Abarth Rally 16V a prouvé que de petits constructeurs pouvaient être de sérieux acteurs. Conçue en matériaux ultralégers et dotée d'une transmission par propulsion et de 200 CV, elle affichait d'excellentes performances, ainsi qu'une grande robustesse et fiabilité en compétition.",
+    "de": "Der 124 Abarth 16V ist ein Symbol für Fiats Rallye-Ambitionen und bewies, dass auch kleinere Hersteller konkurrenzfähig sein konnten. Gefertigt aus ultraleichten Materialien, mit Heckantrieb und 200 PS, bot er hervorragende Leistung, Haltbarkeit und große Zuverlässigkeit im Wettbewerb.",
+    "it": "Simbolo dell'ambizione di Fiat nel rally, la 124 Abarth 16V ha dimostrato che anche i piccoli costruttori potevano essere competitivi. Grazie ai materiali ultraleggeri, al sistema a trazione posteriore e ai 200 cavalli di potenza, offriva ottime prestazioni, resistenza e grande affidabilità in gara."
+   }
+  },
+  "Fiat131Abarth": {
+   "livery": {
+    "en": "Lancia Alitalia"
+   },
+   "description": {
+    "en": "The Fiat 131 Abarth, a compact rear-wheel-drive ’70s car with iconic Alitalia livery and 245 hp, became a rally legend, dominating competitions until the Group B era began.",
+    "es": "El Fiat 131 Abarth, un coche compacto de tracción trasera de los años 70 con la emblemática decoración de Alitalia y 245 CV, se convirtió en una leyenda del rally, dominando las competiciones hasta el inicio de la época del Grupo B.",
+    "fr": "Voiture à propulsion compacte des années 70, dotée de l'emblématique livrée Alitalia et de 245 CV, la Fiat 131 Abarth est une légende du rallye qui a dominé les compétitions jusqu'au début de l'ère du Groupe B.",
+    "de": "Der Fiat 131 Abarth, ein kompakter Hecktriebler der 70er mit ikonischer Alitalia-Lackierung und 245 PS, wurde zur Rallye-Legende und dominierte Wettbewerbe bis zum Beginn der Gruppe-B-Ära.",
+    "it": "La Fiat 131 Abarth, una compatta a trazione posteriore degli anni '70 con l'iconica livrea Alitalia e 245 cavalli di potenza, divenne una leggenda del rally, dominando le competizioni fino all'inizio dell'era del Gruppo B."
+   }
+  },
+  "Hyundaii20NRally2": {
+   "livery": {
+    "en": "Hyundai N",
+    "fr": "Hyundai N"
+   },
+   "description": {
+    "en": "The Hyundai i20 Rally2, one of the most popular cars in its category, is a turbocharged 4WD with excellent performance and great ease of use. It is ideal both for novice drivers and for veterans seeking a reliable car.",
+    "es": "El Hyundai i20 Rally2, uno de los coches más populares de su categoría, es un 4x4 turboalimentado con un rendimiento excelente y una gran facilidad de uso. Es ideal tanto para pilotos novatos como para veteranos que buscan un coche fiable.",
+    "fr": "Voiture parmi les plus populaires de sa catégorie, la Hyundai i20 Rally2 est un véhicule à transmission intégrale turbocompressé aux performances impressionnantes et à la conduite facile. Elle est idéale aussi bien pour les pilotes novices que pour les vétérans à la recherche d'une voiture fiable.",
+    "de": "Der Hyundai i20 Rally2, eines der beliebtesten Fahrzeuge seiner Kategorie, ist ein turbogeladener Allradwagen mit hervorragender Leistung und großer Fahrerfreundlichkeit. Er ist sowohl für Einsteiger als auch für erfahrene Fahrer, die ein zuverlässiges Auto suchen, ideal.",
+    "it": "La Hyundai i20 Rally2, una delle auto più popolari della sua categoria, è un'auto 4WD con motore turbo dalle prestazioni eccellenti e facile da manovrare. È ideale per i principianti e per i veterani che hanno bisogno di un'auto affidabile."
+   }
+  },
+  "LanciaDeltaIntegraleEvo": {
+   "livery": {
+    "en": "Lancia Racing"
+   },
+   "description": {
+    "en": "A true rally legend, the Lancia Delta Integrale Evoluzione needs no introduction. It was the undisputed dominator of Group A, thanks to its power (365 hp), handling (4WD), and robustness, combining extreme performance with reliability.",
+    "es": "Una auténtica leyenda del rally, el Lancia Delta Integrale Evoluzione no necesita presentación. Fue el indiscutible dominante del Grupo A, gracias a su potencia (365 CV), su manejo (4x4) y su robustez, combinando un rendimiento extremo con fiabilidad.",
+    "fr": "Il est inutile de présenter la Lancia Delta Integrale Evoluzione, véritable légende du rallye. Elle a dominé sans conteste le Groupe A grâce à sa puissance (365 CV), sa conduite (intégrale) et sa robustesse qui lui ont fourni performances extrêmes et fiabilité.",
+    "de": "Der Lancia Delta Integrale Evoluzione ist eine wahre Legende des Rallyesports und bedarf keiner Vorstellung. Seine Leistung (365 PS), sein Handling (Allrad) und seine Robustheit kombinierten Stärke mit Zuverlässigkeit und machten ihn zum unangefochtenen Dominator der Gruppe A.",
+    "it": "Una vera leggenda del rally, la Lancia Delta Integrale Evoluzione non ha bisogno di presentazioni. Ha dominato in modo indiscusso nel Gruppo A, grazie alla sua potenza (365 cavalli), alla sua manovrabilità (4WD) e alla sua robustezza, ha combinato affidabilità e grandi prestazioni."
+   }
+  },
+  "LanciaFulviaHF": {
+   "livery": {
+    "en": "Lancia HF Red",
+    "es": "Lancia HF rojo",
+    "fr": "Lancia HF rouge",
+    "de": "Lancia HF Rot",
+    "it": "Lancia HF Rosso"
+   },
+   "description": {
+    "en": "An iconic car from the 1970s, a concentrate of innovations and engineering research. The introduction of the front limited-slip differential makes it nervous to drive, due to the variations in traction between the front wheels.",
+    "es": "Coche mítico de la década de los 70, una mezcla concentrada de innovaciones e investigación de ingeniería. La introducción del diferencial delantero de deslizamiento limitado lo vuelve nervioso al volante debido a las variaciones de tracción entre las ruedas delanteras.",
+    "fr": "Une voiture iconique des années 70, concentré d'innovations et de résultats de recherche en ingénierie. L'ajout au véhicule d'un différentiel autobloquant mécanique rend sa conduite nerveuse du fait des variations de traction entre les roues avant.",
+    "de": "Ein legendäres Auto der 1970er-Jahre und das Ergebnis einer Mischung aus Innovation und ingenieurstechnischer Entwicklungsarbeit. Durch das vordere Sperrdifferenzial reagiert das Fahrzeug aufgrund wechselnder Traktion an der Vorderachse sehr sensibel.",
+    "it": "Una vettura iconica degli anni '70, un concentrato di innovazioni e ricerca ingegneristica. L'introduzione del differenziale autobloccante anteriore la rende nervosa alla guida, a causa delle variazioni di trazione tra le ruote anteriori."
+   }
+  },
+  "LanciaRally037Evo2": {
+   "livery": {
+    "en": "Lancia Racing"
+   },
+   "description": {
+    "en": "The 037 Evo was the last rear-wheel-drive car to challenge and win against the legendary giants of Group B. The 325 hp supercharged engine, a feature that distinguished it from its rivals, provided exceptional acceleration, ideal for rally racing.",
+    "es": "El 037 Evo fue el último coche de tracción trasera en desafiar y vencer a los legendarios gigantes del Grupo B. El motor sobrealimentado de 325 CV, una característica que lo distinguía de sus rivales, proporcionaba una aceleración excepcional e ideal para las carreras de rally.",
+    "fr": "La 037 Evo a été la dernière voiture à propulsion à prendre le dessus sur les géants légendaires du Groupe B. Son moteur suralimenté de 325 CV, qui la distinguait de ses rivales, lui fournissait une accélération exceptionnelle, idéale pour les courses de rallye.",
+    "de": "Der 037 Evo war das letzte heckgetriebene Fahrzeug, das die legendären Giganten der Gruppe B herausforderte und besiegte. Der 325 PS starke Kompressormotor – ein Ausstattungsmerkmal, das ihn von seinen Rivalen abhob – sorgte für eine außergewöhnliche und für den Rallyesport ideale Beschleunigung.",
+    "it": "La 037 Evo è stata l'ultima auto a trazione posteriore a sfidare e battere i leggendari giganti del Gruppo B. Il motore sovralimentato da 325 cavalli, caratteristica che la distingueva dalle sue rivali, offriva un'accelerazione eccezionale, ideale per le gare di rally."
+   }
+  },
+  "LanciaStratosHF": {
+   "livery": {
+    "en": "Lancia Alitalia"
+   },
+   "description": {
+    "en": "The Lancia Stratos HF, with its 250 hp Ferrari engine, rear-wheel drive, and cutting-edge design, dominated rallying in the 1970s. Powerful yet challenging to drive, it required exceptional skill, cementing its status as a motorsport legend.",
+    "es": "El Lancia Stratos HF, con su motor Ferrari de 250 CV, tracción trasera y diseño vanguardista, dominó los rallies en la década de 1970. Potente pero difícil de conducir, requería una habilidad excepcional, lo que consolidó su estatus como leyenda del automovilismo.",
+    "fr": "La Lancia Stratos HF avec son moteur Ferrari de 250 CV, sa transmission par propulsion et son design de pointe a dominé le rallye des années 70. Puissante et compliquée à piloter, elle nécessitait un talent exceptionnel qui a conforté son statut de légende du sport automobile.",
+    "de": "Der Lancia Stratos HF mit seinem 250 PS starken Ferrari-Motor, Heckantrieb und innovativem Design dominierte den Rallyesport in den 1970er Jahren. Dieses anspruchsvolle Kraftpaket erforderte außergewöhnliches Können und festigte so seinen Status als Motorsportlegende.",
+    "it": "La Lancia Stratos HF, con il suo motore Ferrari da 250 cavalli, la trazione posteriore e il design all'avanguardia, ha dominato la scena del rally degli anni '70. Potente ma difficile da guidare, richiedeva abilità eccezionali che cementano il suo status di leggenda degli sport motoristici."
+   }
+  },
+  "MiniCooperS1275": {
+   "livery": {
+    "en": "Mini Red",
+    "es": "Mini rojo",
+    "fr": "Mini rouge",
+    "de": "Mini Rot",
+    "it": "Mini Rossa"
+   },
+   "description": {
+    "en": "A 1960s icon and style legend, the Mini Cooper S is a rally symbol with compact size, power, and advanced engineering. Its front-wheel drive and excellent handling make it ideal for beginners.",
+    "es": "Icono de los años 60 y leyenda del estilo, el Mini Cooper S es un símbolo del rally con un tamaño compacto, potencia y una ingeniería avanzada. Su tracción delantera y su excelente manejo lo hacen ideal para principiantes.",
+    "fr": "Icône des années 60 au style légendaire, la Mini Cooper S est un symbole du rallye de par sa taille compacte, sa puissance et sa technologie avancée. Sa transmission par traction et sa maniabilité remarquable la rendent idéale pour les débutants.",
+    "de": "Der Mini Cooper S ist eine Ikone der 1960er und Stillegende und gilt als Symbol des Rallyesports, das mit kompakter Größe, Leistung und fortschrittlicher Technik aufwartet. Sein Frontantrieb und das hervorragende Handling machen ihn ideal für Einsteiger.",
+    "it": "Leggenda degli anni '60 e icona di stile, la Mini Cooper S è un simbolo del rally grazie alle sue dimensioni compatte, alla sua potenza e alla sua ingegneria avanzata. La sua trazione anteriore e l'ottima manovrabilità la rendono perfetta per i principianti."
+   }
+  },
+  "Peugeot206": {
+   "livery": {
+    "en": "Total Silver",
+    "es": "Plata total",
+    "de": "Gesamtsilber",
+    "it": "Total Argento"
+   },
+   "description": {
+    "en": "The Peugeot 206 WRC is among the most iconic cars of the French brand. Equipped with specially enlarged bumpers to meet the minimum homologation dimensions of the top class, it managed to win and become one of the most desired cars among young people, driving a boom in sales for the road version.",
+    "es": "El Peugeot 206 WRC se encuentra entre los coches más icónicos de la marca francesa. Equipado con parachoques especialmente ensanchados para cumplir las dimensiones mínimas de homologación de la categoría reina, logró ganar y convertirse en uno de los coches más deseados por los jóvenes, impulsando un auge de las ventas de la versión de carretera.",
+    "fr": "La Peugeot 206 WRC compte parmi les voitures les plus emblématiques de la marque française. Équipée de pare-chocs spécialement élargis afin de respecter les dimensions minimales d’homologation de la catégorie reine, elle a réussi à s’imposer et est devenue l’une des voitures les plus désirées par les jeunes, entraînant un essor des ventes de la version routière.",
+    "de": "Der Peugeot 206 WRC zählt zu den ikonischsten Fahrzeugen der französischen Marke. Ausgestattet mit eigens vergrößerten Stoßfängern, um die Mindestmaße für die Homologation in der Topklasse zu erfüllen, konnte er gewinnen und wurde zu einem der begehrtesten Autos unter jungen Menschen, was einen Verkaufsboom der Straßenversion auslöste.",
+    "it": "La Peugeot 206 WRC è tra le auto più iconiche del marchio francese. Dotata di paraurti appositamente maggiorati per raggiungere le dimensioni minime di omologazione della classe regina, è riuscita a vincere e a diventare una delle auto più desiderate dai giovani, garantendo un boom di vendite per la versione stradale."
+   }
+  },
+  "Peugeot208Rally4": {
+   "livery": {
+    "en": "Peugeot Rally 4"
+   },
+   "description": {
+    "en": "The Peugeot 208 Rally4 is a modern front-wheel-drive car that is extremely agile and responsive. It can be very fast but requires very smooth driving to manage the quick rotation of the rear axle and avoid spinning out.",
+    "es": "El Peugeot 208 Rally4 es un coche moderno de tracción delantera extremadamente ágil y con buena capacidad de respuesta. Puede alcanzar grandes velocidades, pero requiere una conducción muy suave para controlar la rotación rápida del eje trasero y evitar derrapes.",
+    "fr": "La Peugeot 208 Rally4 est une voiture moderne à traction avant, extrêmement agile et réactive. Elle peut être très rapide, mais nécessite une conduite particulièrement fluide afin de maîtriser la rotation rapide de l'essieu arrière et d'éviter les tête-à-queue.",
+    "de": "Der Peugeot 208 Rally4 ist ein moderner Fronttriebler, der äußerst agil und reaktionsschnell ist. Er kann sehr schnell sein, erfordert jedoch eine sehr sanfte Fahrweise, um die schnelle Rotation der Hinterachse zu kontrollieren und ein Ausbrechen des Fahrzeugs zu vermeiden.",
+    "it": "La Peugeot 208 Rally4 è una moderna auto a trazione anteriore, estremamente agile e reattiva. Sa essere molto veloce, ma richiede una guida molto fluida per gestire le veloci rotazioni dell'asse posteriore ed evitare i testacoda."
+   }
+  },
+  "Peugeot306IIMaxiKitCar": {
+   "livery": {
+    "en": "IKE Racing"
+   },
+   "description": {
+    "en": "One of the few front-wheel-drive kit cars that, thanks to its low weight and exceptional power, managed to hold its own, at least on tarmac stages, against the top-tier World Rally Championship cars in the second half of the 1990s.",
+    "es": "Uno de los pocos kit cars de tracción delantera que, gracias a su bajo peso y a su potencia excepcional, logró plantar cara, al menos en las etapas de asfalto, a los coches de primer nivel del Campeonato Mundial de Rally en la segunda mitad de los años 90.",
+    "fr": "L'une des rares kit-cars à traction avant qui, grâce à son faible poids et à sa puissance exceptionnelle, a réussi à tenir tête, au moins sur les spéciales asphaltées, aux voitures de pointe du World Rally Championship durant la seconde moitié des années 1990.",
+    "de": "Eines der wenigen Kit-Cars mit Frontantrieb, das dank seines geringen Gewichts und seiner außergewöhnlichen Leistung zumindest auf Asphalt-Wertungsprüfungen mit den Spitzenfahrzeugen der World Rally Championship in der zweiten Hälfte der 1990er Jahre mithalten konnte.",
+    "it": "Una delle poche kit car a trazione anteriore che, grazie al peso ridotto e alla potenza eccezionale, è riuscita a competere — almeno sulle prove speciali asfaltate — con le vetture di punta del World Rally Championship nella seconda metà degli anni ’90."
+   }
+  },
+  "SkodaFabiaRSRally2": {
+   "livery": {
+    "en": "Erreffe Team 2025"
+   },
+   "description": {
+    "en": "The Škoda Fabia RS Rally2 is one of the most widely used cars in recent years in regional and national championships. Its balanced performance and excellent handling make it one of the best in its class.",
+    "es": "El Škoda Fabia RS Rally2 es uno de los coches más extendidos en los últimos años en cuanto a pilotaje para campeonatos regionales y nacionales. Su rendimiento equilibrado y dirección excelente lo convierten en uno de los mejores vehículos en su categoría.",
+    "fr": "La Škoda Fabia RS Rally2 est l'une des voitures les plus utilisées en compétition régionale et nationale ces dernières années. Ses performances équilibrées et son excellente maniabilité en font l'une des meilleures de sa catégorie.",
+    "de": "Der Škoda Fabia RS Rally2 ist eines der in den letzten Jahren am häufigsten in regionalen und nationalen Meisterschaften eingesetzten Fahrzeuge. Sein ausgewogenes Leistungsprofil und sein hervorragendes Handling verleihen ihm den Status als einer der besten Wagen seiner Klasse.",
+    "it": "La Škoda Fabia RS Rally2 è una delle vetture più utilizzate negli ultimi anni nei campionati regionali e nazionali. Le sue prestazioni equilibrate e la grande maneggevolezza la rendono una delle migliori della categoria."
+   }
+  },
+  "SubaruImprezaS3": {
+   "livery": {
+    "en": "Subaru Blue/Yellow",
+    "es": "Subaru azul/amarillo",
+    "fr": "Subaru bleu/jaune",
+    "de": "Subaru Blau/Gelb",
+    "it": "Subaru Blu/Giallo"
+   },
+   "description": {
+    "en": "The Impreza S3, introduced in 1993, replaced the Legacy in Subaru's Group A rally program. With its iconic blue-and-yellow livery, revolutionized the World Rally Championship and was thrust into the spotlight by legendary driver Colin McRae.",
+    "es": "El Impreza S3, presentado en 1993, sustituyó al Legacy en el programa de rallies del Grupo A de Subaru. Con su icónica decoración azul y amarilla, revolucionó el Campeonato Mundial de Rally y saltó al primer plano de la mano del legendario piloto Colin McRae.",
+    "fr": "L'Impreza S3, introduite en 1993, a remplacé la Legacy dans le programme rallye Groupe A de Subaru. Avec sa légendaire livrée bleue et jaune, elle a révolutionné le World Rally Championship et a été propulsée sur le devant de la scène par le pilote mythique Colin McRae.",
+    "de": "Der 1993 eingeführte Impreza S3 ersetzte den Legacy im Gruppe-A-Rallyeprogramm von Subaru. Mit seiner ikonischen blau-gelben Lackierung revolutionierte er die World Rally Championship und wurde durch den legendären Fahrer Colin McRae weltbekannt.",
+    "it": "Introdotta nel 1993, l’Impreza S3 ha sostituito la Legacy nel programma rally Gruppo A di Subaru. Con la sua iconica livrea blu e gialla, ha rivoluzionato il World Rally Championship ed è stata portata alla ribalta dal leggendario pilota Colin McRae."
+   }
+  },
+  "VWPoloGTIR5": {
+   "livery": {
+    "en": "Launch Livery",
+    "es": "Decoración de lanzamiento",
+    "fr": "Livrée de lancement",
+    "de": "Launch-Lackierung",
+    "it": "Livrea Lancio"
+   },
+   "description": {
+    "en": "First introduced in 2018 and developed in close collaboration with Škoda, the Volkswagen Polo GTI R5 is a direct descendant of the Polo R WRC, which dominated the World Championship. Homologated for the former R5 category, it continued to compete in regional and national championships around the world after the regulatory change.",
+    "es": "Presentado por primera vez en 2018 y desarrollado en estrecha colaboración con Škoda, el Volkswagen Polo GTI R5 es descendiente directo del Polo R WRC, que dominó el Campeonato Mundial. Homologado para la antigua categoría R5, siguió compitiendo en campeonatos regionales y nacionales de todo el mundo tras el cambio normativo.",
+    "fr": "Présentée pour la première fois en 2018 et développée en étroite collaboration avec Škoda, la Volkswagen Polo GTI R5 est une descendante directe de la Polo R WRC, qui a dominé le Championnat du monde. Homologuée dans l’ancienne catégorie R5, elle a continué à courir dans des championnats régionaux et nationaux du monde entier après le changement de réglementation.",
+    "de": "Der Volkswagen Polo GTI R5 wurde 2018 erstmals vorgestellt und in enger Zusammenarbeit mit Škoda entwickelt. Er ist ein direkter Nachfahre des Polo R WRC, der die Weltmeisterschaft dominierte. Für die frühere R5-Kategorie homologiert, trat er nach der Reglementänderung weiterhin in regionalen und nationalen Meisterschaften auf der ganzen Welt an.",
+    "it": "Presentata per la prima volta nel 2018 e sviluppata in stretta collaborazione con Škoda, la Volkswagen Polo GTI R5 è una diretta discendente della Polo R WRC, che ha dominato il mondiale. Omologata per la vecchia categoria R5, dopo il cambio regolamentare ha continuato a competere nei campionati regionali e nazionali di tutto il mondo."
+   }
+  }
+ },
+ "media": {
+  "AlsaceS2MunsterFullForward": {
+   "map": "img/rally/stages/AlsaceS2MunsterFullForward.png",
+   "chip": "img/rally/stages/AlsaceS2MunsterFullForward-chip.png"
+  },
+  "AlsaceS2MunsterFullReverse": {
+   "map": "img/rally/stages/AlsaceS2MunsterFullReverse.png",
+   "chip": "img/rally/stages/AlsaceS2MunsterFullReverse-chip.png"
+  },
+  "AlsaceS2MunsterShort1Forward": {
+   "map": "img/rally/stages/AlsaceS2MunsterShort1Forward.png",
+   "chip": "img/rally/stages/AlsaceS2MunsterShort1Forward-chip.png"
+  },
+  "AlsaceS2MunsterShort1Reverse": {
+   "map": "img/rally/stages/AlsaceS2MunsterShort1Reverse.png",
+   "chip": "img/rally/stages/AlsaceS2MunsterShort1Reverse-chip.png"
+  },
+  "AlsaceS2MunsterShort2Forward": {
+   "map": "img/rally/stages/AlsaceS2MunsterShort2Forward.png",
+   "chip": "img/rally/stages/AlsaceS2MunsterShort2Forward-chip.png"
+  },
+  "AlsaceS2MunsterShort2Reverse": {
+   "map": "img/rally/stages/AlsaceS2MunsterShort2Reverse.png",
+   "chip": "img/rally/stages/AlsaceS2MunsterShort2Reverse-chip.png"
+  },
+  "AlsaceS4SaverneFullForward": {
+   "map": "img/rally/stages/AlsaceS4SaverneFullForward.png",
+   "chip": "img/rally/stages/AlsaceS4SaverneFullForward-chip.png"
+  },
+  "AlsaceS4SaverneFullReverse": {
+   "map": "img/rally/stages/AlsaceS4SaverneFullReverse.png",
+   "chip": "img/rally/stages/AlsaceS4SaverneFullReverse-chip.png"
+  },
+  "AlsaceS4SaverneShort1Forward": {
+   "map": "img/rally/stages/AlsaceS4SaverneShort1Forward.png",
+   "chip": "img/rally/stages/AlsaceS4SaverneShort1Forward-chip.png"
+  },
+  "AlsaceS4SaverneShort1Reverse": {
+   "map": "img/rally/stages/AlsaceS4SaverneShort1Reverse.png",
+   "chip": "img/rally/stages/AlsaceS4SaverneShort1Reverse-chip.png"
+  },
+  "GreeceS3ElatiaFullForward": {
+   "map": "img/rally/stages/GreeceS3ElatiaFullForward.png",
+   "chip": "img/rally/stages/GreeceS3ElatiaFullForward-chip.png"
+  },
+  "GreeceS3ElatiaFullReverse": {
+   "map": "img/rally/stages/GreeceS3ElatiaFullReverse.png",
+   "chip": "img/rally/stages/GreeceS3ElatiaFullReverse-chip.png"
+  },
+  "GreeceS3ElatiaCut1Forward": {
+   "map": "img/rally/stages/GreeceS3ElatiaCut1Forward.png",
+   "chip": "img/rally/stages/GreeceS3ElatiaCut1Forward-chip.png"
+  },
+  "GreeceS3ElatiaCut1Reverse": {
+   "map": "img/rally/stages/GreeceS3ElatiaCut1Reverse.png",
+   "chip": "img/rally/stages/GreeceS3ElatiaCut1Reverse-chip.png"
+  },
+  "GreeceS3ElatiaCut2Forward": {
+   "map": "img/rally/stages/GreeceS3ElatiaCut2Forward.png",
+   "chip": "img/rally/stages/GreeceS3ElatiaCut2Forward-chip.png"
+  },
+  "GreeceS3ElatiaCut2Reverse": {
+   "map": "img/rally/stages/GreeceS3ElatiaCut2Reverse.png",
+   "chip": "img/rally/stages/GreeceS3ElatiaCut2Reverse-chip.png"
+  },
+  "GreeceS4LoutrakiFullForward": {
+   "map": "img/rally/stages/GreeceS4LoutrakiFullForward.png",
+   "chip": "img/rally/stages/GreeceS4LoutrakiFullForward-chip.png"
+  },
+  "GreeceS4LoutrakiFullReverse": {
+   "map": "img/rally/stages/GreeceS4LoutrakiFullReverse.png",
+   "chip": "img/rally/stages/GreeceS4LoutrakiFullReverse-chip.png"
+  },
+  "GreeceS4LoutrakiCut1Forward": {
+   "map": "img/rally/stages/GreeceS4LoutrakiCut1Forward.png",
+   "chip": "img/rally/stages/GreeceS4LoutrakiCut1Forward-chip.png"
+  },
+  "GreeceS4LoutrakiCut1Reverse": {
+   "map": "img/rally/stages/GreeceS4LoutrakiCut1Reverse.png",
+   "chip": "img/rally/stages/GreeceS4LoutrakiCut1Reverse-chip.png"
+  },
+  "GreeceS4LoutrakiCut2Forward": {
+   "map": "img/rally/stages/GreeceS4LoutrakiCut2Forward.png",
+   "chip": "img/rally/stages/GreeceS4LoutrakiCut2Forward-chip.png"
+  },
+  "GreeceS4LoutrakiCut2Reverse": {
+   "map": "img/rally/stages/GreeceS4LoutrakiCut2Reverse.png",
+   "chip": "img/rally/stages/GreeceS4LoutrakiCut2Reverse-chip.png"
+  },
+  "LivignoTestTrack01FullForward": {
+   "map": "img/rally/stages/LivignoTestTrack01FullForward.png",
+   "chip": "img/rally/stages/LivignoTestTrack01FullForward-chip.png"
+  },
+  "LivignoTestTrack01FullReverse": {
+   "map": "img/rally/stages/LivignoTestTrack01FullReverse.png",
+   "chip": "img/rally/stages/LivignoTestTrack01FullReverse-chip.png"
+  },
+  "MonteCarloS1BolleneFullForward": {
+   "map": "img/rally/stages/MonteCarloS1BolleneFullForward.png",
+   "chip": "img/rally/stages/MonteCarloS1BolleneFullForward-chip.png"
+  },
+  "MonteCarloS1BolleneFullReverse": {
+   "map": "img/rally/stages/MonteCarloS1BolleneFullReverse.png",
+   "chip": "img/rally/stages/MonteCarloS1BolleneFullReverse-chip.png"
+  },
+  "MonteCarloS1BolleneCut1Forward": {
+   "map": "img/rally/stages/MonteCarloS1BolleneCut1Forward.png",
+   "chip": "img/rally/stages/MonteCarloS1BolleneCut1Forward-chip.png"
+  },
+  "MonteCarloS1BolleneCut1Reverse": {
+   "map": "img/rally/stages/MonteCarloS1BolleneCut1Reverse.png",
+   "chip": "img/rally/stages/MonteCarloS1BolleneCut1Reverse-chip.png"
+  },
+  "MonteCarloS1BolleneCut2Forward": {
+   "map": "img/rally/stages/MonteCarloS1BolleneCut2Forward.png",
+   "chip": "img/rally/stages/MonteCarloS1BolleneCut2Forward-chip.png"
+  },
+  "MonteCarloS1BolleneCut2Reverse": {
+   "map": "img/rally/stages/MonteCarloS1BolleneCut2Reverse.png",
+   "chip": "img/rally/stages/MonteCarloS1BolleneCut2Reverse-chip.png"
+  },
+  "MonteCarloS1BolleneCut3Forward": {
+   "map": "img/rally/stages/MonteCarloS1BolleneCut3Forward.png",
+   "chip": "img/rally/stages/MonteCarloS1BolleneCut3Forward-chip.png"
+  },
+  "MonteCarloS1BolleneCut3Reverse": {
+   "map": "img/rally/stages/MonteCarloS1BolleneCut3Reverse.png",
+   "chip": "img/rally/stages/MonteCarloS1BolleneCut3Reverse-chip.png"
+  },
+  "MonteCarloS2SisteronFullForward": {
+   "map": "img/rally/stages/MonteCarloS2SisteronFullForward.png",
+   "chip": "img/rally/stages/MonteCarloS2SisteronFullForward-chip.png"
+  },
+  "MonteCarloS2SisteronFullReverse": {
+   "map": "img/rally/stages/MonteCarloS2SisteronFullReverse.png",
+   "chip": "img/rally/stages/MonteCarloS2SisteronFullReverse-chip.png"
+  },
+  "MonteCarloS2SisteronCut1Forward": {
+   "map": "img/rally/stages/MonteCarloS2SisteronCut1Forward.png",
+   "chip": "img/rally/stages/MonteCarloS2SisteronCut1Forward-chip.png"
+  },
+  "MonteCarloS2SisteronCut1Reverse": {
+   "map": "img/rally/stages/MonteCarloS2SisteronCut1Reverse.png",
+   "chip": "img/rally/stages/MonteCarloS2SisteronCut1Reverse-chip.png"
+  },
+  "MonteCarloS2SisteronCut2Forward": {
+   "map": "img/rally/stages/MonteCarloS2SisteronCut2Forward.png",
+   "chip": "img/rally/stages/MonteCarloS2SisteronCut2Forward-chip.png"
+  },
+  "MonteCarloS2SisteronCut2Reverse": {
+   "map": "img/rally/stages/MonteCarloS2SisteronCut2Reverse.png",
+   "chip": "img/rally/stages/MonteCarloS2SisteronCut2Reverse-chip.png"
+  },
+  "WelesS3HafrenNorthFullForward": {
+   "map": "img/rally/stages/WelesS3HafrenNorthFullForward.png",
+   "chip": "img/rally/stages/WelesS3HafrenNorthFullForward-chip.png"
+  },
+  "WelesS3HafrenNorthFullReverse": {
+   "map": "img/rally/stages/WelesS3HafrenNorthFullReverse.png",
+   "chip": "img/rally/stages/WelesS3HafrenNorthFullReverse-chip.png"
+  },
+  "WelesS3HafrenNorthCut1Forward": {
+   "map": "img/rally/stages/WelesS3HafrenNorthCut1Forward.png",
+   "chip": "img/rally/stages/WelesS3HafrenNorthCut1Forward-chip.png"
+  },
+  "WelesS3HafrenNorthCut1Reverse": {
+   "map": "img/rally/stages/WelesS3HafrenNorthCut1Reverse.png",
+   "chip": "img/rally/stages/WelesS3HafrenNorthCut1Reverse-chip.png"
+  },
+  "WelesS3HafrenNorthCut2Forward": {
+   "map": "img/rally/stages/WelesS3HafrenNorthCut2Forward.png",
+   "chip": "img/rally/stages/WelesS3HafrenNorthCut2Forward-chip.png"
+  },
+  "WelesS3HafrenNorthCut2Reverse": {
+   "map": "img/rally/stages/WelesS3HafrenNorthCut2Reverse.png",
+   "chip": "img/rally/stages/WelesS3HafrenNorthCut2Reverse-chip.png"
+  },
+  "WelesS4HafrenSouthFullForward": {
+   "map": "img/rally/stages/WelesS4HafrenSouthFullForward.png",
+   "chip": "img/rally/stages/WelesS4HafrenSouthFullForward-chip.png"
+  },
+  "WelesS4HafrenSouthFullReverse": {
+   "map": "img/rally/stages/WelesS4HafrenSouthFullReverse.png",
+   "chip": "img/rally/stages/WelesS4HafrenSouthFullReverse-chip.png"
+  }
+ }
+}

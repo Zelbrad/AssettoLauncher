@@ -1,12 +1,13 @@
 import { GAMES, gameByKey, resolvePaths, SCANNERS, setEnabled, contentFolder, evoCacheDir, uninstallPaths, uninstallItem, rallyIncompatible, ACC_CARS, RALLY_CARS, rallyCarName, rallyCarIds, appCacheDir, rallyGameStages, markFresh } from './games.js';
 import { ACC_TRACKS, ACC_MODES, ACC_WEATHER, ACC_TIME_SPEEDS, accSeasonName, accOwnedDlcs, accModelOwned, accTrackOwned, accSeasonOwned, accModelClass, readAccSession, accCustomCars, writeAccSession, ensureModelCar } from './acclaunch.js';
-import { readRallySave, rallyStage, writeRallySession, rallyBests, RALLY_KNOWN_STAGES, rallyCover, rallySelectedLiveries } from './rallylaunch.js';
+import { readRallySave, rallyStage, writeRallySession, rallyBests, RALLY_KNOWN_STAGES, rallyCover, rallySelectedLiveries, RALLY_WEATHERS, RALLY_TIME_SPEEDS, RALLY_FORECAST_PROBABILITY, RALLY_PERSISTENCE, RALLY_GRIP, rallyLocationWeathers, rallyWeatherFor } from './rallylaunch.js';
+import { loadRallyData, refreshRallyData, rallyGroupText, rallyCarText, rallyStageMedia } from './rallydata.js';
 import { SITE_PAGES, siteCars, siteMaps, rallyStagePhotos, imageSizes, bestMatch, stageGroupOf, words } from './sitecatalog.js';
 import { acBests, acBestKey, evoBests, evoBestKey, lapTime } from './bests.js';
 import { checkMods } from './health.js';
 import { acUpdates, cupDetails } from './updates.js';
 import { listBackups, createBackup, restoreBackup, deleteBackup, autoBackups, backupsRoot } from './backups.js';
-import { findSteamPath, findInstalledApps, getNews, cachedNews, refreshNews, getStoreDetails, steamUrls, appBuilds } from './steam.js';
+import { findSteamPath, findInstalledApps, getNews, cachedNews, refreshNews, getStoreDetails, newsPageUrl, steamUrls, appBuilds } from './steam.js';
 import { quickDrive, readAcSession, defaultAcSession, acWeathers, roadTemperature, presetForType, AC_MODES, AC_GRIP, AC_ASSIST_PRESETS } from './quickdrive.js';
 import { readCsp, cspVersions, cspVersionInfo, installCsp, uninstallWeatherMod, deselectWeatherMod, writeCspSetting, compareVersions, cspWeatherLabel, isWetWeather, CSP_WEATHER_TYPES, CSP_PAGE, VCREDIST_URL, SOL_URL, PURE_URL, PROTON_DLL_OVERRIDE } from './csp.js';
 import { readVideo, writeVideo, displayModes, AA_LEVELS, ANISO_LEVELS, SHADOW_SIZES, FPS_LIMITS } from './acvideo.js';
@@ -15,7 +16,8 @@ import { knownCars, withAllConfigs, launchEvo, readEvoSession, defaultEvoSession
 import { IMPORT_RE, resolveDropped, prepareImport, installItem, setItemCar, carChoices, discardImport } from './installer.js';
 import { readEvoExtras, readCarPresets, isLazyImage, lazyImage } from './kspkg.js';
 import { latestRelease, isNewer, isInstalledCopy, installUpdate } from './appupdate.js';
-import { esc, timeAgo, openExternal, openFolder, storageGet, storageSet, norm, log, exists, basename, prettifyId, fileUrl, mountDir, listDir, join, run, CURL, NULL_DEV, IS_LINUX } from './util.js';
+import { esc, timeAgo, openExternal, openFolder, storageGet, storageSet, norm, log, exists, basename, prettifyId, fileUrl, mountDir, listDir, join, run, runningProcesses, stopProcess, CURL, NULL_DEV, IS_LINUX } from './util.js';
+import { tr, trn, N_, loadLanguage, systemLanguage, LANGUAGES, lang } from './i18n.js';
 
 Neutralino.init();
 
@@ -37,7 +39,8 @@ const state = {
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const main = $('#main');
-const hasOfficialContent = g => g.key === 'ac' || g.key === 'evo';
+// Games whose Cars/Tracks tabs list the game's own content next to mods (Mods / All content).
+const hasOfficialContent = (g, tab = currentTab(g)) => g.key === 'ac' || g.key === 'evo' || (g.key === 'rally' && (tab === 'cars' || tab === 'tracks'));
 const isInstalled = g => !!state.installed[g.appid] || !!state.settings.overrides[`${g.key}_install`];
 
 // ---------------------------------------------------------------------------
@@ -256,10 +259,87 @@ document.addEventListener('keydown', e => {
   if (sheet) sheet.remove(); else $('#modal-root [data-close]')?.click();
 });
 
+// Running games. From the moment a game is launched, and while its process
+// runs (checked every few seconds while the launcher is visible), its launch
+// buttons (Play, Quick Drive's Set up & start) say Close instead. Close takes
+// a second click, asks the game to close as its own close button would (so it
+// can save on the way out), and when the game is still open 10 s later the
+// button offers Force close.
+const GAME_PROCESS = { ac: 'acs', acc: 'AC2-Win64-Shipping', evo: 'AssettoCorsaEVO', rally: 'acr' };
+const STARTING_MS = 90 * 1000; // Steam can take a while to start a game; after this a launch that never ran is forgotten
+const running = new Set(), starting = new Map(), closing = new Set(), forceStop = new Set();
+const isUp = key => running.has(key) || Date.now() - (starting.get(key) || 0) < STARTING_MS;
+
+async function checkRunning() {
+  if (document.hidden) return;
+  const procs = await runningProcesses(Object.values(GAME_PROCESS)).catch(() => null);
+  if (!procs) return;
+  running.clear();
+  for (const k of Object.keys(GAME_PROCESS)) if (procs.has(GAME_PROCESS[k])) { running.add(k); starting.delete(k); }
+  for (const k of [...forceStop]) if (!running.has(k)) forceStop.delete(k);
+  // Also catches a launch that never started (its STARTING_MS ran out).
+  if (upState() !== shownUp) syncRunning();
+}
+const upState = () => Object.keys(GAME_PROCESS).map(k => `${isUp(k)}${forceStop.has(k)}`).join();
+let shownUp = '';
+
+function markStarting(key) {
+  starting.set(key, Date.now());
+  syncRunning();
+}
+
+// Quick Drive's button says just "Close"; Play buttons get a ■ to match their ▶.
+const stopLabel = (key, b) => closing.has(key) ? tr('Closing…') : `${b.id === 'qd-go' ? '' : '■ '}${forceStop.has(key) ? tr('Force close') : tr('Close')}`;
+
+// Launch buttons carry data-launch-game; their own label is kept in data-label.
+function syncRunning(root = document) {
+  if (root === document) shownUp = upState();
+  for (const b of root.querySelectorAll('[data-launch-game]')) {
+    const key = b.dataset.launchGame, up = isUp(key);
+    b.dataset.label ??= b.innerHTML;
+    if (up) b.textContent = stopLabel(key, b); else b.innerHTML = b.dataset.label;
+    if (up || b.classList.contains('stop')) b.disabled = up && closing.has(key);
+    b.classList.toggle('stop', up);
+    delete b.dataset.armed;
+  }
+}
+
+// Captured before the buttons' own launch handlers, which it stops while the game is up.
+document.addEventListener('click', async e => {
+  const b = e.target.closest('[data-launch-game]');
+  if (!b || !isUp(b.dataset.launchGame)) return;
+  e.stopPropagation(); e.preventDefault();
+  const key = b.dataset.launchGame, force = forceStop.has(key), g = gameByKey(key);
+  if (!b.dataset.armed) {
+    b.dataset.armed = '1';
+    b.textContent = force ? tr('Click again: unsaved progress is lost') : tr('Click again to close');
+    setTimeout(() => { if (b.isConnected && b.dataset.armed) { delete b.dataset.armed; b.textContent = stopLabel(key, b); } }, 4000);
+    return;
+  }
+  closing.add(key); starting.delete(key);
+  syncRunning();
+  await stopProcess(GAME_PROCESS[key], force);
+  for (let i = 0; i < 10 && running.has(key); i++) {
+    await new Promise(r => setTimeout(r, 1000));
+    await checkRunning();
+  }
+  closing.delete(key);
+  if (running.has(key)) {
+    forceStop.add(key);
+    toast(tr('{game} is still open. Close it from the game, or use Force close.', { game: `${g.title} ${g.sub || ''}`.trim() }), true);
+  }
+  syncRunning();
+}, true);
+
+setInterval(checkRunning, 5000);
+document.addEventListener('visibilitychange', checkRunning);
+checkRunning();
+
 async function launchGame(g) {
   if (g.key === 'rally' && !(await rallyPreflight(g))) return;
   await openExternal(steamUrls.run(g.appid));
-  toast(`Launching ${g.title} ${g.sub} via Steam…`);
+  markStarting(g.key);
+  toast(tr('Launching {game} via Steam…', { game: `${g.title} ${g.sub || ''}`.trim() }));
   if (state.settings.minimizeOnLaunch) setTimeout(() => Neutralino.window.minimize(), 1500);
 }
 
@@ -282,13 +362,17 @@ function checkGameUpdates() {
 async function updateNoteText(g) {
   if (g.key === 'rally') {
     const bad = rallyIncompatible(await getItems(g, 'liveries').catch(() => []));
-    return bad.length ? `${bad.length > 1 ? `${bad.length} .pak liveries were` : 'A .pak livery was'} built for the previous version and will crash Rally while enabled (${bad.map(i => i.title).join(', ')}). Disable ${bad.length > 1 ? 'them' : 'it'} until the author releases an update.` : '';
+    if (!bad.length) return '';
+    return trn(bad.length,
+      'A .pak livery was built for the previous version and will crash Rally while enabled ({names}). Disable it until the author releases an update.',
+      '{n} .pak liveries were built for the previous version and will crash Rally while enabled ({names}). Disable them until the author releases an update.',
+      { names: bad.map(i => i.title).join(', ') });
   }
   if (g.key === 'evo') {
     const mods = (await listDir(state.paths.evo.mods)).filter(e => !['.', '..'].includes(e.entry));
-    return mods.length ? `Updates can break mod packages (${mods.length} installed). If EVO crashes at start or mod cars or tracks are missing, disable mods here and look for updated versions.` : '';
+    return mods.length ? tr('Updates can break mod packages ({n} installed). If EVO crashes at start or mod cars or tracks are missing, disable mods here and look for updated versions.', { n: mods.length }) : '';
   }
-  if (g.key === 'ac') return 'Content Manager, Custom Shaders Patch and some mods may need an update for the new version.';
+  if (g.key === 'ac') return tr('Content Manager, Custom Shaders Patch and some mods may need an update for the new version.');
   return ''; // ACC: liveries and custom cars keep working across updates
 }
 
@@ -300,9 +384,9 @@ async function showUpdateNote(g) {
   if (!text) { delete state.settings.updateNotes[g.key]; saveSettings(); return; }
   if (!box.isConnected || state.game !== g.key) return;
   box.innerHTML = `<div class="update-note"><span class="update-note-icon">!</span>
-    <div><b>${esc(`${g.title} ${g.sub || ''}`.trim())} was updated ${esc(timeAgo(note.at))}</b><small>${esc(text)}</small></div>
-    ${state.view === 'mods' ? '' : '<button class="btn subtle small" data-un="mods">Review mods</button>'}
-    <button class="btn subtle small" data-un="ok">Got it</button></div>`;
+    <div><b>${esc(tr('{game} was updated {when}', { game: `${g.title} ${g.sub || ''}`.trim(), when: timeAgo(note.at) }))}</b><small>${esc(text)}</small></div>
+    ${state.view === 'mods' ? '' : `<button class="btn subtle small" data-un="mods">${tr('Review mods')}</button>`}
+    <button class="btn subtle small" data-un="ok">${tr('Got it')}</button></div>`;
   box.onclick = e => {
     const v = e.target.closest('[data-un]')?.dataset.un;
     if (v === 'mods') { state.view = 'mods'; render(); }
@@ -313,10 +397,10 @@ async function showUpdateNote(g) {
 // Mod health check of the sidebar's game (health.js), plus available updates for AC.
 async function openHealthCheck(g) {
   const { el } = modal(`<div class="qd imp">
-    <header class="qd-head"><h2>Mod check · ${esc(`${g.title} ${g.sub || ''}`.trim())}</h2>
-      <div class="qd-sub">Looks through the installed mods for broken, incomplete or conflicting files.</div></header>
-    <div class="imp-list"><div class="qd-none">Checking…</div></div>
-    <footer class="qd-foot"><div class="qd-summary" id="health-sum"></div><button class="btn subtle small" data-close>Close</button></footer>
+    <header class="qd-head"><h2>${esc(tr('Mod check · {game}', { game: `${g.title} ${g.sub || ''}`.trim() }))}</h2>
+      <div class="qd-sub">${tr('Looks through the installed mods for broken, incomplete or conflicting files.')}</div></header>
+    <div class="imp-list"><div class="qd-none">${tr('Checking…')}</div></div>
+    <footer class="qd-foot"><div class="qd-summary" id="health-sum"></div><button class="btn subtle small" data-close>${tr('Close')}</button></footer>
   </div>`, 'modal imp-modal');
   let found = [];
   try {
@@ -324,21 +408,26 @@ async function openHealthCheck(g) {
     if (g.key === 'ac') {
       const content = [...await getItems(g, 'cars'), ...await getItems(g, 'tracks')];
       await acUpdates(content);
-      for (const i of content.filter(i => i.update)) found.push({ level: 'update', item: i, problem: `Version ${i.update.version} is available (you have ${i.version}).` });
+      for (const i of content.filter(i => i.update)) found.push({ level: 'update', item: i, problem: tr('Version {version} is available (you have {have}).', { version: i.update.version, have: i.version }) });
     }
   } catch (err) { log(`health: ${err?.stack || err}`); }
   if (!el.isConnected) return;
-  const label = { error: 'Problem', warn: 'Warning', info: 'Note', update: 'Update' };
+  const label = { error: tr('Problem'), warn: tr('Warning'), info: tr('Note'), update: tr('Update') };
   el.querySelector('.imp-list').innerHTML = found.map((f, i) => `<div class="imp-row health-row">
       <span class="health-level ${f.level}">${label[f.level]}</span>
       <div class="imp-info"><b>${esc(f.item.title)}${f.item.subtitle ? ` <small>${esc(f.item.subtitle)}</small>` : ''}</b><span>${esc(f.problem)}</span></div>
-      ${f.level === 'update' ? `<button class="btn primary small" data-get="${i}">Get update ↗</button>` : ''}
-      ${f.item.toggle === 'rally' && f.item.incompatible && f.item.enabled ? `<button class="btn primary small" data-off="${i}">Disable</button>` : ''}
-      ${f.item.id && f.item.game ? `<button class="btn subtle small" data-show="${i}">Details</button>` : ''}
-      <button class="btn subtle small" data-dir="${i}">Open folder</button>
-    </div>`).join('') || '<div class="qd-none">No problems found.</div>';
+      ${f.level === 'update' ? `<button class="btn primary small" data-get="${i}">${tr('Get update')} ↗</button>` : ''}
+      ${f.item.toggle === 'rally' && f.item.incompatible && f.item.enabled ? `<button class="btn primary small" data-off="${i}">${tr('Disable')}</button>` : ''}
+      ${f.item.id && f.item.game ? `<button class="btn subtle small" data-show="${i}">${tr('Details')}</button>` : ''}
+      <button class="btn subtle small" data-dir="${i}">${tr('Open folder')}</button>
+    </div>`).join('') || `<div class="qd-none">${tr('No problems found.')}</div>`;
   const n = lvl => found.filter(f => f.level === lvl).length;
-  el.querySelector('#health-sum').textContent = found.length ? [n('error') && `${n('error')} problem${n('error') > 1 ? 's' : ''}`, n('warn') && `${n('warn')} warning${n('warn') > 1 ? 's' : ''}`, n('info') && `${n('info')} note${n('info') > 1 ? 's' : ''}`, n('update') && `${n('update')} update${n('update') > 1 ? 's' : ''}`].filter(Boolean).join(' · ') : 'Everything looks fine.';
+  el.querySelector('#health-sum').textContent = found.length ? [
+    n('error') && trn(n('error'), '1 problem', '{n} problems'),
+    n('warn') && trn(n('warn'), '1 warning', '{n} warnings'),
+    n('info') && trn(n('info'), '1 note', '{n} notes'),
+    n('update') && trn(n('update'), '1 update', '{n} updates'),
+  ].filter(Boolean).join(' · ') : tr('Everything looks fine.');
   el.addEventListener('click', async e => {
     const b = e.target.closest('[data-get], [data-off], [data-show], [data-dir]');
     if (!b) return;
@@ -351,8 +440,8 @@ async function openHealthCheck(g) {
         await setEnabled(f.item, false);
         f.item.enabled = false;
         f.item.meta.files = f.item.meta.files.map(x => x.replace(/\.disabled$/i, '') + '.disabled');
-        b.remove(); toast(`Disabled ${f.item.title}`);
-      } catch (err) { toast(`Could not disable ${f.item.title}: ${err?.message || 'file in use?'}`, true); }
+        b.remove(); toast(tr('Disabled {name}', { name: f.item.title }));
+      } catch (err) { toast(tr('Could not disable {name}: {error}', { name: f.item.title, error: err?.message || tr('file in use?') }), true); }
     }
   });
 }
@@ -362,23 +451,28 @@ async function openHealthCheck(g) {
 // Resolves true to go ahead with the launch.
 async function rallyPreflight(g) {
   let bad = [];
-  try { bad = rallyIncompatible(await getItems(g, 'liveries', true)); } catch { return true; }
+  // Car and stage packages (Cars / Tracks tabs) crash it the same way.
+  try { bad = rallyIncompatible((await Promise.all(['liveries', 'cars', 'tracks'].map(t => getItems(g, t, true)))).flat()); } catch { return true; }
   if (!bad.length) return true;
   return new Promise(resolve => {
     let answered = false;
     const { el, close } = modal(`<div class="qd imp">
-      <header class="qd-head"><h2>${bad.length > 1 ? `${bad.length} liveries` : 'A livery'} will crash Rally</h2>
-        <div class="qd-sub">${bad.length > 1 ? 'These .pak liveries were' : 'This .pak livery was'} built for another version of the game, and the game has updated since. Rally crashes while loading as long as ${bad.length > 1 ? 'they are' : 'it is'} enabled.</div>
+      <header class="qd-head"><h2>${trn(bad.length, 'A livery will crash Rally', '{n} liveries will crash Rally')}</h2>
+        <div class="qd-sub">${trn(bad.length,
+          'This .pak livery was built for another version of the game, and the game has updated since. Rally crashes while loading as long as it is enabled.',
+          'These .pak liveries were built for another version of the game, and the game has updated since. Rally crashes while loading as long as they are enabled.')}</div>
       </header>
       <div class="imp-list">${bad.map(i => `<div class="imp-row">
         <div class="imp-thumb">${i.image ? imgTag(i.image, '') : '<img class="imp-logo" src="/img/logos/rally.png" alt="">'}</div>
         <div class="imp-info"><b>${esc(i.title)}</b><code>${esc(i.meta.files.join(', '))}</code></div>
       </div>`).join('')}</div>
       <footer class="qd-foot">
-        <div class="qd-summary">Disabling is reversible: enable ${bad.length > 1 ? 'them' : 'it'} again once the author releases an update.</div>
-        <button class="btn subtle small" data-close>Cancel</button>
-        <button class="btn subtle small" data-v="play">Play anyway</button>
-        <button class="btn primary small" data-v="fix">Disable and play</button>
+        <div class="qd-summary">${trn(bad.length,
+          'Disabling is reversible: enable it again once the author releases an update.',
+          'Disabling is reversible: enable them again once the author releases an update.')}</div>
+        <button class="btn subtle small" data-close>${tr('Cancel')}</button>
+        <button class="btn subtle small" data-v="play">${tr('Play anyway')}</button>
+        <button class="btn primary small" data-v="fix">${tr('Disable and play')}</button>
       </footer>
     </div>`, 'modal imp-modal', () => { if (!answered) resolve(false); });
     el.addEventListener('click', async e => {
@@ -391,10 +485,10 @@ async function rallyPreflight(g) {
             i.enabled = false;
             i.meta.files = i.meta.files.map(f => f.replace(/\.disabled$/i, '') + '.disabled');
           }
-          toast(`Disabled ${bad.map(i => i.title).join(', ')}`);
+          toast(tr('Disabled {name}', { name: bad.map(i => i.title).join(', ') }));
           if (state.view === 'mods' && state.game === 'rally') render();
         } catch (err) {
-          toast(`Could not disable the liveries: ${err?.message || 'file in use?'}`, true);
+          toast(tr('Could not disable the liveries: {error}', { error: err?.message || tr('file in use?') }), true);
           return;
         }
       }
@@ -413,7 +507,7 @@ function renderSidebar() {
     const on = isInstalled(g);
     return `<button class="game-tile ${g.key === state.game ? 'active' : ''}" data-game="${g.key}">
       ${logoHTML(g)}
-      <span class="status ${on ? 'on' : ''}" title="${on ? 'Installed' : 'Not installed'}"></span>
+      <span class="status ${on ? 'on' : ''}" title="${on ? tr('Installed') : tr('Not installed')}"></span>
     </button>`;
   }).join('');
   updateNavQuickDrive();
@@ -499,18 +593,18 @@ function renderGames() {
       <div class="hero-top">
         <div class="hero-copy">
           ${logoHTML(g)}
-          <h2>${esc(g.headline)}</h2>
-          <p class="blurb">${esc(g.blurb)}</p>
+          <h2>${esc(tr(g.headline))}</h2>
+          <p class="blurb">${esc(tr(g.blurb))}</p>
           <div class="price" id="price"></div>
         </div>
         <div class="hero-actions">
           <div class="row">
-            <button class="btn ghost" id="btn-trailer">Watch Trailer</button>
+            <button class="btn ghost" id="btn-trailer">${tr('Watch Trailer')}</button>
             ${installed
-              ? `<button class="btn primary" id="btn-play">▶&nbsp; Play</button>`
-              : `<button class="btn primary" id="btn-buy">Purchase</button>`}
+              ? `<button class="btn primary" id="btn-play" data-launch-game="${g.key}">▶&nbsp; ${tr('Play')}</button>`
+              : `<button class="btn primary" id="btn-buy">${tr('Purchase')}</button>`}
           </div>
-          ${installed ? '' : `<button class="link" id="btn-install">Already own it? Install via Steam</button>`}
+          ${installed ? '' : `<button class="link" id="btn-install">${tr('Already own it? Install via Steam')}</button>`}
         </div>
       </div>
       <div class="news-row" id="news-row">
@@ -520,11 +614,12 @@ function renderGames() {
   </div>`;
 
   $('#btn-trailer').onclick = () => openTrailer(g);
+  syncRunning();
   if (installed) $('#btn-play').onclick = () => launchGame(g);
   else {
     $('#btn-buy').onclick = () => openExternal(steamUrls.store(g.appid));
     $('#btn-install').onclick = () => openExternal(steamUrls.install(g.appid));
-    getStoreDetails(g.appid).then(d => { if (d?.price && state.game === g.key) $('#price') && ($('#price').textContent = `Steam price: ${d.price}`); });
+    getStoreDetails(g.appid).then(d => { if (d?.price && state.game === g.key) $('#price') && ($('#price').textContent = tr('Steam price: {price}', { price: d.price })); });
   }
   loadNewsRow(g);
   if (installed) showUpdateNote(g);
@@ -553,18 +648,18 @@ function drawNewsRow(g, items) {
   const row = $('#news-row');
   if (!row || state.game !== g.key || state.view !== 'games') return;
   if (!items.length) {
-    row.innerHTML = `<div class="news-card" style="grid-column:1/-1;height:120px;justify-content:center"><h3>News unavailable</h3><span class="when">Could not reach Steam. Check your connection.</span></div>`;
+    row.innerHTML = `<div class="news-card" style="grid-column:1/-1;height:120px;justify-content:center"><h3>${tr('News unavailable')}</h3><span class="when">${tr('Could not reach Steam. Check your connection.')}</span></div>`;
     return;
   }
   row.innerHTML = items.slice(0, 3).map((n, i) => `
     <button class="news-card" data-news="${i}" style="background-image:${newsBg(n, g)}">
-      <span class="kicker">${esc(n.label === 'Community Announcements' ? 'News' : n.label)}</span>
+      <span class="kicker">${esc(n.label === 'Community Announcements' ? tr('News') : n.label)}</span>
       <h3>${esc(n.title)}</h3>
       <span class="when">${timeAgo(n.date)}</span>
     </button>`).join('');
   row.onclick = e => {
     const c = e.target.closest('[data-news]');
-    if (c) openExternal(items[+c.dataset.news].url);
+    if (c) newsPageUrl(g.appid, items[+c.dataset.news]).then(openExternal);
   };
 }
 
@@ -573,7 +668,7 @@ async function openTrailer(g) {
   const video = el.querySelector('video');
   const details = await getStoreDetails(g.appid);
   const movie = details?.movies?.find(m => m.highlight) || details?.movies?.[0];
-  if (!movie) { toast('No trailer available — opening the Steam store page.'); openExternal(steamUrls.storeWeb(g.appid)); $('#modal-root [data-close]')?.click(); return; }
+  if (!movie) { toast(tr('No trailer available — opening the Steam store page.')); openExternal(steamUrls.storeWeb(g.appid)); $('#modal-root [data-close]')?.click(); return; }
   video.poster = movie.thumb || '';
   if (movie.mp4) { video.src = movie.mp4; return; }
   if (window.Hls?.isSupported()) {
@@ -599,47 +694,86 @@ async function getItems(g, tab, force = false, onProgress) {
   const key = `${g.key}:${tab}`;
   if (!force && state.cache[key]) return state.cache[key];
   const items = await SCANNERS[g.key][tab](state.paths, onProgress);
+  if (g.key === 'rally' && (tab === 'cars' || tab === 'tracks')) await decorateRally(items, tab);
   state.cache[key] = items;
   return items;
+}
+
+// Rally's cars and stages (games.js lists them) get their pictures, flags and the
+// game's own texts (rallydata.js) here, where the site pictures and flags live.
+async function decorateRally(items, tab) {
+  if (tab === 'cars') {
+    // Brand logos (the card's badge) come later, from renderMods.
+    const liveries = await getItems(gameByKey('rally'), 'liveries').catch(() => []);
+    for (const i of items) {
+      if (i.isMod) continue;
+      i.image = rallyCarImage(i.carId);
+      const text = rallyCarText(i.carId);
+      i.description = text.description;
+      i.rally = {
+        livery: text.livery,
+        liveries: liveries.filter(l => (l.meta?.car || l.carId) === i.carId).length,
+      };
+    }
+  } else {
+    for (const i of items) {
+      if (i.isMod) continue;
+      i.image = siteImage('rally', 'stages', i.rallyGroup) || i.image;
+      i.flag = flagUrl(i.locationName === 'Wales' ? 'Wales' : i.country);
+      i.subtitle = [i.locationName, countryName(i.country)].filter((x, n, a) => x && a.indexOf(x) === n).join(' · ');
+      i.description = rallyGroupText(i.rallyGroup);
+      // The stage map (where the site has one) over the picture, like EVO's circuit outlines.
+      const map = siteImage('rally', 'maps', i.rallyGroup);
+      if (map) i.overlay = map;
+      // Each stage: the game's map of it (the part driven in red), else the site's outline.
+      for (const l of i.layouts) {
+        const m = rallyStageMedia(l.id);
+        l.preview = m.map || map || i.image;
+        l.outline = m.mapRemote || i.image;
+      }
+    }
+  }
 }
 
 function emptyState(g, tab) {
   const folder = contentFolder(g.key, tab, state.paths);
   const installed = isInstalled(g);
-  const btnInstall = `<button class="btn primary small" data-act="install">Install via Steam</button>`;
+  const btnInstall = `<button class="btn primary small" data-act="install">${tr('Install via Steam')}</button>`;
+  const code = s => `<code>${esc(s)}</code>`;
   switch (g.key) {
     case 'ac':
-      if (!installed) return `<h3>Assetto Corsa not found</h3>Install it through Steam, or set its folder in Settings.<br>${btnInstall}`;
-      return `<h3>No ${tab} mods yet</h3>Drop mod folders into <code>${esc(folder)}</code>. Each mod shows its preview image here automatically.`;
+      if (!installed) return `<h3>${tr('Assetto Corsa not found')}</h3>${tr('Install it through Steam, or set its folder in Settings.')}<br>${btnInstall}`;
+      return `<h3>${tr('No mods in {tab} yet', { tab: tr(g.tabs.find(x => x.id === tab)?.label || tab) })}</h3>${tr('Drop mod folders into {folder}. Each mod shows its preview image here automatically.', { folder: code(folder) })}`;
     case 'acc':
-      return `<h3>No custom liveries found</h3>ACC reads liveries from <code>${esc(folder)}</code>. Each livery is a folder with <code>decals.png</code> / <code>sponsors.png</code> plus a car file in <code>Customs/Cars</code>.`;
+      return `<h3>${tr('No custom liveries found')}</h3>${tr('ACC reads liveries from {folder}. Each livery is a folder with {files} plus a car file in {cars}.', { folder: code(folder), files: `${code('decals.png')} / ${code('sponsors.png')}`, cars: code('Customs/Cars') })}`;
     case 'evo':
-      if (tab === 'liveries') return `<h3>No external liveries yet</h3>EVO loads custom liveries from <code>${esc(folder)}</code>, together with their car in your garage (<code>ProfileData\\…\\SavedCars</code>).<br>Drop a livery's .zip (for example from LiveryLab Evo) on this window to install both.`;
-      return `<h3>No EVO mods installed</h3>EVO loads community mods (<code>.kspkg</code>) from <code>${esc(folder)}</code>.<br>Put an image with the same name next to a mod (e.g. <code>my_car.png</code>) to give it a preview here.
-        <br><button class="btn primary small" data-act="mkdir">Create &amp; open mods folder</button>`;
+      if (tab === 'liveries') return `<h3>${tr('No external liveries yet')}</h3>${tr('EVO loads custom liveries from {folder}, together with their car in your garage ({garage}).', { folder: code(folder), garage: code('ProfileData\\…\\SavedCars') })}<br>${tr("Drop a livery's .zip (for example from LiveryLab Evo) on this window to install both.")}`;
+      return `<h3>${tr('No EVO mods installed')}</h3>${tr('EVO loads community mods ({ext}) from {folder}.', { ext: code('.kspkg'), folder: code(folder) })}<br>${tr('Put an image with the same name next to a mod (e.g. {example}) to give it a preview here.', { example: code('my_car.png') })}
+        <br><button class="btn primary small" data-act="mkdir">${tr('Create & open mods folder')}</button>`;
     case 'rally':
-      if (!installed && !state.settings.overrides.rally_install) return `<h3>Assetto Corsa Rally not installed</h3>Rally liveries live inside the game folder (<code>acr\\Content\\Paks</code>), so install the game first.<br>${btnInstall}`;
-      return `<h3>No custom liveries yet</h3>Custom liveries are folders with <code>livery.json</code>, <code>icon.png</code> and <code>body_livery_*.dds</code> in <code>${esc(folder)}\\&lt;Car&gt;</code>.
-        Older <code>.pak</code> + <code>.utoc</code> + <code>.ucas</code> liveries go in <code>acr\\Content\\Paks</code>.<br>Drop a livery's .zip, .rar or .7z on this window to install it.`;
+      if (!installed && !state.settings.overrides.rally_install) return `<h3>${tr('Assetto Corsa Rally not installed')}</h3>${tr('Rally liveries live inside the game folder ({folder}), so install the game first.', { folder: code('acr\\Content\\Paks') })}<br>${btnInstall}`;
+      if (tab === 'cars' || tab === 'tracks') return `<h3>${tr(tab === 'cars' ? 'No car mods yet' : 'No stage mods yet')}</h3>${tr('Rally loads mods as {pak} packages from {folder}. One that adds a car or a stage shows up here; switch to All content to see the game\'s own.', { pak: `${code('.pak')} + ${code('.utoc')} + ${code('.ucas')}`, folder: code('acr\\Content\\Paks\\~mods') })}`;
+      return `<h3>${tr('No custom liveries yet')}</h3>${tr('Custom liveries are folders with {files} in {folder}.', { files: `${code('livery.json')}, ${code('icon.png')}, ${code('body_livery_*.dds')}`, folder: code(`${folder}\\<Car>`) })}
+        ${tr('Older {pak} liveries go in {folder}.', { pak: `${code('.pak')} + ${code('.utoc')} + ${code('.ucas')}`, folder: code('acr\\Content\\Paks') })}<br>${tr("Drop a livery's .zip, .rar or .7z on this window to install it.")}`;
   }
   return '';
 }
 
 function cardHTML(item, idx) {
   const content = item.kind === 'car' || item.kind === 'track';
-  const flag = !item.enabled ? '<span class="flag off">Disabled</span>'
-    : item.incompatible ? '<span class="flag">Crashes game</span>'
-    : item.update ? `<span class="flag update">Update v${esc(item.update.version)}</span>`
+  const flag = !item.enabled ? `<span class="flag off">${tr('Disabled')}</span>`
+    : item.incompatible ? `<span class="flag">${tr('Crashes game')}</span>`
+    : item.update ? `<span class="flag update">${tr('Update')} v${esc(item.update.version)}</span>`
     : item.game === 'ac' && content && !item.isMod ? '<span class="flag kunos">Kunos</span>'
-    : (item.game === 'ac' || item.game === 'evo') && content && item.isMod ? '<span class="flag">Mod</span>' : '';
+    : (item.game === 'ac' || item.game === 'evo' || item.game === 'rally') && content && item.isMod ? `<span class="flag">${tr('Mod')}</span>` : '';
   // Official content added by the game's latest update (markFresh, games.js).
-  const fresh = item.isNew ? `<span class="flag tag-new${item.flag || (item.badge && item.image) ? ' after-icon' : ''}">New</span>` : '';
+  const fresh = item.isNew ? `<span class="flag tag-new${item.flag || (item.badge && item.image) ? ' after-icon' : ''}">${tr('New')}</span>` : '';
   const num = item.kind === 'replay' ? '' : item.number != null ? `<div class="placeholder">#${esc(item.number)}</div>` : `<div class="placeholder">${initials(item.title)}</div>`;
   return `<button class="card ${item.enabled ? '' : 'disabled'}" data-idx="${idx}">
     <div class="thumb ${item.kind === 'replay' ? 'icon' : ''}">
       ${num}
       ${imgTag(item.image, item.fallbackImage)}
-      ${item.overlay ? `<img class="overlay" src="${esc(item.overlay)}" loading="lazy" onerror="this.remove()" alt="">` : ''}
+      ${item.overlay ? `<img class="overlay${item.game === 'rally' ? ' white' : ''}" src="${esc(item.overlay)}" loading="lazy" onerror="this.remove()" alt="">` : ''}
       ${item.badge && item.image ? `<img class="badge" src="${esc(item.badge)}" loading="lazy" onerror="this.remove()" alt="">` : ''}
       ${item.flag ? `<img class="flag-badge" src="${esc(item.flag)}" alt="">` : ''}
       ${fresh}${flag}
@@ -667,22 +801,22 @@ async function renderMods(force = false) {
   main.innerHTML = `<div class="view scaled mods">
     <div class="mods-head">
       ${logoHTML(g)}
-      <div class="tabs">${g.tabs.map(t => `<button data-tab="${t.id}" class="${t.id === tab ? 'active' : ''}">${t.label}</button>`).join('')}</div>
+      <div class="tabs">${g.tabs.map(t => `<button data-tab="${t.id}" class="${t.id === tab ? 'active' : ''}">${tr(t.label)}</button>`).join('')}</div>
       <div class="toolbar">
-        <input class="search" id="search" placeholder="Search ${tab}…" value="${esc(state.search)}">
+        <input class="search" id="search" placeholder="${esc(tr('Search…'))}" value="${esc(state.search)}">
         ${hasOfficialContent(g) ? `<div class="seg" id="ac-filter">
-          <button data-f="mods" class="${state.settings.acFilter === 'mods' ? 'active' : ''}">Mods</button>
-          <button data-f="all" class="${state.settings.acFilter === 'all' ? 'active' : ''}">All content</button></div>` : ''}
-        <button class="btn small subtle" id="btn-health" title="Look for broken, incomplete or conflicting mods">Check mods</button>
-        <button class="btn small subtle" id="btn-refresh" title="Rescan folders">↻ Rescan</button>
-        <button class="btn small subtle" id="btn-folder" ${folder ? '' : 'disabled'}>Open folder</button>
-        <button class="btn small subtle" id="btn-install" title="Install a mod from a .zip, .rar, .7z, .kspkg or .pak (or drop it on the window)">＋ Install mod</button>
-        <button class="btn small primary" id="btn-play-mods" ${isInstalled(g) ? '' : 'disabled'}>▶ Play</button>
+          <button data-f="mods" class="${state.settings.acFilter === 'mods' ? 'active' : ''}">${tr('Mods')}</button>
+          <button data-f="all" class="${state.settings.acFilter === 'all' ? 'active' : ''}">${tr('All content')}</button></div>` : ''}
+        <button class="btn small subtle" id="btn-health" title="${esc(tr('Look for broken, incomplete or conflicting mods'))}">${tr('Check mods')}</button>
+        <button class="btn small subtle" id="btn-refresh" title="${esc(tr('Rescan folders'))}">↻ ${tr('Rescan')}</button>
+        <button class="btn small subtle" id="btn-folder" ${folder ? '' : 'disabled'}>${tr('Open folder')}</button>
+        <button class="btn small subtle" id="btn-install" title="${esc(tr('Install a mod from a .zip, .rar, .7z, .kspkg or .pak (or drop it on the window)'))}">＋ ${tr('Install mod')}</button>
+        <button class="btn small primary" id="btn-play-mods" data-launch-game="${g.key}" ${isInstalled(g) ? '' : 'disabled'}>▶ ${tr('Play')}</button>
       </div>
     </div>
     <div class="mods-meta"><span id="count"></span><span class="path">${esc(folder)}</span></div>
     <div id="update-note"></div>
-    <div id="grid-wrap"><div class="loading">Scanning ${esc(tab)}…</div></div>
+    <div id="grid-wrap"><div class="loading">${tr('Scanning…')}</div></div>
   </div>`;
 
   $('.tabs').onclick = e => {
@@ -697,6 +831,7 @@ async function renderMods(force = false) {
   $('#btn-folder').onclick = () => openFolder(folder);
   $('#btn-install').onclick = pickModFiles;
   $('#btn-play-mods').onclick = () => launchGame(g);
+  syncRunning();
   $('#ac-filter')?.addEventListener('click', e => {
     const b = e.target.closest('[data-f]');
     if (!b) return;
@@ -724,6 +859,18 @@ async function renderMods(force = false) {
   // badge, EVO its brand logos (cached by Quick Drive's extras; loaded in the background).
   const logos = new Map();
   if (tab === 'cars' && g.key === 'ac') for (const i of items) if (i.brand && i.badge && !logos.has(i.brand)) logos.set(i.brand, i.badge);
+  // Rally cars: the brand logos Quick Drive uses (EVO's, AC's badges, the launcher's own).
+  if (tab === 'cars' && g.key === 'rally') {
+    loadBrandLogos(new Map()).then(m => {
+      for (const i of items) {
+        const logo = i.brand && m.get(brandKey(i.brand));
+        if (!logo) continue;
+        logos.set(i.brand, logo);
+        i.badge ||= logo;
+      }
+      if (state.view === 'mods' && state.game === g.key && currentTab(g) === tab) drawGrid();
+    });
+  }
   if (tab === 'cars' && g.key === 'evo' && state.paths.evo.install) {
     const brands = [...new Set(items.map(i => i.brand).filter(Boolean))];
     evoCacheDir().then(dir => readEvoExtras({ brands, contentPkg: `${state.paths.evo.install}/content.kspkg` }, dir)).then(x => {
@@ -737,7 +884,7 @@ async function renderMods(force = false) {
     const names = [...new Set(list.map(i => i.brand).filter(Boolean))].sort((a, b) => a.localeCompare(b));
     if (tab !== 'cars' || names.length < 2) return '';
     const on = state.brand[g.key] || '';
-    return `<nav class="qd-brands mods-brands" id="mods-brands"><button class="qd-brand all ${on ? '' : 'active'}" data-brand="" title="All brands">All</button>${names.map(n => {
+    return `<nav class="qd-brands mods-brands" id="mods-brands"><button class="qd-brand all ${on ? '' : 'active'}" data-brand="" title="${esc(tr('All brands'))}">${tr('All')}</button>${names.map(n => {
       const logo = logos.get(n);
       return `<button class="qd-brand ${n === on ? 'active' : ''}" data-brand="${esc(n)}" title="${esc(n)}">${logo
         ? `<img src="${esc(logo)}" alt="" onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:'${esc(initials(n))}'}))">`
@@ -753,16 +900,18 @@ async function renderMods(force = false) {
     const list = state.brand[g.key] ? base.filter(i => i.brand === state.brand[g.key]) : base;
     $('.view.mods')?.classList.toggle('fill', !!rail);
     const media = tab === 'screens' || tab === 'replays';
-    const total = media ? `${items.length} total` : hasOfficialContent(g) ? `${items.filter(i => i.isMod).length} mods · ${items.length} total` : `${items.length} installed`;
-    $('#count').textContent = `${list.length} shown · ${total}`;
+    const total = media ? tr('{n} total', { n: items.length })
+      : hasOfficialContent(g) ? tr('{mods} mods · {n} total', { mods: items.filter(i => i.isMod).length, n: items.length })
+      : tr('{n} installed', { n: items.length });
+    $('#count').textContent = `${tr('{n} shown', { n: list.length })} · ${total}`;
     const wrap = $('#grid-wrap');
     if (!items.length || (!list.length && !state.search && hasOfficialContent(g) && state.settings.acFilter === 'mods')) {
       wrap.innerHTML = `<div class="empty">${emptyState(g, tab)}</div>`;
     } else if (!list.length) {
-      wrap.innerHTML = `<div class="empty"><h3>No matches</h3>Nothing matches “${esc(state.search)}”.</div>`;
+      wrap.innerHTML = `<div class="empty"><h3>${tr('No matches')}</h3>${esc(tr('Nothing matches “{search}”.', { search: state.search }))}</div>`;
     } else {
       // Rally liveries are square in the game (texture and icon), so their cards are too.
-      const grid = `<div class="grid ${g.key === 'rally' ? 'square' : ''}">${list.map(i => cardHTML(i, items.indexOf(i))).join('')}</div>`;
+      const grid = `<div class="grid ${g.key === 'rally' && tab === 'liveries' ? 'square' : ''}">${list.map(i => cardHTML(i, items.indexOf(i))).join('')}</div>`;
       // Redrawing keeps the rail where it was scrolled to (the picked brand stays in view).
       const railY = $('#mods-brands')?.scrollTop || 0;
       wrap.innerHTML = rail ? `<div class="mods-cars">${brandRail(base)}${grid}</div>` : grid;
@@ -792,7 +941,16 @@ async function renderMods(force = false) {
 function specsHTML(item) {
   const rows = [];
   const s = item.specs || {};
-  const add = (k, v) => v && rows.push(`<dt>${k}</dt><dd>${esc(v)}</dd>`);
+  const add = (k, v) => v && rows.push(`<dt>${tr(k)}</dt><dd>${esc(v)}</dd>`);
+  if (item.game === 'rally' && !item.isMod && (item.kind === 'car' || item.kind === 'track')) {
+    if (item.kind === 'car') {
+      add('Brand', item.brand); add('Class', item.tags?.[0]);
+      add('Default livery', item.rally?.livery); add('Your liveries', String(item.rally?.liveries || 0));
+    } else {
+      add('Location', item.locationName); add('Country', countryName(item.country)); add('Stages', String(item.layouts.length));
+    }
+    return `<dl class="specs">${rows.join('')}</dl>`;
+  }
   if (item.kind === 'car') {
     add('Power', s.bhp); add('Torque', s.torque); add('Weight', s.weight); add('Top speed', s.topspeed);
     add('0-100', s.acceleration); add('P/W ratio', s.pwratio); add('Year', item.year); add('Country', item.country);
@@ -813,36 +971,39 @@ function openDetail(g, item, onChange) {
   let selectedSkin = item.skins?.[0]?.id || '';
   const heroSrc = item.image;
   const actions = [];
-  if (item.game === 'ac' && item.kind === 'car') actions.push(`<button class="btn primary small" data-a="drive">▶ Drive this car</button>`);
-  if (item.game === 'ac' && item.kind === 'track') actions.push(`<button class="btn primary small" data-a="drive">▶ Drive here</button>`);
-  if (item.game === 'evo' && item.kind === 'car' && item.carId) actions.push(`<button class="btn primary small" data-a="drive">▶ Drive this car</button>`);
-  if (item.game === 'evo' && item.evoTrack) actions.push(`<button class="btn primary small" data-a="drive">▶ Quick Drive here</button>`);
+  if (item.game === 'ac' && item.kind === 'car') actions.push(`<button class="btn primary small" data-a="drive">▶ ${tr('Drive this car')}</button>`);
+  if (item.game === 'ac' && item.kind === 'track') actions.push(`<button class="btn primary small" data-a="drive">▶ ${tr('Drive here')}</button>`);
+  if (item.game === 'evo' && item.kind === 'car' && item.carId) actions.push(`<button class="btn primary small" data-a="drive">▶ ${tr('Drive this car')}</button>`);
+  if (item.game === 'evo' && item.evoTrack) actions.push(`<button class="btn primary small" data-a="drive">▶ ${tr('Quick Drive here')}</button>`);
   const isMedia = item.kind === 'screenshot' || item.kind === 'replay';
-  const removeLabel = isMedia ? 'Delete' : 'Uninstall';
-  if (item.kind === 'screenshot') actions.push(`<button class="btn primary small" data-a="open">Open picture</button>`);
-  if (item.toggle) actions.push(`<button class="btn small ${item.enabled ? 'subtle' : 'primary'}" data-a="toggle">${item.enabled ? 'Disable' : 'Enable'}</button>`);
-  actions.push(`<button class="btn small subtle" data-a="folder">Open folder</button>`);
-  if (item.url) actions.push(`<button class="btn small subtle" data-a="url">Author page ↗</button>`);
-  if (item.update) actions.push(`<button class="btn small primary" data-a="update" title="Opens the download Content Manager's update registry lists">Get update v${esc(item.update.version)} ↗</button>`);
-  if (uninstallPaths(item).length) actions.push(`<button class="btn small danger" data-a="uninstall" title="Moves the ${isMedia ? 'file' : "mod's files"} to the Recycle Bin">${removeLabel}</button>`);
+  const removeLabel = isMedia ? tr('Delete') : tr('Uninstall');
+  if (item.kind === 'screenshot') actions.push(`<button class="btn primary small" data-a="open">${tr('Open picture')}</button>`);
+  if (item.toggle) actions.push(`<button class="btn small ${item.enabled ? 'subtle' : 'primary'}" data-a="toggle">${item.enabled ? tr('Disable') : tr('Enable')}</button>`);
+  actions.push(`<button class="btn small subtle" data-a="folder">${tr('Open folder')}</button>`);
+  if (item.url) actions.push(`<button class="btn small subtle" data-a="url">${tr('Author page')} ↗</button>`);
+  if (item.update) actions.push(`<button class="btn small primary" data-a="update" title="${esc(tr("Opens the download Content Manager's update registry lists"))}">${tr('Get update')} v${esc(item.update.version)} ↗</button>`);
+  if (uninstallPaths(item).length) actions.push(`<button class="btn small danger" data-a="uninstall" title="${esc(isMedia ? tr('Moves the file to the Recycle Bin') : tr("Moves the mod's files to the Recycle Bin"))}">${removeLabel}</button>`);
 
-  const skins = item.skins?.length ? `<div class="section-title">Skins (${item.skins.length})</div>
+  const skins = item.skins?.length ? `<div class="section-title">${tr('Skins')} (${item.skins.length})</div>
     <div class="skins">${item.skins.map(s => `<button class="skin ${s.id === selectedSkin ? 'active' : ''}" data-skin="${esc(s.id)}">
       ${imgTag(s.image, s.livery)}<span>${esc(s.id)}</span></button>`).join('')}</div>` : '';
 
-  const layouts = item.layouts?.length > 1 ? `<div class="section-title">Layouts (${item.layouts.length})</div>
-    <div class="skins">${item.layouts.map(l => `<div class="skin">${imgTag(l.preview, l.outline)}<span>${esc(l.name || l.id || 'Default')}${l.length ? ` · ${esc(l.length)}` : ''}</span></div>`).join('')}</div>` : '';
+  const layouts = item.layouts?.length > 1 ? `<div class="section-title">${tr(item.game === 'rally' ? 'Stages' : 'Layouts')} (${item.layouts.length})</div>
+    <div class="skins${item.game === 'rally' ? ' rally-maps' : ''}">${item.layouts.map(l => {
+      const label = `${l.name || l.id || tr('Default')}${l.length ? ` · ${l.length}` : ''}`;
+      return `<div class="skin" title="${esc(label)}">${imgTag(l.preview, l.outline)}<span>${esc(label)}</span></div>`;
+    }).join('')}</div>` : '';
 
   const galleryItems = (item.gallery || []).map(g => typeof g === 'string' ? { src: g } : g);
-  const gallery = galleryItems.length > 1 ? `<div class="section-title">${esc(item.galleryTitle || 'Textures')} (${galleryItems.length})</div>
+  const gallery = galleryItems.length > 1 ? `<div class="section-title">${esc(tr(item.galleryTitle || 'Textures'))} (${galleryItems.length})</div>
     <div class="skins">${galleryItems.map((g, i) => `<button class="skin ${g.src === item.image ? 'active' : ''}" data-gal="${i}">
-      ${imgTag(g.src, '')}${g.label ? `<span>${esc(g.label)}</span>` : ''}</button>`).join('')}</div>` : '';
+      ${imgTag(g.src, '')}${g.label ? `<span>${esc(tr(g.label))}</span>` : ''}</button>`).join('')}</div>` : '';
 
   const { el, close } = modal(`
     <div class="detail-hero ${item.kind === 'replay' ? 'icon' : ''}">
       ${item.number != null ? `<div class="thumb" style="position:absolute;inset:0"><div class="placeholder" style="font-size:140px">#${esc(item.number)}</div></div>` : ''}
       ${imgTag(heroSrc, item.fallbackImage)}
-      ${item.overlay ? `<img class="overlay" src="${esc(item.overlay)}" onerror="this.remove()" alt="">` : ''}
+      ${item.overlay ? `<img class="overlay${item.game === 'rally' ? ' white' : ''}" src="${esc(item.overlay)}" onerror="this.remove()" alt="">` : ''}
     </div>
     <div class="detail-body">
       ${item.kind === 'car' && item.badge ? `<img class="detail-logo" src="${esc(item.badge)}" onerror="this.remove()" alt="">` : ''}
@@ -851,7 +1012,7 @@ function openDetail(g, item, onChange) {
       <div class="detail-actions">${actions.join('')}</div>
       <div class="detail-grid">
         <div>
-          <div class="detail-desc">${esc(item.description || 'No description provided.')}</div>
+          <div class="detail-desc">${esc(item.description || tr('No description provided.'))}</div>
           ${item.tags?.length ? `<div class="chips">${item.tags.map(t => `<span class="chip">${esc(t)}</span>`).join('')}</div>` : ''}
         </div>
         ${specsHTML(item)}
@@ -861,7 +1022,7 @@ function openDetail(g, item, onChange) {
 
   if (item.update) cupDetails(item.kind, item.id).then(d => {
     const desc = el.querySelector('.detail-desc');
-    if (d?.changelog && desc) desc.textContent += `\n\nWhat's new in v${item.update.version}:\n${d.changelog}`;
+    if (d?.changelog && desc) desc.textContent += `\n\n${tr("What's new in v{version}:", { version: item.update.version })}\n${d.changelog}`;
   }).catch(() => {});
 
   const showHero = src => {
@@ -894,11 +1055,11 @@ function openDetail(g, item, onChange) {
         item.enabled = !item.enabled;
         if (item.toggle === 'evo') item.path = item.enabled ? item.path.replace(/\.disabled$/i, '') : item.path + '.disabled';
         if (item.toggle === 'rally') item.meta.files = item.meta.files.map(f => item.enabled ? f.replace(/\.disabled$/i, '') : f.replace(/\.disabled$/i, '') + '.disabled');
-        toast(`${item.title} ${item.enabled ? 'enabled' : 'disabled'}`);
+        toast(tr(item.enabled ? '{name} enabled' : '{name} disabled', { name: item.title }));
         close();
         onChange?.();
       } catch (err) {
-        toast(`Could not change ${item.title}: ${err?.message || 'file in use?'}`, true);
+        toast(tr('Could not change {name}: {error}', { name: item.title, error: err?.message || tr('file in use?') }), true);
       }
     }
     if (a === 'uninstall') {
@@ -906,7 +1067,7 @@ function openDetail(g, item, onChange) {
       const b = e.target.closest('[data-a]');
       if (!b.dataset.armed) {
         b.dataset.armed = '1';
-        b.textContent = `Click again to ${removeLabel.toLowerCase()}`;
+        b.textContent = isMedia ? tr('Click again to delete') : tr('Click again to uninstall');
         setTimeout(() => { if (b.isConnected) { delete b.dataset.armed; b.textContent = removeLabel; } }, 4000);
         return;
       }
@@ -914,12 +1075,12 @@ function openDetail(g, item, onChange) {
       try {
         await uninstallItem(item);
         for (const list of Object.values(state.cache)) { const i = list.indexOf(item); if (i >= 0) list.splice(i, 1); }
-        toast(`${item.title} ${isMedia ? 'deleted' : 'uninstalled'} (moved to the Recycle Bin)`);
+        toast(tr(isMedia ? '{name} deleted (moved to the Recycle Bin)' : '{name} uninstalled (moved to the Recycle Bin)', { name: item.title }));
         close();
         onChange?.();
       } catch (err) {
         b.disabled = false; delete b.dataset.armed; b.textContent = removeLabel;
-        toast(`Could not uninstall ${item.title}: ${err?.message || 'file in use?'}`, true);
+        toast(tr('Could not uninstall {name}: {error}', { name: item.title, error: err?.message || tr('file in use?') }), true);
       }
     }
     if (a === 'drive') {
@@ -937,7 +1098,7 @@ function openDetail(g, item, onChange) {
 // the selected car's liveries/skins and the car grid) and track column (layouts +
 // track grid), with a pinned footer.
 //   o.game     key of the game tab shown as active
-//   o.session  { summary() -> { title, sub }, sections(sel) -> sheet sections, onChange(ui) }
+//   o.session  { summary(sel) -> { title, sub }, sections(sel) -> sheet sections, onChange(ui) }
 //   o.cars     [{ key, title, sub, image, brand, flag, locked }]
 //   o.brandLogo(name) -> image url ('' shows initials)
 //   o.variants(carKey) -> [{ key, title, sub, image, livery?, spec?, specLabel? }]   (liveries / skins)
@@ -980,21 +1141,21 @@ function quickDriveModal(o) {
 
   const tabs = QD_TABS.map(([k, label]) => {
     const why = quickDriveBlocker(k);
-    return `<button class="qd-game ${k === o.game ? 'active' : ''} ${why ? 'off' : ''}" data-qd-game="${k}" title="${esc(why || `Quick Drive for ${label}`)}">${esc(label)}</button>`;
+    return `<button class="qd-game ${k === o.game ? 'active' : ''} ${why ? 'off' : ''}" data-qd-game="${k}" title="${esc(why || tr('Quick Drive for {game}', { game: label }))}">${esc(label)}</button>`;
   }).join('');
   const { el, close } = qdPage(o.game, `<div class="qd evo" data-game="${o.game}">
     <header class="qd-head">
       <div class="qd-title"><h2>Quick Drive</h2><nav class="qd-games">${tabs}</nav>
-        <button class="qd-session-btn" data-session title="Game mode, opponents, time and weather"></button>
-        <button class="qd-presets-btn" data-surprise title="Pick a random car and track you can drive"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.75" y="1.75" width="12.5" height="12.5" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="5.3" cy="5.3" r="1.1" fill="currentColor"/><circle cx="10.7" cy="10.7" r="1.1" fill="currentColor"/><circle cx="8" cy="8" r="1.1" fill="currentColor"/></svg><span>Surprise me</span></button>
-        <button class="qd-presets-btn" data-presets title="Saved setups, recent sessions and your best times"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 1.75h8c.41 0 .75.34.75.75v11.6l-4.75-3.1-4.75 3.1V2.5c0-.41.34-.75.75-.75z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg><span>Presets</span></button></div>
+        <button class="qd-session-btn" data-session title="${esc(tr('Game mode, opponents, time and weather'))}"></button>
+        <button class="qd-presets-btn" data-surprise title="${esc(tr('Pick a random car and track you can drive'))}"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="1.75" y="1.75" width="12.5" height="12.5" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="5.3" cy="5.3" r="1.1" fill="currentColor"/><circle cx="10.7" cy="10.7" r="1.1" fill="currentColor"/><circle cx="8" cy="8" r="1.1" fill="currentColor"/></svg><span>${tr('Surprise me')}</span></button>
+        <button class="qd-presets-btn" data-presets title="${esc(tr('Saved setups, recent sessions and your best times'))}"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 1.75h8c.41 0 .75.34.75.75v11.6l-4.75-3.1-4.75 3.1V2.5c0-.41.34-.75.75-.75z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg><span>${tr('Presets')}</span></button></div>
       <div class="qd-sub">${o.sub}</div>
     </header>
     <div class="qd-cols">
       <section class="qd-panel">
         <div class="qd-panel-head">
-          <h3>Car <small>${esc(o.carCount)}</small></h3>
-          <input class="search" id="qd-car-q" placeholder="Search cars…">
+          <h3>${tr('Car')} <small>${esc(o.carCount)}</small></h3>
+          <input class="search" id="qd-car-q" placeholder="${esc(tr('Search cars…'))}">
         </div>
         <div class="qd-variants" id="qd-variants"></div>
         <div class="qd-carbox">
@@ -1004,8 +1165,8 @@ function quickDriveModal(o) {
       </section>
       <section class="qd-panel">
         <div class="qd-panel-head">
-          <h3>Track <small>${esc(o.trackCount)}</small></h3>
-          <input class="search" id="qd-track-q" placeholder="Search tracks…">
+          <h3>${tr('Track')} <small>${esc(o.trackCount)}</small></h3>
+          <input class="search" id="qd-track-q" placeholder="${esc(tr('Search tracks…'))}">
         </div>
         <div class="qd-layouts" id="qd-layouts"></div>
         <div class="qd-grid" id="qd-tracks"></div>
@@ -1013,7 +1174,7 @@ function quickDriveModal(o) {
     </div>
     <footer class="qd-foot">
       <div class="qd-summary" id="qd-summary"></div>
-      <button class="btn primary small" id="qd-go">▶ ${esc(o.launchLabel)}</button>
+      <button class="btn primary small" id="qd-go" data-launch-game="${o.game}">▶ ${esc(o.launchLabel)}</button>
     </footer>
   </div>`, () => o.onClose?.({ ...sel }));
 
@@ -1051,7 +1212,7 @@ function quickDriveModal(o) {
 
   const drawBrands = () => {
     const names = [...new Set(o.cars.map(c => c.brand).filter(Boolean))].sort((a, b) => a.localeCompare(b));
-    el.querySelector('#qd-brands').innerHTML = `<button class="qd-brand all ${brand ? '' : 'active'}" data-brand="" title="All brands">All</button>` +
+    el.querySelector('#qd-brands').innerHTML = `<button class="qd-brand all ${brand ? '' : 'active'}" data-brand="" title="${esc(tr('All brands'))}">${tr('All')}</button>` +
       names.map(n => {
         const logo = o.brandLogo(n);
         return `<button class="qd-brand ${n === brand ? 'active' : ''}" data-brand="${esc(n)}" title="${esc(n)}">${logo
@@ -1062,7 +1223,7 @@ function quickDriveModal(o) {
   const drawCars = () => {
     const list = o.cars.filter(c => (!brand || c.brand === brand || c.key === '') && match(search.car, `${c.title} ${c.sub} ${c.brand} ${c.key}`));
     el.querySelector('#qd-cars').innerHTML = list.map(c => card(`data-car="${esc(c.key)}"`, c.image, c.title, c.sub, c.flag || '', c.locked ? 'locked' : '')).join('')
-      || '<div class="qd-none">No cars match.</div>';
+      || `<div class="qd-none">${tr('No cars match.')}</div>`;
     sync();
   };
   const drawTracks = () => {
@@ -1072,14 +1233,14 @@ function quickDriveModal(o) {
     if (t && !t.layouts.some(l => l.key === sel.layout)) sel.layout = t.layouts[0]?.key ?? '';
     el.querySelector('#qd-tracks').innerHTML = o.tracks
       .filter(t => match(search.track, `${t.title} ${t.sub} ${t.layouts.map(l => l.name).join(' ')}`))
-      .map(t => card(`data-track="${esc(t.key)}"`, t.image, t.title, t.sub, t.flag || '')).join('') || '<div class="qd-none">No tracks match.</div>';
+      .map(t => card(`data-track="${esc(t.key)}"`, t.image, t.title, t.sub, t.flag || '')).join('') || `<div class="qd-none">${tr('No tracks match.')}</div>`;
     sync();
   };
   const drawSession = () => {
-    const s = o.session?.summary();
+    const s = o.session?.summary(sel);
     const btn = el.querySelector('[data-session]');
     btn.hidden = !s;
-    if (s) btn.innerHTML = `<svg class="qd-session-gear" viewBox="0 0 24 24" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/></svg><span class="qd-session-edit">Session settings</span>`;
+    if (s) btn.innerHTML = `<svg class="qd-session-gear" viewBox="0 0 24 24" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/></svg><span class="qd-session-edit">${tr('Session settings')}</span>`;
     return s;
   };
   const sync = () => {
@@ -1100,19 +1261,21 @@ function quickDriveModal(o) {
     stripCar = sel.car;
     const hint = o.variantHint?.(sel.car);
     const chevron = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-    const specName = o.specName || 'Spec';
+    const specName = tr(o.specName || 'Spec');
     const specMenu = specs.length > 1 ? `<div class="qd-spec"><button class="qd-spec-btn" data-spec-menu title="${esc(`${specName}: ${specs.find(s => s.key === spec)?.label || ''}`)}">${esc(specName)}${chevron}</button>
       <div class="qd-spec-menu" hidden><small>${esc(specName)}</small>${specs.map(s => `<button class="${s.key === spec ? 'active' : ''}" data-spec="${esc(s.key)}">${esc(s.label)}</button>`).join('')}</div></div>` : '';
     el.querySelector('#qd-variants').innerHTML = variants.length || hint
-      ? `<span class="qd-layouts-name">${esc(o.variantLabel)}</span>${specMenu}<div class="qd-variant-strip">${variants.map(x => `<button class="qd-variant ${x.key === sel.variant ? 'active' : ''}" data-variant="${esc(x.key)}" title="${esc([x.title, x.sub].filter(Boolean).join(' · '))}">
+      ? `<span class="qd-layouts-name">${esc(tr(o.variantLabel))}</span>${specMenu}<div class="qd-variant-strip">${variants.map(x => `<button class="qd-variant ${x.key === sel.variant ? 'active' : ''}" data-variant="${esc(x.key)}" title="${esc([x.title, x.sub].filter(Boolean).join(' · '))}">
           <div class="thumb">${imgTag(x.image, '')}</div><span>${esc(x.title)}${x.sub ? `<small>${esc(x.sub)}</small>` : ''}</span></button>`).join('')}</div>
           ${hint ? `<span class="qd-variant-hint" data-tip="${esc(hint)}" aria-label="${esc(hint)}"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="8.2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M10 9v5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="10" cy="6.2" r="1.1" fill="currentColor"/></svg></span>` : ''}`
       : '';
     const strip = el.querySelector('.qd-variant-strip');
     if (strip) strip.scrollLeft = keepX;
+    // l.outlineColor: a picture in its own colours (Rally's stage maps, red part driven), not
+    // an outline to draw white; l.outlineFallback: tried when l.outline doesn't load.
     el.querySelector('#qd-layouts').innerHTML = t ? `<span class="qd-layouts-name">${esc(t.title)}</span>` + t.layouts
       .map(l => `<button class="qd-layout ${l.key === sel.layout ? 'active' : ''}" data-layout="${esc(l.key)}">
-        ${l.outline ? `<img src="${esc(l.outline)}" alt="" onerror="this.remove()">` : ''}<span>${esc(l.name)}${l.sub ? `<small>${esc(l.sub)}</small>` : ''}</span></button>`).join('') : '';
+        ${l.outline ? `<img ${l.outlineColor ? 'class="color" ' : ''}src="${esc(l.outline)}" alt="" onerror="${l.outlineFallback ? `this.onerror=()=>this.remove();this.src='${esc(l.outlineFallback)}'` : 'this.remove()'}">` : ''}<span>${esc(l.name)}${l.sub ? `<small>${esc(l.sub)}</small>` : ''}</span></button>`).join('') : '';
     const note = drawSession();
     const pb = o.best?.(sel);
     el.querySelector('#qd-summary').innerHTML = `
@@ -1120,7 +1283,7 @@ function quickDriveModal(o) {
       <div><b>${esc(c?.summaryTitle || c?.title || '')}</b><small>${esc(v ? variantText(v) : c?.sub || '')}</small></div>
       <div class="qd-sum-img">${imgTag(layout?.preview || t?.image, '')}</div>
       <div><b>${esc(t?.title || '')}</b><small>${esc([layout?.name, layout?.sub].filter(Boolean).join(' · '))}</small></div>
-      ${pb ? `<div class="qd-pb" title="Your personal best with this car here, as recorded by the game${pb.at ? ` (${esc(timeAgo(pb.at / 1000))})` : ''}"><small>Your best</small><b>${esc(lapTime(pb.ms))}</b></div>` : ''}
+      ${pb ? `<div class="qd-pb" title="${esc(tr('Your personal best with this car here, as recorded by the game'))}${pb.at ? ` (${esc(timeAgo(pb.at / 1000))})` : ''}"><small>${tr('Your best')}</small><b>${esc(lapTime(pb.ms))}</b></div>` : ''}
       ${note ? `<button class="qd-sum-note" data-session><b>${esc(note.title)}</b><small>${esc(note.sub)}</small></button>` : ''}`;
   };
   const redraw = () => { drawBrands(); drawCars(); drawTracks(); };
@@ -1213,7 +1376,7 @@ function quickDriveModal(o) {
   const surprise = () => {
     const cars = o.cars.filter(c => c.key !== '' && !c.locked && c.key !== sel.car);
     const tracks = o.tracks.filter(t => t.key !== sel.track || t.layouts.length > 1);
-    if (!cars.length || !tracks.length) { toast('Nothing else to pick from', true); return; }
+    if (!cars.length || !tracks.length) { toast(tr('Nothing else to pick from'), true); return; }
     const c = pick(cars), t = pick(tracks);
     const variants = o.variants(c.key) || [];
     const layouts = t.key === sel.track ? t.layouts.filter(l => l.key !== sel.layout) : t.layouts;
@@ -1223,7 +1386,7 @@ function quickDriveModal(o) {
     el.querySelector('#qd-car-q').value = el.querySelector('#qd-track-q').value = '';
     redraw(); revealAll();
     const l = t.layouts.find(x => x.key === sel.layout);
-    toast(`Surprise: ${c.summaryTitle || c.title} at ${t.title}${l?.name ? ` · ${l.name}` : ''}`);
+    toast(tr('Surprise: {car} at {track}', { car: c.summaryTitle || c.title, track: `${t.title}${l?.name ? ` · ${l.name}` : ''}` }));
   };
 
   // Presets (named setups) and recent sessions, per game: the selection plus the
@@ -1232,7 +1395,7 @@ function quickDriveModal(o) {
   const describe = s => {
     const c = findCar(s.car), t = findTrack(s.track), l = t?.layouts.find(x => x.key === s.layout);
     const all = o.variants(s.car) || [], v = all.find(x => x.key === s.variant);
-    return { car: c?.summaryTitle || c?.title || '', variant: v ? withSpec(v, all) : '', track: [t?.title, l?.name].filter(Boolean).join(' · '), session: o.session?.summary()?.title || '' };
+    return { car: c?.summaryTitle || c?.title || '', variant: v ? withSpec(v, all) : '', track: [t?.title, l?.name].filter(Boolean).join(' · '), session: o.session?.summary(s)?.title || '' };
   };
   const snapshot = () => ({ sel: { ...sel }, session: o.session?.get ? JSON.parse(JSON.stringify(o.session.get())) : null, label: describe(sel) });
   const same = (a, b) => JSON.stringify([a.sel, a.session]) === JSON.stringify([b.sel, b.session]);
@@ -1243,13 +1406,13 @@ function quickDriveModal(o) {
     if (c && !c.locked) {
       sel.car = c.key;
       sel.variant = (o.variants(c.key) || []).some(v => v.key === p.sel.variant) ? p.sel.variant : o.defaultVariant(c.key);
-    } else missing.push('car');
+    } else missing.push(tr('car'));
     o.session?.onChange?.(ui); // the session can change the track list (EVO, AC)
     const t = findTrack(p.sel.track);
-    if (t) { sel.track = t.key; sel.layout = t.layouts.some(l => l.key === p.sel.layout) ? p.sel.layout : t.layouts[0]?.key ?? ''; } else missing.push('track');
+    if (t) { sel.track = t.key; sel.layout = t.layouts.some(l => l.key === p.sel.layout) ? p.sel.layout : t.layouts[0]?.key ?? ''; } else missing.push(tr('track'));
     redraw(); revealAll();
-    if (missing.length) toast(`Loaded, but the ${missing.join(' and ')} isn't available any more`, true);
-    else toast(p.message || `Loaded ${p.name ? `“${p.name}”` : 'the session'}`);
+    if (missing.length) toast(tr("Loaded, but the {what} isn't available any more", { what: missing.join(` ${tr('and')} `) }), true);
+    else toast(p.message || (p.name ? tr('Loaded “{name}”', { name: p.name }) : tr('Loaded the session')));
   };
   const remember = () => {
     const recent = store('qdRecent'), entry = { ...snapshot(), at: Date.now() };
@@ -1266,24 +1429,26 @@ function quickDriveModal(o) {
     wrap.className = 'qd-sheet-wrap';
     host.appendChild(wrap);
     const row = (p, i, kind) => `<div class="qd-preset">
-      <div class="qd-preset-info"><b>${esc(kind === 'saved' ? p.name : p.label.car || 'Session')}</b>
+      <div class="qd-preset-info"><b>${esc(kind === 'saved' ? p.name : p.label.car || tr('Session'))}</b>
         <small>${esc([kind === 'saved' && p.label.car, p.label.variant, p.label.track, p.label.session, kind === 'recent' && timeAgo(p.at / 1000)].filter(Boolean).join(' · '))}</small></div>
-      <button class="btn primary small" data-load="${kind}:${i}">Load</button>
-      ${kind === 'saved' ? `<button class="btn subtle small" data-del="${i}" title="Delete this preset">✕</button>` : `<button class="btn subtle small" data-keep="${i}" title="Keep it as a preset">Save</button>`}</div>`;
+      <button class="btn primary small" data-load="${kind}:${i}">${tr('Load')}</button>
+      ${kind === 'saved' ? `<button class="btn subtle small" data-del="${i}" title="${esc(tr('Delete this preset'))}">✕</button>` : `<button class="btn subtle small" data-keep="${i}" title="${esc(tr('Keep it as a preset'))}">${tr('Save')}</button>`}</div>`;
     const draw = () => {
       const saved = store('qdPresets'), recent = store('qdRecent');
       wrap.innerHTML = `<div class="qd-sheet qd-presets">
-        <header><h3>Presets</h3><small>A preset keeps the car${o.variantLabel ? ` and ${esc(o.variantLabel.toLowerCase())}` : ''}, the track and the session settings.</small><button class="btn primary small" data-done>Done</button></header>
+        <header><h3>${tr('Presets')}</h3><small>${esc(o.variantLabel
+          ? tr('A preset keeps the car and {what}, the track and the session settings.', { what: tr(o.variantLabel).toLowerCase() })
+          : tr('A preset keeps the car, the track and the session settings.'))}</small><button class="btn primary small" data-done>${tr('Done')}</button></header>
         <div class="qd-sheet-body">
-          <section class="qd-sheet-sec"><h4>Saved</h4>
-            <form class="qd-preset-new"><input class="search" maxlength="48" placeholder="Name the current setup"><button class="btn primary small">Save current</button></form>
-            ${saved.map((p, i) => row(p, i, 'saved')).join('') || '<p class="qd-preset-empty">No presets yet.</p>'}</section>
-          <section class="qd-sheet-sec"><h4>Recent sessions</h4>
-            ${recent.map((p, i) => row(p, i, 'recent')).join('') || '<p class="qd-preset-empty">Sessions you start from here appear here.</p>'}</section>
-          ${o.bests ? `<section class="qd-sheet-sec"><h4>Beat your time</h4>
+          <section class="qd-sheet-sec"><h4>${tr('Saved')}</h4>
+            <form class="qd-preset-new"><input class="search" maxlength="48" placeholder="${esc(tr('Name the current setup'))}"><button class="btn primary small">${tr('Save current')}</button></form>
+            ${saved.map((p, i) => row(p, i, 'saved')).join('') || `<p class="qd-preset-empty">${tr('No presets yet.')}</p>`}</section>
+          <section class="qd-sheet-sec"><h4>${tr('Recent sessions')}</h4>
+            ${recent.map((p, i) => row(p, i, 'recent')).join('') || `<p class="qd-preset-empty">${tr('Sessions you start from here appear here.')}</p>`}</section>
+          ${o.bests ? `<section class="qd-sheet-sec"><h4>${tr('Beat your time')}</h4>
             ${bests.map((b, i) => { const d = describe(b.sel); return `<div class="qd-preset">
               <div class="qd-preset-info"><b>${esc(lapTime(b.ms))} · ${esc(d.car)}</b><small>${esc([d.track, b.at && timeAgo(b.at / 1000)].filter(Boolean).join(' · '))}</small></div>
-              <button class="btn primary small" data-beat="${i}" title="Select this car and track">Select</button></div>`; }).join('') || '<p class="qd-preset-empty">No personal bests recorded by the game yet.</p>'}</section>` : ''}
+              <button class="btn primary small" data-beat="${i}" title="${esc(tr('Select this car and track'))}">${tr('Select')}</button></div>`; }).join('') || `<p class="qd-preset-empty">${tr('No personal bests recorded by the game yet.')}</p>`}</section>` : ''}
         </div></div>`;
     };
     // Personal bests with a car and track this dialog lists, newest first.
@@ -1294,12 +1459,12 @@ function quickDriveModal(o) {
       if (i >= 0) saved.splice(i, 1);
       saved.unshift({ ...entry, name });
       saveSettings(); draw();
-      toast(`Saved preset “${name}”`);
+      toast(tr('Saved preset “{name}”', { name }));
     };
     wrap.addEventListener('submit', e => {
       e.preventDefault();
       const entry = snapshot();
-      save(entry, e.target.querySelector('input').value.trim() || [entry.label.car, entry.label.track].filter(Boolean).join(' @ ') || 'Preset');
+      save(entry, e.target.querySelector('input').value.trim() || [entry.label.car, entry.label.track].filter(Boolean).join(' @ ') || tr('Preset'));
     });
     wrap.addEventListener('click', e => {
       if (e.target === wrap || e.target.closest('[data-done]')) { wrap.remove(); return; }
@@ -1311,21 +1476,23 @@ function quickDriveModal(o) {
       if (beat != null) {
         const b = bests[beat];
         wrap.remove();
-        apply({ sel: { variant: '', layout: '', ...b.sel }, session: null, message: `Selected · your best here is ${lapTime(b.ms)}` });
+        apply({ sel: { variant: '', layout: '', ...b.sel }, session: null, message: tr('Selected · your best here is {time}', { time: lapTime(b.ms) }) });
         return;
       }
       const keep = e.target.closest('[data-keep]')?.dataset.keep;
-      if (keep != null) { const r = store('qdRecent')[keep]; save({ sel: r.sel, session: r.session, label: r.label }, [r.label.car, r.label.track].filter(Boolean).join(' @ ') || 'Preset'); }
+      if (keep != null) { const r = store('qdRecent')[keep]; save({ sel: r.sel, session: r.session, label: r.label }, [r.label.car, r.label.track].filter(Boolean).join(' @ ') || tr('Preset')); }
     });
     draw();
     wrap.querySelector('.qd-preset-new input')?.focus();
   };
 
+  syncRunning(el);
   el.querySelector('#qd-go').onclick = async () => {
     const go = el.querySelector('#qd-go');
     go.disabled = true;
     try {
       if (await o.onLaunch({ ...sel }) !== false) {
+        markStarting(o.game);
         remember();
         o.onClose?.({ ...sel });
         close();
@@ -1337,31 +1504,40 @@ function quickDriveModal(o) {
 }
 
 // Session settings sheet over the Quick Drive dialog. session.sections(sel) returns
-//   [{ title, note?, wide?, fields: [{ label, hint?, type: 'seg'|'select'|'date', options: [[value, label]], get(), set(value) }] }]
-// ('date' has no options: its value is YYYY-MM-DD) and is rebuilt after every
-// change, so fields can depend on each other.
+//   [{ title, note?, wide?, fields: [{ label, hint?, icon?, disabled?, type: 'seg'|'select'|'date'|'range', options: [[value, label]], get(), set(value) }] }]
+// ('date' has no options: its value is YYYY-MM-DD; 'range' is a slider with
+// min, max, step and unit instead) and is rebuilt after every change, so fields
+// can depend on each other. icon: a picture url, or an SVG (markup starting with
+// "<"), or a function giving either for the current value.
 function openSessionSheet(host, session, getSel, onChange) {
   host.querySelector('.qd-sheet-wrap')?.remove();
   const wrap = document.createElement('div');
   wrap.className = 'qd-sheet-wrap';
   host.appendChild(wrap);
   let fields = [];
+  const iconHTML = f => {
+    const icon = typeof f.icon === 'function' ? f.icon() : f.icon;
+    return !icon ? '' : icon.startsWith('<') ? `<span class="qd-row-icon">${icon}</span>` : `<span class="qd-row-icon"><img src="${esc(icon)}" alt=""></span>`;
+  };
   const fieldHTML = (f, i) => {
     const k = (f.options || []).findIndex(([v]) => v === f.get());
-    const control = f.type === 'date' ? `<input type="date" data-f="${i}" value="${esc(f.get())}">`
+    const off = f.disabled ? ' disabled' : '';
+    const control = f.type === 'date' ? `<input type="date" data-f="${i}" value="${esc(f.get())}"${off}>`
+      : f.type === 'range'
+      ? `<div class="qd-range"><input type="range" data-f="${i}" min="${f.min}" max="${f.max}" step="${f.step || 1}" value="${esc(f.get())}" style="--fill: ${((f.get() - f.min) / (f.max - f.min || 1)) * 100}%"${off}><output>${esc(f.get())}${esc(f.unit || '')}</output></div>`
       : f.type === 'seg'
-      ? `<div class="qd-seg" data-f="${i}">${f.options.map(([, label], j) => `<button data-k="${j}" class="${j === k ? 'active' : ''}">${esc(label)}</button>`).join('')}</div>`
-      : `<select data-f="${i}">${f.options.map(([, label], j) => `<option value="${j}" ${j === k ? 'selected' : ''}>${esc(label)}</option>`).join('')}</select>`;
-    return `<div class="qd-row"><label>${esc(f.label)}${f.hint ? `<small>${esc(f.hint)}</small>` : ''}</label>${control}</div>`;
+      ? `<div class="qd-seg" data-f="${i}">${f.options.map(([, label], j) => `<button data-k="${j}" class="${j === k ? 'active' : ''}"${off}>${esc(tr(label))}</button>`).join('')}</div>`
+      : `<select data-f="${i}"${off}>${f.options.map(([, label], j) => `<option value="${j}" ${j === k ? 'selected' : ''}>${esc(tr(label))}</option>`).join('')}</select>`;
+    return `<div class="qd-row ${f.icon ? 'with-icon' : ''} ${f.disabled ? 'disabled' : ''}"><label>${iconHTML(f)}<span>${esc(tr(f.label))}${f.hint ? `<small>${esc(tr(f.hint))}</small>` : ''}</span></label>${control}</div>`;
   };
   const draw = () => {
     const y = wrap.querySelector('.qd-sheet-body')?.scrollTop || 0;
     fields = [];
     const sections = session.sections(getSel());
     wrap.innerHTML = `<div class="qd-sheet">
-      <header><h3>Session settings</h3><small>${esc(session.sheetNote || '')}</small><button class="btn primary small" data-done>Done</button></header>
+      <header><h3>${tr('Session settings')}</h3><small>${esc(tr(session.sheetNote || ''))}</small><button class="btn primary small" data-done>${tr('Done')}</button></header>
       <div class="qd-sheet-body">${sections.map(s => `<section class="qd-sheet-sec ${s.wide ? 'wide' : ''}">
-        <h4>${esc(s.title)}</h4>${s.note ? `<p class="qd-sheet-note">${esc(s.note)}</p>` : ''}
+        <h4>${esc(tr(s.title))}</h4>${s.note ? `<p class="qd-sheet-note">${esc(tr(s.note))}</p>` : ''}
         ${s.fields.map(f => fieldHTML(f, fields.push(f) - 1)).join('')}</section>`).join('')}</div>
     </div>`;
     wrap.querySelector('.qd-sheet-body').scrollTop = y;
@@ -1372,8 +1548,16 @@ function openSessionSheet(host, session, getSel, onChange) {
     const b = e.target.closest('.qd-seg [data-k]');
     if (b) set(Number(b.parentElement.dataset.f), Number(b.dataset.k));
   });
+  // A slider shows its value while dragged and applies it when let go.
+  wrap.addEventListener('input', e => {
+    if (!e.target.matches('input[type=range][data-f]')) return;
+    const out = e.target.nextElementSibling, r = e.target;
+    if (out) out.textContent = `${r.value}${fields[Number(r.dataset.f)].unit || ''}`;
+    r.style.setProperty('--fill', `${((r.value - r.min) / (r.max - r.min || 1)) * 100}%`);
+  });
   wrap.addEventListener('change', e => {
     if (e.target.matches('select[data-f]')) set(Number(e.target.dataset.f), Number(e.target.value));
+    if (e.target.matches('input[type=range][data-f]')) { fields[Number(e.target.dataset.f)].set(Number(e.target.value)); draw(); onChange(); }
     if (e.target.matches('input[type=date][data-f]') && /^\d{4}-\d{2}-\d{2}$/.test(e.target.value)) {
       fields[Number(e.target.dataset.f)].set(e.target.value); draw(); onChange();
     }
@@ -1385,7 +1569,8 @@ function openSessionSheet(host, session, getSel, onChange) {
 const withCurrent = (options, value, label) => options.some(([v]) => v === value) ? options : [...options, [value, label(value)]].sort((a, b) => a[0] - b[0]);
 const steps = (from, to, step) => Array.from({ length: Math.floor((to - from) / step) + 1 }, (_, i) => from + i * step);
 const timeOptions = (value, from = 0, to = 23 * 60 + 45) => withCurrent(steps(from, to, 15).map(m => [m, hhmm(m)]), value, hhmm);
-const minuteOptions = (value, from, to, step, zeroLabel) => withCurrent(steps(from, to, step).map(m => [m, m === 0 && zeroLabel ? zeroLabel : `${m} min`]), value, m => `${m} min`);
+const minutes = m => tr('{n} min', { n: m });
+const minuteOptions = (value, from, to, step, zeroLabel) => withCurrent(steps(from, to, step).map(m => [m, m === 0 && zeroLabel ? zeroLabel : minutes(m)]), value, minutes);
 const countOptions = (value, from, to, unit) => withCurrent(steps(from, to, 1).map(n => [n, unit ? `${n} ${unit}` : String(n)]), value, n => String(n));
 const hhmm = m => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 
@@ -1496,6 +1681,12 @@ const flagCode = country => {
   return flagNames.get(String(country || '').toLowerCase()) || '';
 };
 const flagUrl = country => { const code = flagCode(country); return code ? `/img/flags/${code}.png` : ''; };
+// A country's name in the launcher's language (the system's own region names), else as given.
+const countryName = country => {
+  const code = flagCode(country);
+  if (!code || code.includes('-')) return tr(country || '');
+  try { return new Intl.DisplayNames([lang], { type: 'region' }).of(code.toUpperCase()) || country; } catch { return country; }
+};
 
 const brandKey = b => String(b).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/-?(amg|benz)$/, '').replace(/[^a-z0-9]/g, '');
 const BUNDLED_LOGOS = ['astonmartin', 'bentley', 'citroen', 'fiat', 'ginetta', 'jaguar', 'lexus', 'skoda', 'subaru'];
@@ -1538,7 +1729,7 @@ async function openAccQuickDrive() {
   const seasons = ownedSeasons.length ? ownedSeasons : [ss.season];
   if (!seasons.includes(ss.season)) ss.season = seasons[0];
   const racing = () => ss.mode === 'QuickRace' || ss.mode === 'CustomRace';
-  const weatherName = () => ACC_WEATHER.find(([id]) => id === ss.weather)?.[1] || ss.weather;
+  const weatherName = () => tr(ACC_WEATHER.find(([id]) => id === ss.weather)?.[1] || ss.weather);
   const hour = h => `${String(h).padStart(2, '0')}:00`;
   const brandOf = model => { const n = ACC_CARS[model] || ''; return /^Aston Martin/.test(n) ? 'Aston Martin' : /Jaguar/.test(n) ? 'Jaguar' : n.split(' ')[0]; };
 
@@ -1553,67 +1744,67 @@ async function openAccQuickDrive() {
   const keyFor = k => { const c = madeByLauncher(k || '') && customs.find(x => x.file === k); return c ? `model:${c.model}` : k; };
   const models = Object.entries(ACC_CARS).map(([id, name]) => ({ id: Number(id), name })).filter(m => accModelOwned(m.id, owned)).sort((a, b) => a.name.localeCompare(b.name));
   const carEntries = () => [
-    { key: '', title: 'Car chosen in ACC', sub: gameCar ? `Official entry ${gameCar}` : 'Keeps the car of ACC\x27s menu', brand: '', image: '', summaryTitle: 'ACC\x27s current car', flag: placeholder('ACC') },
+    { key: '', title: tr('Car chosen in ACC'), sub: gameCar ? tr('Official entry {car}', { car: gameCar }) : tr("Keeps the car of ACC's menu"), brand: '', image: '', summaryTitle: tr("ACC's current car"), flag: placeholder('ACC') },
     ...customs.filter(c => !madeByLauncher(c.file)).map(c => ({
       key: c.file, title: c.team || c.file.replace(/\.json$/i, ''), brand: brandOf(c.model), image: siteImage('acc', 'cars', String(c.model)) || c.image,
-      sub: [ACC_CARS[c.model] || `Car model #${c.model}`, c.number != null && `#${c.number}`].filter(Boolean).join(' · '),
-      flag: c.image || siteImage('acc', 'cars', String(c.model)) ? '<span class="flag">Custom</span>' : logoFlag(brandOf(c.model), c.team || c.file),
+      sub: [ACC_CARS[c.model] || tr('Car model #{n}', { n: c.model }), c.number != null && `#${c.number}`].filter(Boolean).join(' · '),
+      flag: c.image || siteImage('acc', 'cars', String(c.model)) ? `<span class="flag">${tr('Custom')}</span>` : logoFlag(brandOf(c.model), c.team || c.file),
     })).sort((a, b) => a.title.localeCompare(b.title)),
     ...models.map(m => {
       const image = siteImage('acc', 'cars', String(m.id));
-      return { key: `model:${m.id}`, title: m.name, sub: `${accModelClass(m.id)} · plain paint`, brand: brandOf(m.id), image, flag: image ? '' : logoFlag(brandOf(m.id), m.name) };
+      return { key: `model:${m.id}`, title: m.name, sub: `${accModelClass(m.id)} · ${tr('plain paint')}`, brand: brandOf(m.id), image, flag: image ? '' : logoFlag(brandOf(m.id), m.name) };
     }),
   ];
   const cars = carEntries();
   // Track pictures from the official site, with the country's flag in the corner.
   const tracks = ACC_TRACKS.filter(t => accTrackOwned(t.id, owned)).map(t => {
     const photo = siteImage('acc', 'tracks', t.id), flag = flagUrl(t.country);
-    return { key: t.id, title: t.name, sub: t.country, image: photo || flag, layouts: [],
+    return { key: t.id, title: t.name, sub: countryName(t.country), image: photo || flag, layouts: [],
       flag: photo && flag ? `<img class="flag-badge" src="${esc(flag)}" alt="">` : photo || flag ? '' : placeholder(t.name) };
   });
 
   const session = {
     summary: () => {
       const cond = `${hour(ss.time)} · ${weatherName()}`;
-      const ai = racing() ? ` · ${ss.opponents} AI` : '';
-      const len = { Practice: `${ss.practice} min`, Hotlap: '', Hotstint: `${ss.stint} min stint`, QuickRace: `${ss.race} min`,
+      const ai = racing() ? ` · ${tr('{n} AI', { n: ss.opponents })}` : '';
+      const len = { Practice: minutes(ss.practice), Hotlap: '', Hotstint: tr('{n} min stint', { n: ss.stint }), QuickRace: minutes(ss.race),
         CustomRace: [ss.practice && `P ${ss.practice}'`, `Q ${ss.qualifying}'`, `R ${ss.race}'`].filter(Boolean).join(' · ') }[ss.mode];
-      return { title: ACC_MODES[ss.mode], sub: [len, accSeasonName(ss.season)].filter(Boolean).join(' · ') + ai + ` · ${cond}` };
+      return { title: tr(ACC_MODES[ss.mode]), sub: [len, accSeasonName(ss.season)].filter(Boolean).join(' · ') + ai + ` · ${cond}` };
     },
     get: () => ss,
     set: d => { mergeSettings(ss, d); if (!seasons.includes(ss.season)) ss.season = seasons[0]; },
-    sheetNote: 'Set in ACC\'s Single Player menu: ACC opens with these choices and you press Start.',
+    sheetNote: tr("Set in ACC's Single Player menu: ACC opens with these choices and you press Start."),
     sections: () => [
-      { title: 'Game mode', wide: true, fields: [
-        { label: 'Championship', hint: 'Season of the Single Player menu; it decides the official cars and teams. A car from another year or class may need Free selection', type: 'select', options: seasons.map(id => [id, accSeasonName(id)]), get: () => ss.season, set: v => { ss.season = v; } },
-        { label: 'Mode', type: 'seg', options: Object.entries(ACC_MODES), get: () => ss.mode, set: v => { ss.mode = v; } },
+      { title: tr('Game mode'), wide: true, fields: [
+        { label: tr('Championship'), hint: tr('Season of the Single Player menu; it decides the official cars and teams. A car from another year or class may need Free selection'), type: 'select', options: seasons.map(id => [id, accSeasonName(id)]), get: () => ss.season, set: v => { ss.season = v; } },
+        { label: tr('Mode'), type: 'seg', options: Object.entries(ACC_MODES), get: () => ss.mode, set: v => { ss.mode = v; } },
       ] },
-      ...(ss.mode === 'Practice' ? [{ title: 'Practice', fields: [
-        { label: 'Length', type: 'select', options: minuteOptions(ss.practice, 5, 120, 5), get: () => ss.practice, set: v => { ss.practice = v; } },
+      ...(ss.mode === 'Practice' ? [{ title: tr('Practice'), fields: [
+        { label: tr('Length'), type: 'select', options: minuteOptions(ss.practice, 5, 120, 5), get: () => ss.practice, set: v => { ss.practice = v; } },
       ] }] : []),
-      ...(ss.mode === 'Hotlap' ? [{ title: 'Hotlap', note: 'Hotlap runs until you leave; only time and weather apply.', fields: [] }] : []),
-      ...(ss.mode === 'Hotstint' ? [{ title: 'Hotstint', fields: [
-        { label: 'Stint length', type: 'select', options: minuteOptions(ss.stint, 5, 60, 5), get: () => ss.stint, set: v => { ss.stint = v; } },
+      ...(ss.mode === 'Hotlap' ? [{ title: tr('Hotlap'), note: tr('Hotlap runs until you leave; only time and weather apply.'), fields: [] }] : []),
+      ...(ss.mode === 'Hotstint' ? [{ title: tr('Hotstint'), fields: [
+        { label: tr('Stint length'), type: 'select', options: minuteOptions(ss.stint, 5, 60, 5), get: () => ss.stint, set: v => { ss.stint = v; } },
       ] }] : []),
-      ...(ss.mode === 'QuickRace' ? [{ title: 'Race', fields: [
-        { label: 'Race length', type: 'select', options: minuteOptions(ss.race, 5, 120, 5), get: () => ss.race, set: v => { ss.race = v; } },
+      ...(ss.mode === 'QuickRace' ? [{ title: tr('Race'), fields: [
+        { label: tr('Race length'), type: 'select', options: minuteOptions(ss.race, 5, 120, 5), get: () => ss.race, set: v => { ss.race = v; } },
       ] }] : []),
-      ...(ss.mode === 'CustomRace' ? [{ title: 'Race weekend', fields: [
-        { label: 'Practice', type: 'select', options: minuteOptions(ss.practice, 0, 120, 5, 'Skip'), get: () => ss.practice, set: v => { ss.practice = v; } },
-        { label: 'Qualifying', type: 'select', options: minuteOptions(ss.qualifying, 5, 60, 5), get: () => ss.qualifying, set: v => { ss.qualifying = v; } },
-        { label: 'Race', type: 'select', options: minuteOptions(ss.race, 5, 180, 5), get: () => ss.race, set: v => { ss.race = v; } },
+      ...(ss.mode === 'CustomRace' ? [{ title: tr('Race weekend'), fields: [
+        { label: tr('Practice'), type: 'select', options: minuteOptions(ss.practice, 0, 120, 5, tr('Skip')), get: () => ss.practice, set: v => { ss.practice = v; } },
+        { label: tr('Qualifying'), type: 'select', options: minuteOptions(ss.qualifying, 5, 60, 5), get: () => ss.qualifying, set: v => { ss.qualifying = v; } },
+        { label: tr('Race'), type: 'select', options: minuteOptions(ss.race, 5, 180, 5), get: () => ss.race, set: v => { ss.race = v; } },
       ] }] : []),
-      ...(racing() ? [{ title: 'Opponents', fields: [
-        { label: 'Opponents', hint: 'ACC caps it at the track\'s pit boxes', type: 'select', options: countOptions(ss.opponents, 1, 49), get: () => ss.opponents, set: v => { ss.opponents = v; } },
-        { label: 'Starting position', type: 'select', get: () => (ss.startPos = Math.min(ss.startPos, ss.opponents + 1)), set: v => { ss.startPos = v; },
+      ...(racing() ? [{ title: tr('Opponents'), fields: [
+        { label: tr('Opponents'), hint: tr("ACC caps it at the track's pit boxes"), type: 'select', options: countOptions(ss.opponents, 1, 49), get: () => ss.opponents, set: v => { ss.opponents = v; } },
+        { label: tr('Starting position'), type: 'select', get: () => (ss.startPos = Math.min(ss.startPos, ss.opponents + 1)), set: v => { ss.startPos = v; },
           options: steps(1, ss.opponents + 1, 1).map(n => [n, `P${n}`]) },
-        { label: 'Skill', type: 'select', options: withCurrent(steps(50, 100, 1).map(n => [n, `${n}%`]), ss.skill, n => `${n}%`), get: () => ss.skill, set: v => { ss.skill = v; } },
-        { label: 'Aggression', type: 'select', options: withCurrent(steps(0, 100, 5).map(n => [n, `${n}%`]), ss.aggro, n => `${n}%`), get: () => ss.aggro, set: v => { ss.aggro = v; } },
+        { label: tr('Skill'), type: 'select', options: withCurrent(steps(50, 100, 1).map(n => [n, `${n}%`]), ss.skill, n => `${n}%`), get: () => ss.skill, set: v => { ss.skill = v; } },
+        { label: tr('Aggression'), type: 'select', options: withCurrent(steps(0, 100, 5).map(n => [n, `${n}%`]), ss.aggro, n => `${n}%`), get: () => ss.aggro, set: v => { ss.aggro = v; } },
       ] }] : []),
-      { title: 'Conditions', fields: [
-        { label: 'Time of day', type: 'select', options: withCurrent(steps(0, 23, 1).map(h => [h, hour(h)]), ss.time, hour), get: () => ss.time, set: v => { ss.time = v; } },
-        { label: 'Time speed', type: 'select', options: withCurrent(ACC_TIME_SPEEDS.map(x => [x, `${x}×`]), ss.speed, x => `${x}×`), get: () => ss.speed, set: v => { ss.speed = v; } },
-        { label: 'Weather', type: 'select', options: ACC_WEATHER, get: () => ss.weather, set: v => { ss.weather = v; } },
+      { title: tr('Conditions'), fields: [
+        { label: tr('Time of day'), type: 'select', options: withCurrent(steps(0, 23, 1).map(h => [h, hour(h)]), ss.time, hour), get: () => ss.time, set: v => { ss.time = v; } },
+        { label: tr('Time speed'), type: 'select', options: withCurrent(ACC_TIME_SPEEDS.map(x => [x, `${x}×`]), ss.speed, x => `${x}×`), get: () => ss.speed, set: v => { ss.speed = v; } },
+        { label: tr('Weather'), type: 'select', options: ACC_WEATHER, get: () => ss.weather, set: v => { ss.weather = v; } },
       ] },
     ],
     onChange: () => { state.settings.accQD = { ...(state.settings.accQD || {}), session: ss }; saveSettings(); },
@@ -1623,11 +1814,11 @@ async function openAccQuickDrive() {
   const pickTrack = [saved.track, fromGame.track].find(k => tracks.some(t => t.key === k)) || tracks[0].key;
   const ui = quickDriveModal({
     game: 'acc',
-    sub: 'ACC can\'t be started straight on track, so this sets up its Single Player menu and starts the game: just press Start there.',
+    sub: tr("ACC can't be started straight on track, so this sets up its Single Player menu and starts the game: just press Start there."),
     session,
-    launchLabel: 'Set up & start ACC',
-    carCount: `${models.length} models · ${customs.filter(c => !madeByLauncher(c.file)).length} custom`,
-    trackCount: `${tracks.length} tracks`,
+    launchLabel: tr('Set up & start ACC'),
+    carCount: tr('{models} models · {custom} custom', { models: models.length, custom: customs.filter(c => !madeByLauncher(c.file)).length }),
+    trackCount: trn(tracks.length, '1 track', '{n} tracks'),
     cars,
     brandLogo: name => logos.get(brandKey(name)) || '',
     variantLabel: '',
@@ -1643,9 +1834,9 @@ async function openAccQuickDrive() {
         const car = model ? await ensureModelCar(state.paths, Number(model[1]), ACC_CARS[model[1]]) : s.car;
         await writeAccSession(state.paths, { session: ss, car, track: s.track });
         await openExternal(steamUrls.run(gameByKey('acc').appid));
-        toast(`Starting ACC: ${ACC_MODES[ss.mode]} at ${tracks.find(t => t.key === s.track)?.title} is set up in Single Player.`);
+        toast(tr('Starting ACC: {mode} at {track} is set up in Single Player.', { mode: tr(ACC_MODES[ss.mode]), track: tracks.find(t => t.key === s.track)?.title }));
       } catch (err) {
-        toast(err.message || 'Could not set up ACC', true);
+        toast(err.message || tr('Could not set up ACC'), true);
         return false;
       }
     },
@@ -1663,11 +1854,22 @@ async function openAccQuickDrive() {
 
 async function openRallyQuickDrive() {
   const g = gameByKey('rally');
+  // A save the launcher can't read (none yet, never in Free Practice, or another
+  // layout) still opens Quick Drive: Rally then starts without the stage and car set.
   let fromGame;
-  try { fromGame = await readRallySave(state.paths); } catch (err) { toast(err.message, true); return; }
+  try { fromGame = await readRallySave(state.paths); } catch (err) {
+    log(`rally save: ${err?.message}`);
+    fromGame = { stage: '', car: '', seconds: 36000, weather: null, stages: [], problem: 'layout' };
+  }
+  const SAVE_PROBLEMS = {
+    missing: N_("Rally hasn't saved a Free Practice selection yet, so it starts on its own menu: pick the stage and car in Free Practice. Drive one stage there once and the launcher sets it up from then on."),
+    empty: N_("Rally hasn't saved a Free Practice selection yet, so it starts on its own menu: pick the stage and car in Free Practice. Drive one stage there once and the launcher sets it up from then on."),
+    layout: N_("Rally's save is laid out differently than the launcher knows, so it can't pre-select the stage and car: pick them in Free Practice. The rest (car in the main menu, livery, Weather & Time) is still set where the save allows."),
+  };
+  const saveProblem = fromGame.problem ? tr(SAVE_PROBLEMS[fromGame.problem] || SAVE_PROBLEMS.layout) : '';
   state.settings.qdGame = 'rally';
   const saved = state.settings.rallyQD || {};
-  const remembered = [...new Set([...RALLY_KNOWN_STAGES, ...(state.settings.rallyStages || []), ...fromGame.stages, fromGame.stage])].sort();
+  const remembered = [...new Set([...RALLY_KNOWN_STAGES, ...(state.settings.rallyStages || []), ...fromGame.stages, fromGame.stage].filter(Boolean))].sort();
   state.settings.rallyStages = remembered;
   saveSettings();
   // Plus every stage in the game's files (rallyfiles.js): ones an update added show
@@ -1677,8 +1879,15 @@ async function openRallyQuickDrive() {
   const stageMarks = fileStages.map(id => ({ id }));
   await markFresh('rally_stages', stageMarks);
   const newStages = new Set(stageMarks.filter(x => x.isNew).map(x => x.id));
-  const tagNew = (after = false) => `<span class="flag tag-new${after ? ' after-icon' : ''}">New</span>`;
-  let minutes = Math.round((saved.minutes ?? fromGame.seconds / 60) / 15) * 15 % (24 * 60);
+  const tagNew = (after = false) => `<span class="flag tag-new${after ? ' after-icon' : ''}">${tr('New')}</span>`;
+  // Start time and Weather & Time settings: Rally's own (from the save), unless
+  // they were changed here since and Rally still has what it had then.
+  const weatherKey = w => w && JSON.stringify({ ...w, seconds: undefined });
+  let minutes = Math.round((saved.minutes !== undefined && saved.minutesBase === fromGame.seconds ? saved.minutes : fromGame.seconds / 60) / 15) * 15 % (24 * 60);
+  let weather = fromGame.weather && (saved.weather && saved.weatherBase === weatherKey(fromGame.weather) ? { ...fromGame.weather, ...saved.weather } : { ...fromGame.weather });
+  const rememberSession = () => {
+    state.settings.rallyQD = { ...(state.settings.rallyQD || {}), minutes, minutesBase: fromGame.seconds, weather, weatherBase: weatherKey(fromGame.weather) };
+  };
 
   const placeholder = title => `<div class="placeholder">${esc(initials(title))}</div>`;
   const logos = new Map();
@@ -1707,8 +1916,8 @@ async function openRallyQuickDrive() {
   const liveryVariants = id => {
     const pak = modLiveries.find(i => i.toggle === 'rally' && i.enabled && !i.incompatible && i.subtitle?.startsWith(`${rallyCarName(id)} ·`));
     return [
-      { key: id, title: pak ? pak.title : 'Default livery', sub: pak ? '.pak livery' : 'Game livery', image: pak?.image || rallyCarImage(id) },
-      ...(learned[id] || []).map(l => ({ key: l, title: prettifyId(l.replace(new RegExp(`^${id}_?`), '')) || l, sub: 'Game livery', image: rallyCarImage(id) })),
+      { key: id, title: pak ? pak.title : tr('Default livery'), sub: pak ? tr('.pak livery') : tr('Game livery'), image: pak?.image || rallyCarImage(id) },
+      ...(learned[id] || []).map(l => ({ key: l, title: prettifyId(l.replace(new RegExp(`^${id}_?`), '')) || l, sub: tr('Game livery'), image: rallyCarImage(id) })),
       ...withPlates(modLiveries.filter(i => i.toggle === 'rally-folder' && i.enabled && i.meta.car === id)),
     ];
   };
@@ -1728,14 +1937,14 @@ async function openRallyQuickDrive() {
       while (n < a.length && n < b.length && a[n].toLowerCase() === b[n].toLowerCase()) n++;
       const title = a.slice(0, n).join(' ').replace(/[\s\-_(·]+$/, '') || twins[0].title;
       twins.sort((x, y) => Number(y.meta.stickers) - Number(x.meta.stickers));
-      for (const i of twins) paired.set(i, { livery: `plates:${twins[0].meta.name}`, title, spec: i.meta.stickers ? 'plates' : 'no-plates', specLabel: i.meta.stickers ? 'With rally plates' : 'Without rally plates' });
+      for (const i of twins) paired.set(i, { livery: `plates:${twins[0].meta.name}`, title, spec: i.meta.stickers ? 'plates' : 'no-plates', specLabel: i.meta.stickers ? tr('With rally plates') : tr('Without rally plates') });
     }
     const out = [];
     for (const i of items) {
       const p = paired.get(i);
       if (p && out.some(v => v.livery === p.livery)) continue; // added with its twin
       const twins = p ? items.filter(x => paired.get(x)?.livery === p.livery).sort((x, y) => Number(y.meta.stickers) - Number(x.meta.stickers)) : [i];
-      for (const x of twins) out.push({ key: `usergen_${x.meta.name}`, title: x.title, sub: 'Your livery', image: x.image, ...paired.get(x) });
+      for (const x of twins) out.push({ key: `usergen_${x.meta.name}`, title: x.title, sub: tr('Your livery'), image: x.image, ...paired.get(x) });
     }
     return out;
   };
@@ -1753,11 +1962,19 @@ async function openRallyQuickDrive() {
     const stageImage = siteImage('rally', 'stages', st.group), map = siteImage('rally', 'maps', st.group);
     if (!byLocation.has(st.location)) {
       const flag = flagUrl(st.locationName === 'Wales' ? 'Wales' : st.country);
-      byLocation.set(st.location, { key: st.location, title: st.locationName, sub: st.country, image: '', layouts: [], flagUrl: flag });
+      byLocation.set(st.location, { key: st.location, title: st.locationName, sub: countryName(st.country), image: '', layouts: [], flagUrl: flag });
     }
     const loc = byLocation.get(st.location);
     if (!loc.image && stageImage) loc.image = stageImage;
-    loc.layouts.push({ key: id, name: [st.stage, st.length].filter(Boolean).join(' · '), sub: [st.direction, st.route, newStages.has(id) && 'New'].filter(Boolean).join(' · '), preview: stageImage, outline: map });
+    // The name Rally shows on top; the stage, its length and direction under it.
+    const sub = [st.name && st.stage, tr(st.length), tr(st.direction || ''), newStages.has(id) && tr('New')];
+    // The game's own map of this stage (white, the part driven in red) where the data
+    // has one, else the site's outline of the whole stage.
+    const media = rallyStageMedia(id);
+    loc.layouts.push({
+      key: id, name: st.name || [st.stage, tr(st.length)].filter(Boolean).join(' · '), sub: (st.name ? sub : sub.slice(2)).filter(Boolean).join(' · '), preview: stageImage,
+      outline: media.chip || media.map || map, outlineColor: !!media.map, outlineFallback: media.chipRemote || media.mapRemote,
+    });
   }
   const tracks = [...byLocation.values()].sort((a, b) => a.title.localeCompare(b.title));
   for (const t of tracks) {
@@ -1765,22 +1982,61 @@ async function openRallyQuickDrive() {
     t.flag = t.image && t.flagUrl ? `<img class="flag-badge" src="${esc(t.flagUrl)}" alt="">` : t.image ? '' : t.flagUrl ? '' : placeholder(t.title);
     if (t.layouts.some(l => newStages.has(l.key))) t.flag += tagNew(!!(t.image && t.flagUrl));
     t.image ||= t.flagUrl;
-    t.sub = `${t.sub ? `${t.sub} · ` : ''}${t.layouts.length} stage${t.layouts.length > 1 ? 's' : ''}`;
+    t.sub = `${t.sub ? `${t.sub} · ` : ''}${trn(t.layouts.length, '1 stage', '{n} stages')}`;
     t.layouts.sort((a, b) => a.name.localeCompare(b.name) || a.sub.localeCompare(b.sub));
   }
   const trackOf = stage => tracks.find(t => t.layouts.some(l => l.key === stage));
 
+  // Free Practice's Weather & Time settings, laid out as Rally's screen. The
+  // weather rows show the game's icon for the chosen weather; the weathers on
+  // offer are the ones the stage's location has (no snow in Greece).
+  const svg = d => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+  const ICONS = {
+    speed: svg('<path d="M13 19l9-7-9-7v14zM2 19l9-7-9-7v14z"/>'),
+    dynamic: svg('<path d="M3 12a9 9 0 0 1 15-6.7L21 8M21 3v5h-5M21 12a9 9 0 0 1-15 6.7L3 16M8 16H3v5"/>'),
+    random: svg('<path d="M2 18h1.4c1.3 0 2.5-.6 3.3-1.7l6.1-8.6c.7-1.1 2-1.7 3.3-1.7H22M18 2l4 4-4 4M2 6h1.9c1.5 0 2.9.9 3.6 2.2M22 18h-5.9c-1.3 0-2.6-.7-3.3-1.8l-.5-.8M18 14l4 4-4 4"/>'),
+    probability: svg('<path d="M19 5L5 19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/>'),
+    persistence: svg('<path d="M5 22h14M5 2h14M17 22v-4.2a2 2 0 0 0-.6-1.4L12 12l-4.4 4.4a2 2 0 0 0-.6 1.4V22M7 2v4.2a2 2 0 0 0 .6 1.4L12 12l4.4-4.4a2 2 0 0 0 .6-1.4V2"/>'),
+    wetness: svg('<path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z"/>'),
+    snow: svg('<path d="M12 2v20M4.9 7l14.2 10M4.9 17L19.1 7M9 4l3 2 3-2M9 20l3-2 3 2"/>'),
+    grip: svg('<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>'),
+  };
+  const locationOf = s => (s?.layout ? rallyStage(s.layout).location : '');
+  // The weather Rally will start with on that stage (another one when the location doesn't have it).
+  const startWeather = s => rallyWeatherFor(locationOf(s), weather.weather);
+  const weatherOptions = (s, random) => [...(random ? [[-1, N_('Random')]] : []), ...rallyLocationWeathers(locationOf(s)).map(v => [v, RALLY_WEATHERS[v].label])];
   const session = {
-    summary: () => ({ title: 'Free Practice', sub: `Starts at ${hhmm(minutes)}` }),
-    get: () => ({ minutes }),
-    set: d => { if (Number.isFinite(d?.minutes)) minutes = d.minutes; },
-    sheetNote: 'Set in Rally\'s Free Practice menu: Rally opens it on this stage and car.',
-    sections: () => [
-      { title: 'Weather & time', note: 'Rally doesn\'t take the weather or time acceleration from outside: pick them in Free Practice\'s Weather & Time screen.', fields: [
-        { label: 'Event start time', type: 'select', options: timeOptions(minutes), get: () => minutes, set: v => { minutes = v; } },
-      ] },
-    ],
-    onChange: () => { state.settings.rallyQD = { ...(state.settings.rallyQD || {}), minutes }; saveSettings(); },
+    summary: s => ({ title: tr('Free Practice'), sub: [tr('Starts at {time}', { time: hhmm(minutes) }), weather && tr(RALLY_WEATHERS[startWeather(s)].label)].filter(Boolean).join(' · ') }),
+    get: () => ({ minutes, weather }),
+    set: d => { if (Number.isFinite(d?.minutes)) minutes = d.minutes; if (weather && d?.weather) weather = { ...weather, ...d.weather }; },
+    sheetNote: saveProblem || tr("Set in Rally's Free Practice menu: Rally opens it on this stage and car."),
+    sections: s => {
+      const time = { title: N_('Event Start Time'), fields: [
+        { label: N_('Event start time'), icon: '/img/rally/weather/clock.png', type: 'select', options: timeOptions(minutes), get: () => minutes, set: v => { minutes = v; } },
+      ] };
+      if (!weather) return [{ ...time, note: N_("Rally's save doesn't have its Weather & Time settings where the launcher expects them, so pick them in Free Practice's Weather & Time screen.") }];
+      const w = weather, start = startWeather(s), forecast = w.forecast === -1 ? -1 : rallyWeatherFor(locationOf(s), w.forecast);
+      time.fields.push({ label: N_('Time acceleration'), icon: ICONS.speed, type: 'select', options: RALLY_TIME_SPEEDS.map((l, i) => [i, l]), get: () => w.speed, set: v => { w.speed = v; } });
+      return [time, {
+        title: N_('Weather Forecast'),
+        note: start !== w.weather ? tr('{weather} isn\'t possible in {location}: Rally starts with {other} there.', { weather: tr(RALLY_WEATHERS[w.weather].label), location: rallyStage(s.layout).locationName, other: tr(RALLY_WEATHERS[start].label) }) : '',
+        fields: [
+          { label: N_('Starting weather'), icon: () => RALLY_WEATHERS[start].icon, type: 'select', options: weatherOptions(s, false), get: () => start, set: v => { w.weather = v; } },
+          { label: N_('Dynamic weather'), hint: N_('The weather changes over time'), icon: ICONS.dynamic, type: 'seg', options: [[false, N_('Off')], [true, N_('On')]], get: () => w.dynamic, set: v => { w.dynamic = v; } },
+          // Like Rally's screen: the forecast settings only apply (and change) with dynamic weather on.
+          { label: N_('Weather forecast'), disabled: !w.dynamic, icon: () => (forecast === -1 ? ICONS.random : RALLY_WEATHERS[forecast].icon), type: 'select', options: weatherOptions(s, true), get: () => forecast, set: v => { w.forecast = v; } },
+          { label: N_('Forecast probability'), disabled: !w.dynamic, hint: N_('How likely the forecast is to happen'), icon: ICONS.probability, type: 'seg', options: RALLY_FORECAST_PROBABILITY.map((l, i) => [i, l]), get: () => w.probability, set: v => { w.probability = v; } },
+          { label: N_('Weather persistence'), disabled: !w.dynamic, hint: N_('How long a weather lasts'), icon: ICONS.persistence, type: 'seg', options: RALLY_PERSISTENCE.map((l, i) => [i, l]), get: () => w.persistence, set: v => { w.persistence = v; } },
+        ],
+      }, {
+        title: N_('Track Condition'), fields: [
+          { label: N_('Starting road wetness'), icon: ICONS.wetness, type: 'range', min: 0, max: 100, get: () => w.wetness, set: v => { w.wetness = v; } },
+          { label: N_('Starting snow level'), icon: ICONS.snow, type: 'range', min: 0, max: 100, get: () => w.snow, set: v => { w.snow = v; } },
+          { label: N_('Starting grip level'), icon: ICONS.grip, type: 'seg', options: RALLY_GRIP.map((l, i) => [i, l]), get: () => w.grip, set: v => { w.grip = v; } },
+        ],
+      }];
+    },
+    onChange: () => { rememberSession(); saveSettings(); },
   };
 
   const pickStage = [saved.stage, fromGame.stage].find(k => k && trackOf(k)) || tracks[0]?.layouts[0]?.key || '';
@@ -1788,36 +2044,40 @@ async function openRallyQuickDrive() {
   let bests = new Map();
   const ui = quickDriveModal({
     game: 'rally',
-    sub: 'Rally can\'t be started straight on a stage, so this sets up its Free Practice menu (stage, car, livery, start time) and the main menu car, then starts the game: open Free Practice and press Start.',
+    sub: saveProblem || tr("Rally can't be started straight on a stage, so this sets up its Free Practice menu (stage, car, livery, start time) and the main menu car, then starts the game: open Free Practice and press Start."),
     session,
-    launchLabel: 'Set up & start Rally',
-    specName: 'Plates',
-    carCount: `${cars.length} cars`,
-    trackCount: `${tracks.length} locations · ${seen.length} stages`,
+    launchLabel: tr('Set up & start Rally'),
+    specName: N_('Plates'),
+    carCount: trn(cars.length, '1 car', '{n} cars'),
+    trackCount: `${trn(tracks.length, '1 location', '{n} locations')} · ${trn(seen.length, '1 stage', '{n} stages')}`,
     cars,
     brandLogo: name => logos.get(brandKey(name)) || '',
-    variantLabel: 'Livery',
+    variantLabel: N_('Livery'),
     variants: liveryVariants,
     keepCarImage: true,
-    variantHint: () => "Custom liveries only apply to cars you've driven or selected in Rally at least once. Until then, the game starts with the default livery.",
+    variantHint: () => tr("Custom liveries only apply to cars you've driven or selected in Rally at least once. Until then, the game starts with the default livery."),
     defaultVariant: liveryOf,
     tracks,
     sel: { car: pickCar, variant: liveryOf(pickCar), track: trackOf(pickStage)?.key || '', layout: pickStage },
     onClose: s => {
-      state.settings.rallyQD = { car: s.car, stage: s.layout, minutes, liveries: { ...(saved.liveries || {}), [s.car]: s.variant } };
+      rememberSession();
+      Object.assign(state.settings.rallyQD, { car: s.car, stage: s.layout, liveries: { ...(saved.liveries || {}), [s.car]: s.variant } });
       saveSettings();
     },
     onLaunch: async s => {
       try {
-        if (!s.layout) throw new Error('Drive a stage in Rally first: it shows up here afterwards.');
+        if (!s.layout) throw new Error(tr('Drive a stage in Rally first: it shows up here afterwards.'));
         // The crash check may replace this dialog; nothing is written if it's cancelled.
         if (!(await rallyPreflight(g))) return false;
-        await writeRallySession(state.paths, { stage: s.layout, car: s.car, seconds: minutes * 60, livery: s.variant || s.car });
+        // The weathers as Rally will have them on this stage (one the location doesn't have is swapped).
+        const written = weather && { ...weather, weather: startWeather(s), forecast: weather.forecast === -1 ? -1 : rallyWeatherFor(locationOf(s), weather.forecast) };
+        const { selected } = await writeRallySession(state.paths, { stage: s.layout, car: s.car, seconds: minutes * 60, livery: s.variant || s.car, weather: written });
         await openExternal(steamUrls.run(g.appid));
         const st = rallyStage(s.layout);
-        toast(`Starting Rally: Free Practice is set to ${st.locationName}, ${st.stage}, ${rallyCarName(s.car)}.`);
+        const what = { stage: `${st.locationName}, ${st.name || st.stage}`, car: rallyCarName(s.car) };
+        toast(selected ? tr('Starting Rally: Free Practice is set to {stage}, {car}.', what) : tr('Starting Rally: pick {stage} and the {car} in Free Practice.', what));
       } catch (err) {
-        toast(err.message || 'Could not set up Rally', true);
+        toast(err.message || tr('Could not set up Rally'), true);
         return false;
       }
     },
@@ -1856,7 +2116,7 @@ async function openEvoQuickDrive({ car, track } = {}) {
   const modPresets = (await Promise.all(modPkgs.map(p => readCarPresets(p, cacheDir).catch(err => { log(`car presets ${p}: ${err?.message}`); return []; })))).flat();
   const known = await withAllConfigs(driven, [...presets, ...modPresets]).catch(err => { log(`evo configs: ${err?.message}`); return driven; });
   const official = tracks.filter(t => t.evoTrack);
-  if (!official.some(t => t.layouts.some(l => l.practice || l.race))) { toast('No EVO tracks found. Check the EVO folder in Settings.', true); return; }
+  if (!official.some(t => t.layouts.some(l => l.practice || l.race))) { toast(tr('No EVO tracks found. Check the EVO folder in Settings.'), true); return; }
   state.settings.qdGame = 'evo';
 
   // Session settings: the launcher's last choice, else what EVO currently has.
@@ -1889,7 +2149,7 @@ async function openEvoQuickDrive({ car, track } = {}) {
   const thumb = (carId, cfg) => {
     if (!cfg?.visual) return null;
     const ext = /_visual_99$/i.test(cfg.visual) && externalBy.get(carId);
-    if (ext) return { label: ext.title, mech: 'Modded livery', image: ext.image };
+    if (ext) return { label: ext.title, mech: tr('Modded livery'), image: ext.image };
     const x = extras.liveries[extras.liveryKey({ carId, mech: cfg.mech, visual: cfg.visual })];
     return x && { ...x, image: x.image ? fileUrl(x.image) : '' };
   };
@@ -2833,7 +3093,7 @@ async function renderSettings() {
       <div class="val note bg-val"><span class="bg-thumb" style="background-image:${heroImage(g)}"><i style="opacity:${dark / 100}"></i></span>${own ? 'Your picture' : 'Default picture'}</div>
       <div class="btns">
         <label class="bg-darken" title="Darkens the picture so the text on it stays readable">Darken
-          <input type="range" min="0" max="80" step="5" value="${dark}" data-darken="${g.key}"><output>${dark}%</output></label>
+          <input type="range" min="0" max="80" step="5" value="${dark}" data-darken="${g.key}" style="--fill: ${dark / 0.8}%"><output>${dark}%</output></label>
         <button class="btn small subtle" data-bg-pick="${g.key}">Choose image…</button>
         <button class="btn small subtle" data-bg-reset="${g.key}" ${own ? '' : 'disabled'}>Reset</button>
       </div></div>`;
@@ -2995,6 +3255,7 @@ async function renderSettings() {
     const r = e.target.closest('[data-darken]');
     if (!r) return;
     r.nextElementSibling.textContent = `${r.value}%`;
+    r.style.setProperty('--fill', `${(r.value / r.max) * 100}%`);
     const shade = r.closest('.setting').querySelector('.bg-thumb i');
     if (shade) shade.style.opacity = r.value / 100;
   };
@@ -3136,8 +3397,15 @@ async function openQuickDriveFor(key, args) {
   }
   const open = { evo: openEvoQuickDrive, acc: openAccQuickDrive, rally: openRallyQuickDrive }[key] || openQuickDrive;
   try { await open(args); } catch (err) { log(`quick drive ${key}: ${err?.stack || err}`); toast(`Quick Drive couldn't open: ${err?.message || err}`, true); }
-  // The game couldn't open (it said why): stay on the page that was there.
   const now = main.querySelector('.qd-view .qd');
+  // The tab's game becomes the selected one, so Mods (and Games) open on it next.
+  if (now?.dataset.game === key && state.game !== key) {
+    state.game = key; state.search = '';
+    state.settings.lastGame = key;
+    saveSettings();
+    renderSidebar();
+  }
+  // The game couldn't open (it said why): stay on the page that was there.
   if (state.qdWant === key && now?.dataset.game !== key) {
     if (now) {
       now.classList.remove('switching');
@@ -3286,6 +3554,8 @@ Neutralino.events.on('ready', async () => {
     renderSidebar();
     await detect();
     await loadSiteImages();
+    const rallyCache = await appCacheDir('rally').catch(() => '');
+    await loadRallyData(rallyCache);
     checkOnline().then(online => {
       // Online: every game's news and the official Rally page are checked for
       // anything new, in the background (a few KB when nothing changed).
@@ -3293,6 +3563,12 @@ Neutralino.events.on('ready', async () => {
         if (!state.snapshotRun) checkAppUpdate();
         for (const g of GAMES) checkNews(g.appid);
         siteSync().catch(err => log(`site sync: ${err?.message}`));
+        // Rally's texts (rallydata.js): a newer file on GitHub replaces the shipped one.
+        if (rallyCache) refreshRallyData(rallyCache).then(changed => {
+          if (!changed) return;
+          delete state.cache['rally:cars']; delete state.cache['rally:tracks'];
+          if (state.view === 'mods' && state.game === 'rally') render();
+        }).catch(err => log(`rally data: ${err?.message}`));
       }
       if (!online || OFFLINE_NOTICE_PREVIEW) showOfflineNotice();
     });
@@ -3499,6 +3775,34 @@ async function runSnapshots(dir) {
     await Neutralino.app.exit();
     return;
   }
+  // --check-rally-mods: Rally's Cars and Tracks tabs (All content), a car's and a
+  // stage's detail page, and the Liveries tab still square. Reads only.
+  if ((window.NL_ARGS || []).includes('--check-rally-mods')) {
+    state.settings.acFilter = 'all';
+    for (const tab of ['cars', 'tracks']) {
+      state.game = 'rally'; state.tab.rally = tab; renderSidebar(); state.view = 'mods'; render(); await wait(6000);
+      log(`rally ${tab}: ${document.querySelectorAll('#grid-wrap .card').length} cards, ${document.querySelectorAll('#grid-wrap .flag-badge').length} flags, ${document.querySelectorAll('#grid-wrap img.overlay').length} maps, ${$('#count')?.textContent}`);
+      await snap(`rally-${tab}`);
+      const card = tab === 'cars' ? [...document.querySelectorAll('#grid-wrap .card')].find(c => /Fabia/.test(c.textContent)) : [...document.querySelectorAll('#grid-wrap .card')].find(c => /Turini/.test(c.textContent));
+      card?.click(); await snap(`rally-${tab}-detail`);
+      log(`rally ${tab} detail: ${$('#modal-root h2')?.textContent} | ${$('#modal-root .detail-desc')?.textContent.slice(0, 80)} | ${[...document.querySelectorAll('#modal-root .specs dd')].map(d => d.textContent).join(' / ')}`);
+      if (tab === 'tracks') {
+        log(`rally stages: ${[...document.querySelectorAll('#modal-root .skin span')].map(s => s.textContent).join(' | ')}`);
+        document.querySelectorAll('#modal-root *').forEach(n => { if (n.scrollHeight > n.clientHeight + 20) n.scrollTop = n.scrollHeight; });
+        await snap('rally-tracks-stages');
+      }
+      $('#modal-root [data-close]')?.click(); await wait(300);
+    }
+    state.tab.rally = 'liveries'; render(); await wait(3000); await snap('rally-liveries');
+    log(`rally liveries: ${document.querySelectorAll('#grid-wrap .card').length} cards, square ${!!$('#grid-wrap .grid.square')}`);
+    // Quick Drive: Greece's stages with the game's maps.
+    state.view = 'quickdrive'; render(); await wait(5000);
+    [...document.querySelectorAll('#qd-tracks [data-track]')].find(b => b.dataset.track === 'Greece')?.click(); await wait(500);
+    log(`rally qd: ${document.querySelectorAll('#qd-layouts img.color').length} stage maps`);
+    await snap('rally-qd-greece');
+    await Neutralino.app.exit();
+    return;
+  }
   // --check10: window grips (resize), Rally stage outlines (white, none on the
   // location cards), replay icon, detail logo, news and site checks (see the log).
   if ((window.NL_ARGS || []).includes('--check10')) {
@@ -3521,6 +3825,71 @@ async function runSnapshots(dir) {
     state.game = 'acc'; renderSidebar(); state.view = 'games'; render(); await wait(4000);
     log(`news row: ${document.querySelectorAll('#news-row .news-card:not(.skeleton)').length} cards; checks ${Object.keys(newsChecks).join(',')}`);
     await snap('check10-acc-games');
+    await Neutralino.app.exit();
+    return;
+  }
+  // --check17=<dir with a copy of PlayerDataSaveSlot.sav>: Rally's Weather & Time
+  // settings in the session sheet (snapshots), then written to that copy and read back.
+  const c17 = (window.NL_ARGS || []).find(a => a.startsWith('--check17='));
+  if (c17) {
+    state.paths.rally.save = join(norm(c17.slice(10)), 'PlayerDataSaveSlot.sav');
+    log(`check17 read: ${JSON.stringify(await readRallySave(state.paths).then(r => ({ ...r, stages: r.stages.length })))}`);
+    state.game = 'rally'; renderSidebar(); state.view = 'quickdrive'; render(); await wait(4000);
+    const summary = () => $('.qd-session-btn')?.textContent.replace(/\s+/g, ' ').trim();
+    const rows = () => [...document.querySelectorAll('.qd-sheet .qd-row')].map(r => `${r.querySelector('label span')?.firstChild?.textContent}=${r.querySelector('select') ? r.querySelector('select').selectedOptions[0]?.textContent : r.querySelector('.qd-seg .active')?.textContent || r.querySelector('output')?.textContent}${r.querySelector('.qd-row-icon img') ? ` [${r.querySelector('.qd-row-icon img').getAttribute('src').split('/').pop()}]` : ''}`).join(' | ');
+    log(`check17 summary: ${summary()}`);
+    $('.qd-session-btn')?.click(); await wait(600);
+    log(`check17 sheet: ${rows()}`); await snap('check17-sheet');
+    const pick = (label, text) => {
+      const row = [...document.querySelectorAll('.qd-sheet .qd-row')].find(r => r.textContent.includes(label)), sel = row?.querySelector('select');
+      const opt = [...(sel?.options || [])].find(o => o.textContent === text);
+      if (opt) { sel.value = opt.value; sel.dispatchEvent(new Event('change', { bubbles: true })); }
+    };
+    pick('Starting weather', 'Snow Blizzard'); pick('Weather forecast', 'Storm'); await wait(400);
+    log(`check17 after picking: ${rows()}`); await snap('check17-sheet-blizzard');
+    $('.qd-sheet [data-done]')?.click(); await wait(300);
+    log(`check17 summary now: ${summary()}`);
+    // Greece has no snow: the sheet shows what Rally will start with there.
+    [...document.querySelectorAll('#qd-tracks [data-track]')].find(b => b.dataset.track === 'Greece')?.click(); await wait(400);
+    log(`check17 greece summary: ${summary()}`);
+    $('.qd-session-btn')?.click(); await wait(600);
+    log(`check17 greece sheet: ${rows()} | note ${$('.qd-sheet .qd-sheet-note')?.textContent}`); await snap('check17-sheet-greece');
+    // Dynamic weather off: the forecast rows are locked, as in Rally.
+    const dynRow = () => [...document.querySelectorAll('.qd-sheet .qd-row')].find(r => r.textContent.includes('Dynamic weather'));
+    [...dynRow().querySelectorAll('.qd-seg button')].find(b => b.textContent === 'Off')?.click(); await wait(300);
+    const locked = () => [...document.querySelectorAll('.qd-sheet .qd-row.disabled')].map(r => r.querySelector('label span')?.firstChild?.textContent).join(', ');
+    log(`check17 dynamic off: locked ${locked()}`); await snap('check17-sheet-static');
+    [...document.querySelectorAll('.qd-sheet .qd-row.disabled .qd-seg button')].find(b => b.textContent === 'Maximum')?.click(); await wait(200);
+    log(`check17 clicking a locked button: probability still ${[...document.querySelectorAll('.qd-sheet .qd-row')].find(r => r.textContent.includes('Forecast probability'))?.querySelector('.active')?.textContent}`);
+    [...dynRow().querySelectorAll('.qd-seg button')].find(b => b.textContent === 'On')?.click(); await wait(300);
+    log(`check17 dynamic on: locked "${locked()}"`);
+    $('.qd-sheet [data-done]')?.click();
+    const w = { weather: 10, forecast: 7, probability: 3, persistence: 1, dynamic: true, wetness: 40, snow: 80, speed: 0, grip: 1 };
+    try {
+      const before = await readRallySave(state.paths);
+      await writeRallySession(state.paths, { stage: 'AlsaceS2MunsterFullReverse', car: before.car, seconds: 7 * 3600 + 15 * 60, weather: w });
+      const after = await readRallySave(state.paths);
+      log(`check17 written: ${JSON.stringify(after.weather)} start ${after.seconds} stage ${after.stage} -> ${Object.keys(w).every(k => after.weather[k] === w[k]) && after.weather.seconds === 26100 ? 'OK' : 'MISMATCH'}`);
+    } catch (err) { log(`check17 write: ${err?.message || err}`); }
+    await Neutralino.app.exit();
+    return;
+  }
+  // --check18=<dir>: Rally Quick Drive with the save in that dir, which may be
+  // missing or in a layout the launcher doesn't know: it still opens (snapshot),
+  // and writing sets what the save allows. Doesn't launch.
+  const c18 = (window.NL_ARGS || []).find(a => a.startsWith('--check18='));
+  if (c18) {
+    state.paths.rally.save = join(norm(c18.slice(10)), 'PlayerDataSaveSlot.sav');
+    const r = await readRallySave(state.paths);
+    log(`check18 read: ${JSON.stringify({ ...r, stages: r.stages.length })}`);
+    state.game = 'rally'; renderSidebar(); state.view = 'quickdrive'; render(); await wait(4000);
+    log(`check18 open: ${!!$('.qd-session-btn')} | ${$('#modal-root .qd-sub, #modal-root .modal-sub')?.textContent || ''} | session ${$('.qd-session-btn')?.textContent.replace(/\s+/g, ' ').trim()}`);
+    await snap('check18-open');
+    try {
+      const res = await writeRallySession(state.paths, { stage: 'AlsaceS2MunsterFullReverse', car: 'AlpineA110', seconds: 7 * 3600, livery: 'AlpineA110', weather: r.weather && { ...r.weather, weather: 7 } });
+      const after = await readRallySave(state.paths);
+      log(`check18 written: ${JSON.stringify(res)} -> ${after.problem || 'ok'} ${after.stage} ${after.car} ${after.seconds}s weather ${after.weather?.weather}`);
+    } catch (err) { log(`check18 write: ${err?.message || err}`); }
     await Neutralino.app.exit();
     return;
   }

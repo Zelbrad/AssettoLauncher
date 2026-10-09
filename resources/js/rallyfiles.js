@@ -53,26 +53,56 @@ function utocPaths(buf) {
 function scan(paths) {
   const cars = new Map(), maps = new Map(), notes = new Set();
   for (const p of paths) {
-    let m = /\/Vehicles\/([^/]+)\/[^/]+\/Liveries\/DA_([^/]+)_UserLivery\.uasset$/.exec(p);
-    if (m) { cars.set(m[2], m[1]); continue; }
+    let m = /\/Vehicles\/([^/]+)\/([^/]+)\/Liveries\/DA_([^/]+)_UserLivery\.uasset$/.exec(p);
+    if (m) { cars.set(m[3], { cls: m[1], folder: m[2] }); continue; }
     m = /\/(([A-Z][A-Za-z]*?)S(\d+)([A-Z][A-Za-z0-9]*))\.umap$/.exec(p);
     if (m) { maps.set(m[4], { loc: m[2], n: m[3] }); continue; }
     m = /\/DT_Pacenote([A-Za-z0-9]+)\.uasset$/.exec(p);
     if (m) notes.add(m[1]);
   }
-  return { cars: [...cars].map(([id, cls]) => ({ id, cls })), maps: Object.fromEntries(maps), notes: [...notes] };
+  return { cars: [...cars].map(([id, c]) => ({ id, ...c })), maps: Object.fromEntries(maps), notes: [...notes] };
+}
+
+// What a mod package (its .utoc) holds, next to the game's own content (`base`,
+// readRallyContent): cars and stage maps the game doesn't have, and the car
+// folders (Vehicles/<class>/<folder>) of the game's cars it replaces files of, as
+// game car ids. null when its file index can't be read (encrypted, or none).
+export function rallyModContents(buf, base) {
+  const paths = utocPaths(buf);
+  if (!paths.length) return null;
+  const mod = scan(paths), has = new Set((base?.cars || []).map(c => c.id.toLowerCase()));
+  const byFolder = new Map((base?.cars || []).map(c => [c.folder?.toLowerCase(), c.id]));
+  const touched = new Set();
+  for (const p of paths) {
+    const m = /\/Vehicles\/[^/]+\/([^/]+)\//.exec(p);
+    if (m && byFolder.has(m[1].toLowerCase())) touched.add(byFolder.get(m[1].toLowerCase()));
+  }
+  return {
+    cars: mod.cars.filter(c => !has.has(c.id.toLowerCase())),
+    stages: Object.keys(mod.maps).filter(s => !(s in (base?.maps || {}))),
+    carIds: [...touched],
+  };
 }
 
 let memo = null; // { key, data }
+const FORMAT = 2; // of the cached index (2: cars have their folder)
+let reading = null; // the read in progress, shared by callers that ask meanwhile
 
-// { cars: [{ id, cls }], maps: { stage: { loc, n } }, notes: [pacenote names] }, or null.
-export async function readRallyContent(paksDir, cacheDir) {
+// { cars: [{ id, cls, folder }], maps: { stage: { loc, n } }, notes: [pacenote names] }, or null.
+export function readRallyContent(paksDir, cacheDir) {
+  if (reading?.dir === paksDir) return reading.promise;
+  const promise = readContent(paksDir, cacheDir).finally(() => { if (reading?.promise === promise) reading = null; });
+  reading = { dir: paksDir, promise };
+  return promise;
+}
+
+async function readContent(paksDir, cacheDir) {
   if (!paksDir) return null;
   const t0 = Date.now();
   const files = (await listDir(paksDir)).filter(e => e.type === 'FILE' && PAKS_RE.test(e.entry)).map(e => e.entry).sort();
   if (!files.length) return null;
   const stats = await Promise.all(files.map(f => Neutralino.filesystem.getStats(join(paksDir, f)).catch(() => null)));
-  const key = files.map((f, i) => `${f}:${stats[i]?.size}:${Math.floor(stats[i]?.modifiedAt || 0)}`).join('|');
+  const key = `${FORMAT}|${files.map((f, i) => `${f}:${stats[i]?.size}:${Math.floor(stats[i]?.modifiedAt || 0)}`).join('|')}`;
   if (memo?.key === key) return memo.data;
   const cacheFile = cacheDir && join(cacheDir, 'rally-content.json');
   try { const c = JSON.parse(await readText(cacheFile) || 'null'); if (c?.key === key) return (memo = { key, data: c.data }).data; } catch { /* rebuild */ }

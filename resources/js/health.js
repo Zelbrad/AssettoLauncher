@@ -53,7 +53,9 @@ export async function checkMods(game, getItems, paths) {
   if (game.key === 'rally') {
     const liveries = await getItems(game, 'liveries');
     const paks = liveries.filter(i => i.toggle === 'rally');
-    for (const p of paks) {
+    // Car and stage packages (Cars / Tracks tabs) can crash the game the same way.
+    const content = [...await getItems(game, 'cars'), ...await getItems(game, 'tracks')].filter(i => i.toggle === 'rally');
+    for (const p of [...paks, ...content]) {
       if (p.incompatible && p.enabled) add('error', p, 'Built for another version of Rally: the game crashes at startup while it\'s enabled. Disable it until the author updates it.');
       if (p.tags?.includes('missing files')) add('error', p, 'The .pak, .utoc or .ucas file is missing, so Rally can\'t load it.');
     }

@@ -156,6 +156,9 @@ a, button { -webkit-user-drag: none; }
 .btn.danger:hover, .btn.danger[data-armed] { background: #b3261e; color: #fff; box-shadow: none; }
 .btn[disabled] { opacity: .45; pointer-events: none; }
 
+/* A launched or running game's launch button says Close (.stop); armed for the second click it darkens. */
+.btn.primary.stop[data-armed] { background: #8e0909; }
+
 /* News cards keep their canvas size (387px tall at 1920x991) and sit flush on the bottom edge. */
 .news-row { flex: none; height: 387px; display: grid; grid-template-columns: 575fr 287fr 377fr; gap: 31px; margin-top: 64px; }
 .news-card {
@@ -227,6 +230,9 @@ a, button { -webkit-user-drag: none; }
 .detail-hero img.main { width: 100%; height: 100%; object-fit: cover; }
 .detail-hero img.contain { object-fit: contain; padding: 30px; }
 .detail-hero img.overlay { position: absolute; right: 24px; bottom: 24px; width: 22%; filter: drop-shadow(0 0 4px #000); }
+/* Rally's stage maps are grey outlines: drawn white, as in Quick Drive. */
+img.overlay.white { filter: brightness(0) invert(1) drop-shadow(0 0 3px #000); }
+.skins.rally-maps .skin img { object-fit: contain; padding: 8px; }
 .detail-hero::after { content: ''; position: absolute; inset: 0; background: linear-gradient(0deg, #181818 0%, rgba(24,24,24,0) 45%); pointer-events: none; }
 .detail-body { padding: 0 32px 32px; margin-top: -40px; position: relative; z-index: 1; }
 /* Window resize grips (borderless window: see windowGrips) */
@@ -294,7 +300,8 @@ select { background: #222; border: 1px solid #383838; border-radius: 6px; height
 .qd-layout.active { border-color: var(--red); background: rgba(197, 13, 13, .15); }
 .qd-layout img { width: 34px; height: 26px; object-fit: contain; }
 /* Rally's stage maps are red on the site: drawn white like AC's track outlines. */
-.qd[data-game="rally"] .qd-layout img { filter: brightness(0) invert(1); }
+.qd[data-game="rally"] .qd-layout img:not(.color) { filter: brightness(0) invert(1); }
+/* The game's own stage maps (white, the part driven in red) keep their colours. */
 .qd-layout span { font-size: 12px; }
 .qd-layout small { display: block; font-size: 10.5px; color: var(--muted); }
 .qd-foot { display: flex; align-items: center; gap: 16px; padding: 12px 20px 12px 28px; border-top: 1px solid #2c2c2c; background: #141414; }
@@ -344,6 +351,21 @@ select { background: #222; border: 1px solid #383838; border-radius: 6px; height
 .qd-row:first-of-type { border-top: 0; }
 .qd-row label { font-size: 13px; color: #ddd; }
 .qd-row label small { display: block; margin-top: 2px; font-size: 11px; color: var(--muted); }
+.qd-row.with-icon label { display: flex; align-items: center; gap: 10px; }
+.qd-row.disabled { opacity: .4; }
+.qd-row.disabled select, .qd-row.disabled button, .qd-row.disabled input { cursor: not-allowed; }
+.qd-row-icon { flex: none; width: 24px; height: 24px; display: grid; place-items: center; color: #d6d6d6; }
+.qd-row-icon img { width: 24px; height: 24px; object-fit: contain; }
+.qd-row-icon svg { width: 18px; height: 18px; }
+.qd-range { display: flex; align-items: center; gap: 10px; }
+/* Sliders (Rally's session sheet, Settings → Darken) as Rally's own: a thin square track filled up to the value, an upright bar as the handle. */
+.qd-range input[type=range], .bg-darken input[type=range] { -webkit-appearance: none; appearance: none; width: 160px; height: 18px; margin: 0; background: transparent; cursor: pointer; }
+.qd-range input[type=range]::-webkit-slider-runnable-track, .bg-darken input[type=range]::-webkit-slider-runnable-track { height: 4px; border-radius: 0; background: linear-gradient(to right, var(--red) var(--fill, 0%), #343434 var(--fill, 0%)); }
+.qd-range input[type=range]::-webkit-slider-thumb, .bg-darken input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 6px; height: 16px; margin-top: -6px; border-radius: 1px; background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.45), 0 1px 4px rgba(0,0,0,.5); transition: transform .12s; }
+.qd-range input[type=range]:hover::-webkit-slider-thumb, .bg-darken input[type=range]:hover::-webkit-slider-thumb, .qd-range input[type=range]:active::-webkit-slider-thumb, .bg-darken input[type=range]:active::-webkit-slider-thumb { transform: scaleY(1.15); }
+.qd-range input[type=range]:focus, .bg-darken input[type=range]:focus { outline: none; }
+.qd-range input[type=range]:focus-visible::-webkit-slider-thumb, .bg-darken input[type=range]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 2px var(--red); }
+.qd-range output { min-width: 40px; text-align: right; font-size: 12.5px; color: #eee; font-variant-numeric: tabular-nums; }
 .qd-row select { height: 32px; min-width: 160px; padding: 0 8px; font-size: 12.5px; color: #eee; }
 .qd-row .qd-seg button { padding: 6px 12px; font-size: 12px; }
 .modal .qd-head > .close { top: 50%; right: 22px; transform: translateY(-50%); }
@@ -485,7 +507,7 @@ select { background: #222; border: 1px solid #383838; border-radius: 6px; height
 .bg-thumb i { position: absolute; inset: 0; background: #0e0e0e; }
 .setting label.bg-darken { display: flex; align-items: center; gap: 10px; margin-right: 8px; font-size: 12.5px; color: var(--muted); }
 .bg-darken output { width: 34px; text-align: right; font-variant-numeric: tabular-nums; color: #ccc; }
-.bg-darken input[type=range] { width: 120px; height: 4px; accent-color: var(--red); cursor: pointer; }
+.bg-darken input[type=range] { width: 120px; }
 .setting > select, .setting .btns > select { height: 32px; min-width: 200px; font-size: 13px; }
 .qd-row input[type=date] { height: 32px; min-width: 160px; padding: 0 8px; font-size: 12.5px; color: #eee; background: #222; border: 1px solid #383838; border-radius: 6px; color-scheme: dark; }
 /* CSP version picker: green the newest stable, red unstable (buggy), gray older or not rated */
@@ -546,7 +568,7 @@ select { background: #222; border: 1px solid #383838; border-radius: 6px; height
 .settings-note .link { margin-left: 6px; }
 
 /* Personal best in the Quick Drive footer */
-.qd-pb { flex: none; display: flex; flex-direction: column; align-items: flex-start; padding: 3px 12px; border-radius: 6px; background: #1e7a3c; line-height: 1.2; }
+.qd-pb { flex: none; display: flex; flex-direction: column; align-items: flex-start; padding: 4px 12px 2px; border-radius: 6px; background: #1e7a3c; line-height: 1.2; }
 .qd-pb small { font-size: 10.5px; color: rgba(255,255,255,.75); text-transform: uppercase; letter-spacing: .04em; }
 .qd-pb b { font-size: 15px; font-variant-numeric: tabular-nums; color: #fff; }
 .view.games #update-note { position: absolute; top: 22px; right: 28px; z-index: 5; width: 560px; }

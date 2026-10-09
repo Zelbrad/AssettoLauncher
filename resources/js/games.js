@@ -8,7 +8,8 @@ import {
 } from './util.js';
 import { compatDataDir } from './steam.js';
 import { readModInfo, pruneCache, readEvoCatalog } from './kspkg.js';
-import { readRallyContent, rallyFileStages } from './rallyfiles.js';
+import { readRallyContent, rallyFileStages, rallyModContents } from './rallyfiles.js';
+import { RALLY_KNOWN_STAGES, rallyStage, rallyCover } from './rallylaunch.js';
 import { ddsThumbnail } from './dds.js';
 import { scanScreenshots, scanReplays, mediaFolders } from './media.js';
 
@@ -35,7 +36,7 @@ export const GAMES = [
     key: 'rally', appid: 3917090, title: 'Assetto Corsa', sub: 'Rally',
     headline: 'The Stage Is Set',
     blurb: 'Assetto Corsa Rally is a realistic rally simulator focused on precision and challenge. With 3D laser-scanned stages and vehicles, professional co-driver assistance, and variable conditions, it offers a demanding and immersive experience where every second behind the wheel counts.',
-    tabs: [{ id: 'liveries', label: 'Liveries' }, { id: 'screens', label: 'Screenshots' }],
+    tabs: [{ id: 'cars', label: 'Cars' }, { id: 'tracks', label: 'Tracks' }, { id: 'liveries', label: 'Liveries' }, { id: 'screens', label: 'Screenshots' }],
   },
 ];
 
@@ -558,6 +559,48 @@ export async function rallyCarIds(paths) {
 export const rallyContent = async paths => readRallyContent(paths.rally.paks, await appCacheDir('rally'));
 export const rallyGameStages = async (paths, known = []) => rallyFileStages(await rallyContent(paths).catch(() => null), known);
 
+// The launcher's id for a car id from the game's files (same id, any case).
+export const rallyLauncherCarId = id => Object.keys(RALLY_CARS).find(k => k.toLowerCase() === String(id).toLowerCase()) || id;
+export const rallyCarBrand = id => { const n = rallyCarName(id); return /^Alfa Romeo/.test(n) ? 'Alfa Romeo' : n.split(' ')[0]; };
+// Car classes are the game's Vehicles/<class> folders.
+const RALLY_CLASSES = { Group2: 'Group 2', Group4: 'Group 4', GroupA: 'Group A', GroupB: 'Group B', K11: 'Kit Car', R5: 'R5', Rally2: 'Rally2', Rally4: 'Rally4', WRC: 'WRC' };
+export const rallyClassName = cls => RALLY_CLASSES[cls] || String(cls || '').replace(/([a-z])([A-Z0-9])/g, '$1 $2');
+
+// The game's cars (its file index, so an update's cars show up), then car mods.
+// Pictures, descriptions and brand logos are added by the page (main.js).
+export async function scanRallyCars(paths) {
+  const [ids, files, paks] = await Promise.all([rallyCarIds(paths), rallyContent(paths).catch(() => null), scanRallyPaks(paths)]);
+  const clsOf = id => files?.cars.find(c => c.id.toLowerCase() === id.toLowerCase())?.cls || '';
+  const official = ids.map(id => ({
+    id, kind: 'car', game: 'rally', title: rallyCarName(id),
+    subtitle: [rallyCarBrand(id), rallyClassName(clsOf(id))].filter(Boolean).join(' · '),
+    author: 'Kunos Simulazioni', image: '', tags: [rallyClassName(clsOf(id))].filter(Boolean), description: '',
+    isMod: false, enabled: true, path: paths.rally.liveries ? join(paths.rally.liveries, id) : paths.rally.paks,
+    carId: id, cls: clsOf(id), brand: rallyCarBrand(id),
+  }));
+  await markFresh('rally_cars', official);
+  return [...paks.filter(i => i.kind === 'car').sort(byTitle), ...official.sort(byTitle)];
+}
+
+// The game's stages, one card per stage (its variants are the layouts), then stage mods.
+export async function scanRallyTracks(paths) {
+  const ids = [...new Set([...RALLY_KNOWN_STAGES, ...await rallyGameStages(paths, RALLY_KNOWN_STAGES).catch(() => [])])];
+  const groups = new Map();
+  for (const id of ids) {
+    const st = rallyStage(id);
+    if (!groups.has(st.group)) groups.set(st.group, {
+      id: st.group, kind: 'track', game: 'rally', title: st.stage, subtitle: st.locationName,
+      author: 'Kunos Simulazioni', image: rallyCover(st.location), tags: [st.locationName], description: '',
+      isMod: false, enabled: true, path: paths.rally.paks, layouts: [],
+      rallyGroup: st.group, location: st.location, locationName: st.locationName, country: st.country,
+    });
+    groups.get(st.group).layouts.push({ id, name: st.name || [st.stage, st.length].filter(Boolean).join(' · '), length: [st.length, st.direction].filter(Boolean).join(' · ') });
+  }
+  const official = [...groups.values()];
+  await markFresh('rally_groups', official);
+  return [...(await scanRallyPaks(paths)).filter(i => i.kind === 'track').sort(byTitle), ...official.sort(byTitle)];
+}
+
 // Disabled folder liveries are parked outside the folder the game reads.
 const rallyDisabledRoot = paths => `${paths.rally.liveries} (disabled)`;
 
@@ -643,11 +686,21 @@ export const rallyIncompatible = items => items.filter(i => i.toggle === 'rally'
 // and Unreal .pak/.utoc/.ucas trios in acr/Content/Paks (replace a car's default
 // scheme). A trio is disabled by suffixing ".disabled" so the engine skips it.
 export async function scanRallyLiveries(paths) {
-  const items = await scanRallyFolderLiveries(paths);
+  const items = [...await scanRallyFolderLiveries(paths), ...(await scanRallyPaks(paths)).filter(i => i.kind === 'livery')];
+  return items.sort((a, b) => a.title.localeCompare(b.title));
+}
+
+// Mod packages in acr/Content/Paks (and its ~mods folder). Each one's file index
+// (rallyfiles.js) says what it is: a car the game doesn't have (Cars tab), a stage
+// it doesn't have (Tracks tab), or else new files for the game's own cars, a
+// livery (its car read from the paths it replaces; from its name when the index
+// can't be read).
+async function scanRallyPaks(paths) {
+  const items = [];
   const dir = paths.rally.paks;
-  if (!dir || !(await exists(dir))) return items.sort((a, b) => a.title.localeCompare(b.title));
+  if (!dir || !(await exists(dir))) return items;
   await mountDir('/m/rally-paks', dir);
-  const gameToc = await rallyGameTocVersion(paths);
+  const [gameToc, base] = await Promise.all([rallyGameTocVersion(paths), rallyContent(paths).catch(() => null)]);
 
   const scanDirs = [dir];
   const modsSub = (await listDir(dir)).find(e => e.type === 'DIRECTORY' && /^~?mods$/i.test(e.entry));
@@ -668,18 +721,24 @@ export async function scanRallyLiveries(paths) {
     for (const g of groups.values()) {
       const img = images.find(i => i.entry.replace(IMG_RE, '').toLowerCase() === g.base.toLowerCase());
       const complete = RALLY_EXTS.every(x => g.files.some(f => f.toLowerCase().startsWith(`${g.base.toLowerCase()}.${x}`)));
-      const car = guessRallyCar([g.base]);
       const utoc = g.files.find(f => /\.utoc(\.disabled)?$/i.test(f));
       const toc = utoc ? await utocVersion(join(d, utoc)) : null;
       const incompatible = gameToc != null && toc != null && toc !== gameToc;
+      let adds = null;
+      try { if (utoc) adds = rallyModContents(await Neutralino.filesystem.readBinaryFile(join(d, utoc)), base); } catch (err) { log(`rally pak ${g.base}: ${err?.message || err}`); }
+      const kind = adds?.cars.length ? 'car' : adds?.stages.length ? 'track' : 'livery';
+      const car = adds?.carIds.length === 1 ? rallyLauncherCarId(adds.carIds[0]) : guessRallyCar([g.base]);
+      const what = kind === 'car' ? '.pak car' : kind === 'track' ? '.pak stage' : '.pak livery';
       items.push({
-        id: g.base, kind: 'livery', game: 'rally',
+        id: g.base, kind, game: 'rally',
         title: prettifyId(g.base.replace(/_P$/i, '')),
         subtitle: !complete ? 'Incomplete package' : incompatible ? 'Made for another game version · crashes the game'
-          : [car && rallyCarName(car), '.pak livery'].filter(Boolean).join(' · '),
+          : [kind === 'livery' && car && rallyCarName(car), what].filter(Boolean).join(' · '),
+        adds, carId: kind === 'livery' ? car : adds?.cars[0]?.id || '',
         author: '', image: img ? fileUrl(join(d, img.entry)) : '',
         tags: [complete ? 'pak + utoc + ucas' : 'missing files', ...(incompatible ? ['Incompatible'] : [])],
         description: (incompatible ? `This .pak was built for ${toc < gameToc ? 'an older' : 'a newer'} version of the game (container v${toc}, the game uses v${gameToc}). The game crashes at startup while it is enabled. Disable it until the author releases an updated version.\n\n` : '')
+          + (kind === 'car' ? `Adds ${adds.cars.map(c => prettifyId(c.id)).join(', ')} to the game.\n\n` : kind === 'track' ? `Adds the stage ${adds.stages.map(s => prettifyId(s)).join(', ')} to the game.\n\n` : '')
           + `Files: ${g.files.join(', ')}`,
         incompatible,
         isMod: true, enabled: !g.disabled, path: d, toggle: 'rally',
@@ -758,7 +817,7 @@ export const SCANNERS = {
   ac: { cars: scanAcCars, tracks: scanAcTracks, ...media('ac') },
   acc: { liveries: scanAccLiveries, ...media('acc') },
   evo: { cars: scanEvoCars, tracks: scanEvoTracks, liveries: scanEvoLiveries, ...media('evo') },
-  rally: { liveries: scanRallyLiveries, ...media('rally') },
+  rally: { cars: scanRallyCars, tracks: scanRallyTracks, liveries: scanRallyLiveries, ...media('rally') },
 };
 
 export function contentFolder(gameKey, tab, paths) {
@@ -767,7 +826,7 @@ export function contentFolder(gameKey, tab, paths) {
     case 'ac': return paths.ac.content ? join(paths.ac.content, tab) : '';
     case 'acc': return paths.acc.customs ? join(paths.acc.customs, 'Liveries') : '';
     case 'evo': return tab === 'liveries' ? paths.evo.liveries : paths.evo.mods;
-    case 'rally': return paths.rally.liveries || paths.rally.paks;
+    case 'rally': return tab === 'liveries' ? paths.rally.liveries || paths.rally.paks : paths.rally.paks;
   }
   return '';
 }
