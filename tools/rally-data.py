@@ -3,7 +3,11 @@
 # launcher have:
 #   stages  in-game stage names ("La Bollène-Vésubie - Turini")
 #   groups  stage group names and descriptions ("Col de Turini", "Discover the beautiful roads…")
-#   cars    each car's description and the name of its default livery ("Erreffe Team 2025")
+#   cars    each car's description, the name of its default livery ("Erreffe Team 2025")
+#           and its picture (below)
+#   setup   the Car Setup menu's labels for each setup value ("Front Bias", "Front Left", "Dampers")
+#   ai      each stage variant's time for each car, in ms, from the AI's sector timings in
+#           Data/Database/Main/AI/DT_AITrackVariantsCarsData (the Academy's reference times)
 # They come from the game's Localization/Game/<lang>/Game.locres inside
 # acr/Content/Paks/pakchunk0-Windows.pak. That pak is Oodle-compressed, so this
 # needs the ooz decompressor (GPL), on this computer only; the launcher only ships
@@ -12,7 +16,8 @@
 # start arrow and finish flag) from the game's UI textures (IoStore containers, also
 # Oodle) into resources/img/rally/stages/<stage id>.png, cropped to the drawing, and a
 # small thick-lined copy for Quick Drive's buttons, <stage id>-chip.png; the JSON lists
-# them under "media".
+# them under "media". Each car's picture is the game's car-select one, saved as
+# resources/img/rally/cars/<car id>.webp (listed as cars.<id>.picture).
 # Run after a Rally update, then commit the JSON (launchers fetch it from GitHub)
 # and the pictures:
 #   py -m pip install pyooz pillow
@@ -65,6 +70,53 @@ CARS = {
     'SkodaFabiaRSRally2': ('LIVERY_FABIARSRALLY2_1', 'GROUP_FABIARSR2_DESC'),
     'SubaruImprezaS3': ('LIVERY_IMPREZA_S3_1', 'GROUP_IMPREZAS3_DESC'),
     'VWPoloGTIR5': ('LIVERY_POLO_GTI_R5_1', 'GROUP_POLOGTIR5_DESC'),
+}
+# Launcher car id -> its car-select picture under acr/Content/Data/UITextures/Cars/
+# (2000x972, the car on a transparent background). The game names these freely
+# ("T_Fiat121Abarth" is the 131, "T_LanciaDelta37" the 037), so each is listed.
+CAR_PICTURES = {
+    'AlfaRomeoGTA1300': 'T_AlfaRomeoGT1300', 'AlpineA110': 'T_AlpineA110', 'AudiQuattroGr4': 'T_AudiQuattro',
+    'CitroenXsaraWRC': 'T_CitroenXara', 'Fiat124Abarth': 'T_Fiat124Abarth', 'Fiat131Abarth': 'T_Fiat121Abarth',
+    'Hyundaii20NRally2': 'T_Hyundai20', 'LanciaDeltaIntegraleEvo': 'T_LanciaIntegraleDelta', 'LanciaFulviaHF': 'T_LanciaFulvia',
+    'LanciaRally037Evo2': 'T_LanciaDelta37', 'LanciaStratosHF': 'T_LanciaStratos', 'MiniCooperS1275': 'T_MiniCooper',
+    'Peugeot206': 'T_Peugeot206', 'Peugeot208Rally4': 'T_Peugeot208', 'Peugeot306IIMaxiKitCar': 'T_Peugeot306Maxi',
+    'SkodaFabiaRSRally2': 'T_SkodaFabia', 'SubaruImprezaS3': 'T_SubaruImpresa', 'VWPoloGTIR5': 'T_VolkswagenPolo',
+}
+CAR_DIR = 'Data/UITextures/Cars/'
+CAR_PLACEHOLDERS = {'T_CarAnyClass', 'T_PHCarIcon'}
+CAR_OUT = os.path.join(ROOT, 'resources', 'img', 'rally', 'cars')
+CAR_SIZE = (960, 540)  # 16:9 like the launcher's cards; the car 82% of the width, so it also fits the 16:7 detail header
+
+# Car setups (the Personal setups file, rallysetups.js) key each value
+# "<group>.<position>.<setting>", e.g. "Brakes.FrontLeft.Disc". These are the game's
+# own labels for each part, as its Car Setup menu shows them; every key the
+# cars' built-in setups (Data/CarSetups/DA_<car>Presets) use is covered.
+# Positions without a label here (BrakesMain, GearboxMain, Centre) get the launcher's.
+SETUP_GROUPS = {
+    'Wheels': 'CARSETUP_WHEELS', 'Brakes': 'CARSETUP_BRAKES', 'Suspensions': 'CARSETUP_SUSPENSIONS',
+    'Dampers': 'CARSETUP_DAMPERS', 'Axles': 'CARSETUP_AXELS', 'Differentials': 'CARSETUP_DIFFERENCIALS',
+    'Gearbox': 'CARSETUP_GEARBOX', 'Other': 'CARSETUP_ELECTRONICS&AEREO',
+}
+SETUP_POSITIONS = {
+    'FrontLeft': 'SETUP_FRONTLEFT', 'FrontRight': 'SETUP_FRONTRIGHT', 'RearLeft': 'SETUP_REARLEFT', 'RearRight': 'SETUP_REARRIGHT',
+    'Front': 'SETUP_FRONT', 'Rear': 'SETUP_REAR', 'Steering': 'SETUP_STEERING', 'Electronic': 'SETUP_ELECTRONICS', 'Lights': 'SETUP_LIGHTS',
+}
+SETUP_SETTINGS = {
+    'TyrePressure': 'CARSETUP_PRESSURE', 'Camber': 'CARSETUP_CAMBER', 'Toe': 'CARSETUP_TOE', 'FFBPlayerMultiplier': 'CARSETUP_FFB_MULTIPLIER',
+    'FrontBias': 'CARSETUP_BRAKE_BIAS', 'HandbrakeForce': 'CARSETUP_HANDBRAKE_FORCE', 'MasterCylinder': 'CARSETUP_MASTER_CYLINDER',
+    'MasterCylinderFront': 'CARSETUP_MASTER_CYLINDER_FRONT', 'MasterCylinderRear': 'CARSETUP_MASTER_CYLINDER_REAR',
+    'ProportioningPreload': 'CARSETUP_PVALVE_PRELOAD', 'ProportioningRatio': 'CARSETUP_PVALVE_RATIO',
+    'Disc': 'CARSETUP_DISCS', 'Caliper': 'CARSETUP_CALIPER', 'PadCompound': 'CARSETUP_BRAKE_PAD',
+    'AdjusterRing': 'CARSETUP_ADJUSTER_RING', 'SpringStiffness': 'CARSETUP_SPRING_STIFFNESS',
+    'SlowBump': 'CARSETUP_SLOW_BUMP', 'SlowRebound': 'CARSETUP_SLOW_REBOUND', 'FastBump': 'CARSETUP_FAST_BUMP',
+    'FastRebound': 'CARSETUP_FAST_REBOUND', 'BumpTransition': 'CARSETUP_BUMP_THRESHOLD_SPEED', 'ReboundTransition': 'CARSETUP_REBOUND_TRANSITION',
+    'ARBStiffness': 'CARSETUP_ANTIROLLBAR_STIFFNES',
+    'DifferentialRatio': 'CARSETUP_DIFFERENTIAL_RATIO', 'CentreDifferentialRatio': 'CARSETUP_GEARBOXFINALRATIO',
+    'CentreRatioToRear': 'CARSETUP_CENTERRATIOTOREAR', 'LSDRamps': 'CARSETUP_LSD_RAMP', 'LSDPreload': 'CARSETUP_LSD_PRELOAD',
+    'LSDFrictionPlates': 'CARSETUP_PLATES_NUMBER',
+    'GearsSet': 'CARSETUP_GEARSET', 'GearPrimary': 'CARSETUP_PRIMARYGEAR',
+    'ABS': 'CARSETUP_ABS_MAP', 'TCS': 'CARSETUP_TCS_MAP', 'EngineMap': 'CARSETUP_ENGINE_MAP', 'ThrottleMap': 'CARSETUP_THROTTLE_MAP',
+    'AdditionalLights': 'CARSETUP_ADDITIONAL_LIGHTS',
 }
 
 
@@ -216,6 +268,83 @@ def export_media(game):
     return media
 
 
+# Each car's car-select picture, kept transparent and centred on a 16:9 canvas, as
+# img/rally/cars/<car id>.webp (~55 KB each). Fails on a car without one; names a
+# picture no car uses (a car the game added: add it to CARS and CAR_PICTURES).
+def export_cars(stores):
+    prefix = '../../../acr/Content/' + CAR_DIR
+    names = {k[len(prefix):-7] for s in stores for k in s.paths if k.startswith(prefix) and k.endswith('.uasset') and '/' not in k[len(prefix):]}
+    for n in sorted(names - set(CAR_PICTURES.values()) - CAR_PLACEHOLDERS): print(f'car picture {n} has no car: add it to CAR_PICTURES')
+    os.makedirs(CAR_OUT, exist_ok=True)
+    out = {}
+    for car in CARS:
+        if car not in CAR_PICTURES: raise SystemExit(f'no picture for {car}: add it to CAR_PICTURES')
+        img = texture(stores, prefix + CAR_PICTURES[car]).convert('RGBA')
+        w = round(CAR_SIZE[0] * 0.82)
+        img = img.resize((w, round(img.height * w / img.width)), Image.LANCZOS)
+        canvas = Image.new('RGBA', CAR_SIZE, (0, 0, 0, 0))
+        canvas.alpha_composite(img, ((CAR_SIZE[0] - img.width) // 2, (CAR_SIZE[1] - img.height) // 2))
+        canvas.save(os.path.join(CAR_OUT, f'{car}.webp'), quality=86, method=6, exact=False)
+        out[car] = f'img/rally/cars/{car}.webp'
+    return out
+
+
+# DT_AITrackVariantsCarsData, a cooked DataTable (Zen package, unversioned properties):
+# rows named by stage variant, each a map of { table name, car row name } -> an array
+# of the AI's sector times as int64 ticks (100 ns). Rows and cars use the game's
+# own spelling, which differs from the save's in a few places.
+AI_TABLE = '../../../acr/Content/Data/Database/Main/AI/DT_AITrackVariantsCarsData.uasset'
+AI_STAGE_FIX = {'WalesS3': 'WelesS3', 'WalesS4': 'WelesS4', 'MonteCarlosS1': 'MonteCarloS1'}
+
+def zen_names(b):
+    i = b.find(struct.pack('<Q', 0xC1640000))  # the name map's hash version
+    n, = struct.unpack_from('<I', b, i - 8)
+    p, out = i + 8 + 8 * n, []
+    lens = [struct.unpack_from('>H', b, p + 2 * k)[0] for k in range(n)]
+    p += 2 * n
+    for h in lens:
+        ln = h & 0x7fff
+        if h & 0x8000: out.append(b[p:p + 2 * ln].decode('utf-16le')); p += 2 * ln
+        else: out.append(b[p:p + ln].decode('latin1')); p += ln
+    return out
+
+def ai_times(game):
+    paks = os.path.join(game, 'acr', 'Content', 'Paks')
+    b = None
+    for f in sorted(os.listdir(paks)):
+        if f.endswith('.utoc'):
+            s = IoStore(os.path.join(paks, f))
+            if AI_TABLE in s.paths: b = s.read(s.paths[AI_TABLE]); break
+    if b is None: raise SystemExit('no DT_AITrackVariantsCarsData: has the game moved it?')
+    names = zen_names(b)
+    d = b[struct.unpack_from('<I', b, 4)[0]:]
+    i32 = lambda o: struct.unpack_from('<i', d, o)[0]
+    u16 = lambda o: struct.unpack_from('<H', d, o)[0]
+    if u16(0) != 0x0300: raise SystemExit('DT_AITrackVariantsCarsData: unexpected layout')
+    p, rows, out = 14, i32(10), {}
+    cars = {c.lower(): c for c in CARS}
+    for _ in range(rows):
+        row = names[i32(p)]; p += 8
+        if u16(p) != 0x0300 or i32(p + 2) != 0: raise SystemExit(f'DT_AITrackVariantsCarsData: unexpected row {row}')
+        n = i32(p + 6); p += 10
+        times = {}
+        for _ in range(n):
+            if u16(p) != 0x0500: raise SystemExit(f'DT_AITrackVariantsCarsData: unexpected entry in {row}')
+            car = names[i32(p + 10)]; p += 18
+            has = u16(p) == 0x0300  # the timings array (else the entry is empty)
+            k = i32(p + 2) if has else 0
+            p += 6 if has else 2
+            ticks = [struct.unpack_from('<q', d, p + 8 * j)[0] for j in range(k)]; p += 8 * k
+            if car.lower() in cars and ticks: times[cars[car.lower()]] = round(sum(ticks) / 10000)
+        for a, b2 in AI_STAGE_FIX.items():
+            if row.startswith(a): row = b2 + row[len(a):]
+        if row in MEDIA and times:
+            # A few entries are far off the rest of the field (a car twice as slow): left out.
+            mid = sorted(times.values())[len(times) // 2]
+            out[row] = {c: t for c, t in sorted(times.items()) if t <= mid * 1.5}
+    return out
+
+
 def chip(img):
     """The map for Quick Drive's small stage buttons: only the stage (white) and the part
     driven (red), lines thickened so they still read at 34 px; no start/finish icons."""
@@ -347,16 +476,23 @@ def main():
             for d in ('Forward', 'Reverse'):
                 stages[f'{g}{v}{d}'] = per_lang(texts, f'TRACK_{sk}_{lv}_{d.upper()}')
     cars = {c: {'livery': per_lang(texts, lk), 'description': per_lang(texts, dk)} for c, (lk, dk) in CARS.items()}
+    setup = {name: {k: per_lang(texts, key) for k, key in table.items()}
+             for name, table in (('groups', SETUP_GROUPS), ('positions', SETUP_POSITIONS), ('settings', SETUP_SETTINGS))}
     manifest = os.path.join(game, '..', '..', 'appmanifest_3917090.acf')
     build = re.search(r'"buildid"\s+"(\d+)"', open(manifest).read()).group(1) if os.path.exists(manifest) else ''
+    ai = ai_times(game)
+    paks = os.path.join(game, 'acr', 'Content', 'Paks')
+    stores = [IoStore(os.path.join(paks, f)) for f in sorted(os.listdir(paks)) if f.endswith('.utoc')]
+    for c, rel in export_cars(stores).items(): cars[c]['picture'] = rel
     media = export_media(game)
     data = {'updated': datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'), 'build': build,
-            'languages': LANGS, 'groups': groups, 'stages': stages, 'cars': cars, 'media': media}
+            'languages': LANGS, 'groups': groups, 'stages': stages, 'cars': cars, 'media': media, 'setup': setup, 'ai': ai}
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     with open(OUT, 'w', encoding='utf-8', newline='\n') as f:
         json.dump(data, f, ensure_ascii=False, indent=1)
         f.write('\n')
-    print(f'{OUT}: {len(stages)} stages, {len(groups)} groups, {len(cars)} cars, {len(media)} stage maps (Rally build {build or "?"})')
+    print(f'{OUT}: {len(stages)} stages, {len(groups)} groups, {len(cars)} cars, {len(media)} stage maps, AI times for {len(ai)} stages '
+          f'(Rally build {build or "?"})')
 
 
 if __name__ == '__main__':

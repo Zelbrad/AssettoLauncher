@@ -10,13 +10,15 @@
 //          post-processing filter (.ini with AC's PP sections, plus its .lua or
 //          <name>_scripts folder), loose or in a zip, installed to system/cfg/ppfilters
 //   ACC    livery folder (decals/sponsors .json/.png), car file (*.json with carModelType)
-//   EVO    *.kspkg, external livery folder (external_livery.json + its SavedCar)
+//   EVO    *.kspkg, external livery folder (external_livery.json + its SavedCar),
+//          track folder as EVO's own (<id>.track + <id>.scene, as tools converting
+//          Assetto Corsa tracks make them), packed into mods\<id>.kspkg on install
 //   Rally  livery folder (livery.json + icon.png / body_livery_*.dds), or *.pak + .utoc + .ucas
 import {
   norm, join, basename, exists, listDir, readText, readTextAnyEncoding, parseLooseJson, cleanText,
   prettifyId, log, mountDir, fileUrl, extractArchive, ensureDir, IS_LINUX,
 } from './util.js';
-import { readModInfo } from './kspkg.js';
+import { readModInfo, packEvoTrack, looseTextureJpeg, evoTrackName, evoLayoutName, evoTrackLayouts } from './kspkg.js';
 import { isPpFilterIni, ppFilterAbout, ppFilterCompanions, beforePpFilterInstall, KUNOS_FILTERS } from './ppfilters.js';
 import { guessLiveryCar } from './rallylivery.js';
 import { rallyCarIds, rallyCarName, guessRallyCar, evoSavedCarsDir, utocVersion, rallyGameTocVersion } from './games.js';
@@ -126,7 +128,7 @@ async function scanTree(root) {
 const kid = (n, name, type = 'dirs') => n?.[type].find(x => x.toLowerCase() === name);
 const sub = (rel, name) => (rel ? `${rel}/${name}` : name);
 
-// Item: { game, kind, tab, title, detail, image, mode: 'dir'|'files'|'merge', src, target, files, pairs, copyOnly, exists, missing }
+// Item: { game, kind, tab, title, detail, image, mode: 'dir'|'files'|'merge'|'evo-livery'|'evo-pack'|'ppfilter', src, target, files, pairs, copyOnly, exists, missing }
 class Detector {
   constructor(ctx) { Object.assign(this, ctx); this.items = []; }
 
@@ -163,6 +165,12 @@ class Detector {
     return !!kid(n, 'extension');
   }
 
+  // An EVO track folder: <id>.track beside <id>.scene. Returns the id, or ''.
+  evoTrackId(n) {
+    const track = n.files.find(f => /\.track$/i.test(f));
+    return track && kid(n, `${stem(track).toLowerCase()}.scene`, 'files') ? stem(track) : '';
+  }
+
   isAccLivery(n) { return ['decals.json', 'sponsors.json', 'decals.png', 'sponsors.png'].some(f => kid(n, f, 'files')); }
   isEvoLivery(n) { return !!kid(n, 'external_livery.json', 'files'); }
   isRallyLivery(n) { return !!kid(n, 'livery.json', 'files') && n.files.some(f => /^(body_livery_.*\.dds|icon\.png)$/i.test(f)); }
@@ -171,6 +179,8 @@ class Detector {
   async walk(rel = '') {
     const n = this.node(rel);
     if (!n) return;
+    const evoTrack = this.evoTrackId(n);
+    if (evoTrack) return this.addEvoTrack(rel, evoTrack);
     if (this.isAcCar(rel)) return this.addAcCar(rel);
     if (this.isAcTrack(rel)) return this.addAcTrack(rel);
     if (this.isAcRoot(rel)) return this.addAcRoot(rel);
@@ -457,6 +467,29 @@ class Detector {
     }
   }
 
+  // --- AC EVO track folders: packed into a package on install (kspkg.js
+  // packEvoTrack); EVO loads packages from its mods folder, not loose folders.
+
+  async addEvoTrack(rel, id) {
+    const n = this.node(rel);
+    const filesIn = dir => { const d = kid(n, dir); return d ? this.node(sub(rel, d)).files.map(f => `${dir}\\${f}`) : []; };
+    const layouts = evoTrackLayouts([...filesIn('containers'), ...filesIn('layouts')]).map(l => l.id);
+    const ui = kid(n, 'ui'), photo = ui && kid(this.node(sub(rel, ui)), 'photo.texture', 'files');
+    let image = '';
+    if (photo && this.evoCache) {
+      try { await ensureDir(this.evoCache); image = fileUrl(await looseTextureJpeg(join(this.abs(rel), ui, photo), join(this.evoCache, `import-${safeId(id)}-${Date.now().toString(36)}.jpg`))); }
+      catch (err) { log(`import evo track photo: ${err?.message || err}`); }
+    }
+    const target = this.paths.evo.mods ? join(this.paths.evo.mods, `${id}.kspkg`) : '';
+    const previews = ui && kid(this.node(sub(rel, ui)), 'previews.json', 'files');
+    this.add({
+      game: 'evo', kind: 'track', tab: 'tracks', title: evoTrackName(id, previews ? parseLooseJson(await readText(join(this.abs(rel), ui, previews))) : null),
+      sub: [layouts.length === 1 ? evoLayoutName(layouts[0]) : layouts.length ? `${layouts.length} layouts` : '', 'Track folder, packed into an EVO package and added to its track list'].filter(Boolean).join(' · '),
+      detail: `mods/${id}.kspkg`, mode: 'evo-pack', src: this.abs(rel), id, target, image,
+      missing: target ? '' : 'Assetto Corsa EVO not found',
+    });
+  }
+
   async addEvo(dir, file, img) {
     let info = null;
     try { info = this.evoCache && await readModInfo(join(dir, file), this.evoCache); } catch (err) { log(`import evo info: ${err?.message || err}`); }
@@ -488,6 +521,7 @@ async function itemExists(item) {
     for (const f of item.files) if (f.target && (await exists(f.target) || await exists(`${f.target}.disabled`))) return true;
   }
   if (item.mode === 'ppfilter') return !!item.files[0].target && exists(item.files[0].target);
+  if (item.mode === 'evo-pack') return !!item.target && (await exists(item.target) || exists(`${item.target}.disabled`));
   return false;
 }
 
@@ -585,17 +619,59 @@ async function detectSource(source, session, paths, { evoCache, onStatus } = {})
 // ---------------------------------------------------------------------------
 // Install. New folders are moved from staging when possible; updates are copied
 // over the existing folder (merged), so nothing the user added is deleted.
+// Copies go file by file (Copier): one native copy for a whole folder can't tell
+// how far it is, and holds up the launcher's other file calls (pictures, scans)
+// until it's done, while mods install in the background (main.js).
 
-async function placeDir(src, target, copyOnly) {
+// The copies of an install step, listed first so the total is known, then made.
+// onProgress(done, total) in bytes after each file; it may throw to stop.
+class Copier {
+  constructor(onProgress) { this.onProgress = onProgress; this.jobs = []; }
+  file(src, target) { this.jobs.push({ src, target }); }
+  dir(src, target) { this.jobs.push({ src, target, dir: true }); }
+  async run() {
+    if (!this.jobs.length) return;
+    const files = [], dirs = [];
+    const walk = async (src, target) => {
+      dirs.push(target);
+      for (const e of await listDir(src)) {
+        if (e.entry === '.' || e.entry === '..') continue;
+        if (e.type === 'DIRECTORY') await walk(join(src, e.entry), join(target, e.entry));
+        else files.push({ src: join(src, e.entry), target: join(target, e.entry) });
+      }
+    };
+    const roots = new Set();
+    for (const j of this.jobs.splice(0)) {
+      if (j.dir) { roots.add(j.target); await walk(j.src, j.target); }
+      else { roots.add(parentOf(j.target)); files.push(j); }
+    }
+    for (const f of files) f.size = (await Neutralino.filesystem.getStats(f.src)).size;
+    const total = files.reduce((n, f) => n + f.size, 0);
+    let done = 0;
+    this.onProgress?.(0, total);
+    // Folders in walk order (each after its parent): only a step's own folders
+    // need every level of the path checked.
+    for (const d of new Set([...roots, ...dirs])) {
+      if (roots.has(d)) await ensureDir(d);
+      else await Neutralino.filesystem.createDirectory(d).catch(() => { /* exists */ });
+    }
+    for (const f of files) {
+      await Neutralino.filesystem.copy(f.src, f.target, { overwrite: true });
+      done += f.size;
+      this.onProgress?.(done, total);
+    }
+  }
+}
+
+async function placeDir(src, target, copyOnly, copier) {
   await ensureDir(parentOf(target));
   if (!copyOnly && !(await exists(target))) {
     try { await Neutralino.filesystem.move(src, target); return; } catch { /* other drive: copy */ }
   }
-  await ensureDir(target);
-  await Neutralino.filesystem.copy(src, target, { recursive: true, overwrite: true });
+  copier.dir(src, target);
 }
 
-async function placeFile(src, target, copyOnly) {
+async function placeFile(src, target, copyOnly, copier) {
   await ensureDir(parentOf(target));
   // An older, disabled copy of the same mod would show up twice.
   await Neutralino.filesystem.remove(`${target}.disabled`).catch(() => {});
@@ -603,39 +679,67 @@ async function placeFile(src, target, copyOnly) {
     await Neutralino.filesystem.remove(target).catch(() => {});
     try { await Neutralino.filesystem.move(src, target); return; } catch { /* other drive: copy */ }
   }
-  await Neutralino.filesystem.copy(src, target, { overwrite: true });
+  copier.file(src, target);
 }
 
-export async function installItem(item) {
+// What an install stopped half way leaves behind, to remove (main.js, when the
+// launcher is closed during it): a new mod's folder or files, or the package
+// being written. Listed before it starts; an update keeps what was copied over it.
+async function leftovers(item) {
+  if (item.mode === 'evo-pack') return [`${item.target}.part`];
+  if (item.mode === 'dir' || item.mode === 'evo-livery') return item.target && !(await exists(item.target)) ? [item.target] : [];
+  if (item.mode === 'files') {
+    const fresh = [];
+    for (const f of item.files) if (f.target && !(await exists(f.target))) fresh.push(f.target);
+    return fresh;
+  }
+  return [];
+}
+
+// onProgress(done, total): bytes copied (or packed, evo-pack) of the item; moves
+// within a drive are instant and report nothing. It may throw to stop the install;
+// item.leftovers then lists what to remove.
+export async function installItem(item, onProgress) {
   if (item.missing) throw new Error(item.missing);
+  item.leftovers = await leftovers(item);
+  const copier = new Copier(onProgress);
   if (item.mode === 'dir') {
     if (!item.target) throw new Error(item.carPick ? 'Pick the car first' : 'No target folder');
-    await placeDir(item.src, item.target, item.copyOnly);
+    await placeDir(item.src, item.target, item.copyOnly, copier);
   } else if (item.mode === 'files') {
-    for (const f of item.files) await placeFile(f.src, f.target, item.copyOnly || f.copy);
+    for (const f of item.files) await placeFile(f.src, f.target, item.copyOnly || f.copy, copier);
   } else if (item.mode === 'evo-livery') {
     // The garage car first (copied: it may live inside the livery folder), then the
     // livery folder itself, minus the SavedCar copy EVO doesn't need there.
     if (item.savedCars.length) {
       const dir = await evoSavedCarsDir(item.paths);
       if (!dir) throw new Error('no EVO profile found. Start EVO once, then install the livery again.');
-      for (const s of item.savedCars) await placeFile(s.src, join(dir, s.file), true);
+      for (const s of item.savedCars) await placeFile(s.src, join(dir, s.file), true, copier);
+      await copier.run();
     }
-    await placeDir(item.src, item.target, item.copyOnly);
+    await placeDir(item.src, item.target, item.copyOnly, copier);
+    await copier.run();
     for (const e of await listDir(item.target)) {
       if (e.type === 'DIRECTORY' && /^savedcars?$/i.test(e.entry)) await Neutralino.filesystem.remove(join(item.target, e.entry)).catch(() => {});
     }
+  } else if (item.mode === 'evo-pack') {
+    // Written next to the mods (as <id>.kspkg.part, renamed when done); an older,
+    // disabled copy would show up twice.
+    await ensureDir(parentOf(item.target));
+    await Neutralino.filesystem.remove(`${item.target}.disabled`).catch(() => {});
+    await packEvoTrack(item.src, item.id, item.target, onProgress);
   } else if (item.mode === 'ppfilter') {
     // The installed version is backed up and removed first (ppfilters.js).
     await beforePpFilterInstall(item.paths, item.filterId);
     for (const f of item.files) {
-      if (f.dir) { await ensureDir(f.target); await Neutralino.filesystem.copy(f.src, f.target, { recursive: true, overwrite: true }); }
-      else await placeFile(f.src, f.target, item.copyOnly);
+      if (f.dir) copier.dir(f.src, f.target);
+      else await placeFile(f.src, f.target, item.copyOnly, copier);
     }
   } else if (item.mode === 'merge') {
     for (const p of item.pairs) {
-      if (p.file) await placeFile(p.src, p.target, true);
-      else { await ensureDir(p.target); await Neutralino.filesystem.copy(p.src, p.target, { recursive: true, overwrite: true }); }
+      if (p.file) await placeFile(p.src, p.target, true, copier);
+      else copier.dir(p.src, p.target);
     }
   }
+  await copier.run();
 }

@@ -8,23 +8,25 @@ import {
 } from './util.js';
 import { compatDataDir } from './steam.js';
 import { readModInfo, pruneCache, readEvoCatalog } from './kspkg.js';
+import { evoModTracks } from './evotracks.js';
 import { readRallyContent, rallyFileStages, rallyModContents } from './rallyfiles.js';
 import { RALLY_KNOWN_STAGES, rallyStage, rallyCover } from './rallylaunch.js';
 import { ddsThumbnail } from './dds.js';
 import { scanScreenshots, scanReplays, mediaFolders } from './media.js';
+import { scanSetups, setupFolder } from './setups.js';
 
 export const GAMES = [
   {
     key: 'ac', appid: 244210, title: 'Assetto Corsa', sub: '',
     headline: 'Your Platform for Driving',
     blurb: 'The simulator that started it all. Laser-scanned tracks, a legendary roster of road and race cars, and the deepest modding scene in sim racing. Thousands of community cars and circuits, all managed from one place, ready to drive in a single click.',
-    tabs: [{ id: 'cars', label: 'Cars' }, { id: 'tracks', label: 'Tracks' }, { id: 'screens', label: 'Screenshots' }, { id: 'replays', label: 'Replays' }],
+    tabs: [{ id: 'cars', label: 'Cars' }, { id: 'tracks', label: 'Tracks' }, { id: 'setups', label: 'Setups' }, { id: 'screens', label: 'Screenshots' }, { id: 'replays', label: 'Replays' }],
   },
   {
     key: 'acc', appid: 805550, title: 'Assetto Corsa', sub: 'Competizione',
     headline: 'The Official GT World Challenge Game',
     blurb: 'The official GT World Challenge game. Real GT3 and GT4 machinery, laser-scanned circuits, dynamic weather and a full day-night cycle. Build your own team identity with custom liveries and take it online against the best drivers in the world.',
-    tabs: [{ id: 'liveries', label: 'Liveries' }, { id: 'screens', label: 'Screenshots' }, { id: 'replays', label: 'Replays' }],
+    tabs: [{ id: 'liveries', label: 'Liveries' }, { id: 'setups', label: 'Setups' }, { id: 'screens', label: 'Screenshots' }, { id: 'replays', label: 'Replays' }],
   },
   {
     key: 'evo', appid: 3058630, title: 'Assetto Corsa', sub: 'EVO',
@@ -36,7 +38,7 @@ export const GAMES = [
     key: 'rally', appid: 3917090, title: 'Assetto Corsa', sub: 'Rally',
     headline: 'The Stage Is Set',
     blurb: 'Assetto Corsa Rally is a realistic rally simulator focused on precision and challenge. With 3D laser-scanned stages and vehicles, professional co-driver assistance, and variable conditions, it offers a demanding and immersive experience where every second behind the wheel counts.',
-    tabs: [{ id: 'cars', label: 'Cars' }, { id: 'tracks', label: 'Tracks' }, { id: 'liveries', label: 'Liveries' }, { id: 'screens', label: 'Screenshots' }],
+    tabs: [{ id: 'cars', label: 'Cars' }, { id: 'tracks', label: 'Tracks' }, { id: 'liveries', label: 'Liveries' }, { id: 'setups', label: 'Setups' }, { id: 'screens', label: 'Screenshots' }],
   },
 ];
 
@@ -70,12 +72,13 @@ export async function resolvePaths(installed, overrides = {}, steamPath = '') {
 
   const p = {};
   const ac = overrides.ac_install || installed['244210'];
-  p.ac = { install: ac || '', content: ac ? join(ac, 'content') : '', cfg: join(acU.docs, 'Assetto Corsa/cfg') };
+  p.ac = { install: ac || '', content: ac ? join(ac, 'content') : '', cfg: join(acU.docs, 'Assetto Corsa/cfg'), setups: join(acU.docs, 'Assetto Corsa/setups') };
 
   p.acc = {
     install: overrides.acc_install || installed['805550'] || '',
     customs: overrides.acc_customs || join(accU.docs, 'Assetto Corsa Competizione/Customs'),
     config: join(accU.docs, 'Assetto Corsa Competizione/Config'),
+    setups: join(accU.docs, 'Assetto Corsa Competizione/Setups'),
   };
 
   const ace = join(evoU.saved, 'ACE');
@@ -97,6 +100,8 @@ export async function resolvePaths(installed, overrides = {}, steamPath = '') {
     liveries: overrides.rally_liveries || join(rallyU.docs, 'My Games/acr/Liveries'),
     // Player data, including the Free Practice selection (see rallylaunch.js).
     save: join(rallyU.local, 'acr/Saved/SaveGames/PlayerDataSaveSlot.sav'),
+    // The Personal car setups (see setups.js); Rally makes it when the first one is saved.
+    setups: join(rallyU.local, 'acr/Saved/SaveGames/CarSetupsDataSaveSlot.sav'),
   };
   return p;
 }
@@ -467,10 +472,21 @@ export async function markFresh(key, items) {
 
 export async function scanEvoTracks(paths, onProgress) {
   const mods = (await scanEvoPackages(paths)).filter(i => i.kind === 'track');
+  // Mod tracks in EVO's track list (evotracks.js) are described as the official
+  // ones, so Quick Drive lists them too.
+  const listed = await evoModTracks(paths).catch(err => { log(`evo mod tracks: ${err?.message || err}`); return []; });
+  for (const m of mods) {
+    const t = listed.find(x => x.file === m.path);
+    if (!t) continue;
+    m.evoTrack = { name: t.name, country: t.country, region: t.region };
+    m.layouts = t.layouts.map(l => ({ ...l, preview: m.image, outline: fileUrl(l.outline) }));
+    m.subtitle = [t.region, t.country, 'Packaged mod'].filter(Boolean).join(' · ');
+    m.flag = evoFlag(t.country, t.region);
+  }
   const cat = await evoCatalog(paths, onProgress);
   const official = (cat?.tracks || []).map(t => {
     // `practice` / `race` hold what Quick Drive writes into the Practice and Race/Race Weekend saves.
-    const layouts = t.layouts.map(l => ({ id: l.id, name: l.name, preview: fileUrl(l.image), outline: fileUrl(l.map), practice: l.practice, race: l.race }));
+    const layouts = t.layouts.map(l => ({ id: l.id, name: l.name, preview: fileUrl(l.image), outline: fileUrl(l.map), practice: l.practice, race: l.race, arches: l.arches || [] }));
     return {
       id: t.id, kind: 'track', game: 'evo',
       title: t.name, subtitle: [t.region, t.country].filter(Boolean).join(' · '),
@@ -812,16 +828,34 @@ export async function uninstallItem(item) {
   }
 }
 
+// The Setups tab: a card per car with setups (setups.js reads them; main.js adds
+// the car's name and picture), newest first within each car.
+async function scanSetupCars(game, paths) {
+  const byCar = new Map();
+  for (const s of await scanSetups(game, paths)) {
+    const id = s.car.toLowerCase();
+    if (!byCar.has(id)) byCar.set(id, { id: `setups:${s.car}`, kind: 'setups', game, carId: s.car, title: prettifyId(s.car), subtitle: '', image: '', enabled: true, isMod: false, path: setupFolder(s), setups: [] });
+    byCar.get(id).setups.push(s);
+  }
+  return [...byCar.values()].map(c => {
+    c.setups.sort((a, b) => b.date - a.date);
+    c.date = c.setups[0].date;
+    return c;
+  });
+}
+
 const media = game => ({ screens: p => scanScreenshots(game, p), replays: p => scanReplays(game, p) });
+const setups = game => ({ setups: p => scanSetupCars(game, p) });
 export const SCANNERS = {
-  ac: { cars: scanAcCars, tracks: scanAcTracks, ...media('ac') },
-  acc: { liveries: scanAccLiveries, ...media('acc') },
+  ac: { cars: scanAcCars, tracks: scanAcTracks, ...setups('ac'), ...media('ac') },
+  acc: { liveries: scanAccLiveries, ...setups('acc'), ...media('acc') },
   evo: { cars: scanEvoCars, tracks: scanEvoTracks, liveries: scanEvoLiveries, ...media('evo') },
-  rally: { cars: scanRallyCars, tracks: scanRallyTracks, liveries: scanRallyLiveries, ...media('rally') },
+  rally: { cars: scanRallyCars, tracks: scanRallyTracks, liveries: scanRallyLiveries, ...setups('rally'), ...media('rally') },
 };
 
 export function contentFolder(gameKey, tab, paths) {
   if (tab === 'screens' || tab === 'replays') return mediaFolders(gameKey, paths, tab)[0] || '';
+  if (tab === 'setups') return gameKey === 'rally' ? paths.rally.setups.replace(/\/[^/]+$/, '') : paths[gameKey]?.setups || '';
   switch (gameKey) {
     case 'ac': return paths.ac.content ? join(paths.ac.content, tab) : '';
     case 'acc': return paths.acc.customs ? join(paths.acc.customs, 'Liveries') : '';

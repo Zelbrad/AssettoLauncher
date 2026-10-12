@@ -1,5 +1,5 @@
 {
- "updated": "2026-10-08T17:40:58Z",
+ "updated": "2026-10-12T15:23:24Z",
  "build": "25170642",
  "languages": [
   "en",
@@ -322,7 +322,8 @@
     "fr": "Voiture emblématique des années 60 et 70, la GTA 1300 était capable de gagner sur circuit, en côte et en rallye. Avec ses 163 CV et sa transmission par propulsion, elle fournissait des performances avancées pour son époque.",
     "de": "Der GTA 1300, eine Ikone der 1960er und 1970er, war auf der Rundstrecke, in Bergrennen und in der Rallye erfolgreich. Mit 163 PS und Hinterradantrieb bot er eine für seine Zeit fortschrittliche Leistung.",
     "it": "La GTA 1300, iconica auto degli anni '60 e '70, era capace di vincere su pista, nelle cronoscalate e nel rally. Con 163 cavalli di potenza e la trazione posteriore, offriva prestazioni incredibili per l'epoca."
-   }
+   },
+   "picture": "img/rally/cars/AlfaRomeoGTA1300.webp"
   },
   "AlpineA110": {
    "livery": {
@@ -338,7 +339,8 @@
     "fr": "Icône indiscutable du monde du rallye des années 60, elle a joué un rôle crucial dans la montée en puissance de ce sport. Sa légèreté et ses performances excellentes compensent totalement la complexité et les nécessités techniques requises de son pilotage.",
     "de": "Als unangefochtene Legende der Rallyewelt der 1960er-Jahre spielte dieser Wagen eine Schlüsselrolle im Aufstieg des Rallyesports. Sein geringes Gewicht und seine hervorragende Leistung gleichen die Komplexität und die hohen technischen Anforderungen beim Fahren vollständig aus.",
     "it": "Icona indiscussa del mondo dei rally negli anni '60, contribuì significativamente alla crescita di questo sport. La sua leggerezza e le ottime prestazioni compensavano pienamente la complessità e le elevate esigenze tecniche richieste alla guida."
-   }
+   },
+   "picture": "img/rally/cars/AlpineA110.webp"
   },
   "AudiQuattroGr4": {
    "livery": {
@@ -350,7 +352,8 @@
     "fr": "Avec la Quattro Groupe 4, Audi a révolutionné le monde du rallye. Ce fut la première voiture à transmission intégrale à participer à des compétitions et à les remporter, changeant à jamais l’orientation du développement des voitures de cette catégorie.",
     "de": "Mit dem Quattro Gruppe 4 revolutionierte Audi die Welt des Rallyesports. Es war das erste Fahrzeug mit Allradantrieb, das antrat und gewann, und veränderte damit dauerhaft die Entwicklungsrichtung der Fahrzeuge dieser Kategorie.",
     "it": "Con la Quattro Gruppo 4, Audi ha rivoluzionato il mondo dei rally. È stata la prima vettura a trazione integrale a competere e a vincere, cambiando per sempre la direzione dello sviluppo delle auto di questa categoria."
-   }
+   },
+   "picture": "img/rally/cars/AudiQuattroGr4.webp"
   },
   "CitroenXsaraWRC": {
    "livery": {
@@ -362,7 +365,8 @@
     "fr": "La Citroën Xsara WRC, rendue légendaire par les victoires de Sébastien Loeb, a dominé le rallye de 2000 à 2006 avec son aérodynamisme avancé, sa puissance supérieure à 300 CV et sa fiabilité remarquable.",
     "de": "Der Citroën Xsara WRC wurde durch Sébastien Loebs Siege zur Legende und dominierte von 2000 bis 2006 mit fortschrittlicher Aerodynamik, über 300 PS und bemerkenswerter Zuverlässigkeit.",
     "it": "La Citroën Xsara WRC, resa leggendaria dalle vittorie di Sébastien Loeb, ha dominato il mondo del rally dal 2000 al 2006 grazie alle sue proprietà aerodinamiche avanzate, ai suoi oltre 300 cavalli di potenza e alla sua incredibile affidabilità."
-   }
+   },
+   "picture": "img/rally/cars/CitroenXsaraWRC.webp"
   },
   "Fiat124Abarth": {
    "livery": {
@@ -378,7 +382,8 @@
     "fr": "Symbole de l'ambition de Fiat en rallye, la 124 Abarth Rally 16V a prouvé que de petits constructeurs pouvaient être de sérieux acteurs. Conçue en matériaux ultralégers et dotée d'une transmission par propulsion et de 200 CV, elle affichait d'excellentes performances, ainsi qu'une grande robustesse et fiabilité en compétition.",
     "de": "Der 124 Abarth 16V ist ein Symbol für Fiats Rallye-Ambitionen und bewies, dass auch kleinere Hersteller konkurrenzfähig sein konnten. Gefertigt aus ultraleichten Materialien, mit Heckantrieb und 200 PS, bot er hervorragende Leistung, Haltbarkeit und große Zuverlässigkeit im Wettbewerb.",
     "it": "Simbolo dell'ambizione di Fiat nel rally, la 124 Abarth 16V ha dimostrato che anche i piccoli costruttori potevano essere competitivi. Grazie ai materiali ultraleggeri, al sistema a trazione posteriore e ai 200 cavalli di potenza, offriva ottime prestazioni, resistenza e grande affidabilità in gara."
-   }
+   },
+   "picture": "img/rally/cars/Fiat124Abarth.webp"
   },
   "Fiat131Abarth": {
    "livery": {
@@ -390,7 +395,8 @@
     "fr": "Voiture à propulsion compacte des années 70, dotée de l'emblématique livrée Alitalia et de 245 CV, la Fiat 131 Abarth est une légende du rallye qui a dominé les compétitions jusqu'au début de l'ère du Groupe B.",
     "de": "Der Fiat 131 Abarth, ein kompakter Hecktriebler der 70er mit ikonischer Alitalia-Lackierung und 245 PS, wurde zur Rallye-Legende und dominierte Wettbewerbe bis zum Beginn der Gruppe-B-Ära.",
     "it": "La Fiat 131 Abarth, una compatta a trazione posteriore degli anni '70 con l'iconica livrea Alitalia e 245 cavalli di potenza, divenne una leggenda del rally, dominando le competizioni fino all'inizio dell'era del Gruppo B."
-   }
+   },
+   "picture": "img/rally/cars/Fiat131Abarth.webp"
   },
   "Hyundaii20NRally2": {
    "livery": {
@@ -403,7 +409,8 @@
     "fr": "Voiture parmi les plus populaires de sa catégorie, la Hyundai i20 Rally2 est un véhicule à transmission intégrale turbocompressé aux performances impressionnantes et à la conduite facile. Elle est idéale aussi bien pour les pilotes novices que pour les vétérans à la recherche d'une voiture fiable.",
     "de": "Der Hyundai i20 Rally2, eines der beliebtesten Fahrzeuge seiner Kategorie, ist ein turbogeladener Allradwagen mit hervorragender Leistung und großer Fahrerfreundlichkeit. Er ist sowohl für Einsteiger als auch für erfahrene Fahrer, die ein zuverlässiges Auto suchen, ideal.",
     "it": "La Hyundai i20 Rally2, una delle auto più popolari della sua categoria, è un'auto 4WD con motore turbo dalle prestazioni eccellenti e facile da manovrare. È ideale per i principianti e per i veterani che hanno bisogno di un'auto affidabile."
-   }
+   },
+   "picture": "img/rally/cars/Hyundaii20NRally2.webp"
   },
   "LanciaDeltaIntegraleEvo": {
    "livery": {
@@ -415,7 +422,8 @@
     "fr": "Il est inutile de présenter la Lancia Delta Integrale Evoluzione, véritable légende du rallye. Elle a dominé sans conteste le Groupe A grâce à sa puissance (365 CV), sa conduite (intégrale) et sa robustesse qui lui ont fourni performances extrêmes et fiabilité.",
     "de": "Der Lancia Delta Integrale Evoluzione ist eine wahre Legende des Rallyesports und bedarf keiner Vorstellung. Seine Leistung (365 PS), sein Handling (Allrad) und seine Robustheit kombinierten Stärke mit Zuverlässigkeit und machten ihn zum unangefochtenen Dominator der Gruppe A.",
     "it": "Una vera leggenda del rally, la Lancia Delta Integrale Evoluzione non ha bisogno di presentazioni. Ha dominato in modo indiscusso nel Gruppo A, grazie alla sua potenza (365 cavalli), alla sua manovrabilità (4WD) e alla sua robustezza, ha combinato affidabilità e grandi prestazioni."
-   }
+   },
+   "picture": "img/rally/cars/LanciaDeltaIntegraleEvo.webp"
   },
   "LanciaFulviaHF": {
    "livery": {
@@ -431,7 +439,8 @@
     "fr": "Une voiture iconique des années 70, concentré d'innovations et de résultats de recherche en ingénierie. L'ajout au véhicule d'un différentiel autobloquant mécanique rend sa conduite nerveuse du fait des variations de traction entre les roues avant.",
     "de": "Ein legendäres Auto der 1970er-Jahre und das Ergebnis einer Mischung aus Innovation und ingenieurstechnischer Entwicklungsarbeit. Durch das vordere Sperrdifferenzial reagiert das Fahrzeug aufgrund wechselnder Traktion an der Vorderachse sehr sensibel.",
     "it": "Una vettura iconica degli anni '70, un concentrato di innovazioni e ricerca ingegneristica. L'introduzione del differenziale autobloccante anteriore la rende nervosa alla guida, a causa delle variazioni di trazione tra le ruote anteriori."
-   }
+   },
+   "picture": "img/rally/cars/LanciaFulviaHF.webp"
   },
   "LanciaRally037Evo2": {
    "livery": {
@@ -443,7 +452,8 @@
     "fr": "La 037 Evo a été la dernière voiture à propulsion à prendre le dessus sur les géants légendaires du Groupe B. Son moteur suralimenté de 325 CV, qui la distinguait de ses rivales, lui fournissait une accélération exceptionnelle, idéale pour les courses de rallye.",
     "de": "Der 037 Evo war das letzte heckgetriebene Fahrzeug, das die legendären Giganten der Gruppe B herausforderte und besiegte. Der 325 PS starke Kompressormotor – ein Ausstattungsmerkmal, das ihn von seinen Rivalen abhob – sorgte für eine außergewöhnliche und für den Rallyesport ideale Beschleunigung.",
     "it": "La 037 Evo è stata l'ultima auto a trazione posteriore a sfidare e battere i leggendari giganti del Gruppo B. Il motore sovralimentato da 325 cavalli, caratteristica che la distingueva dalle sue rivali, offriva un'accelerazione eccezionale, ideale per le gare di rally."
-   }
+   },
+   "picture": "img/rally/cars/LanciaRally037Evo2.webp"
   },
   "LanciaStratosHF": {
    "livery": {
@@ -455,7 +465,8 @@
     "fr": "La Lancia Stratos HF avec son moteur Ferrari de 250 CV, sa transmission par propulsion et son design de pointe a dominé le rallye des années 70. Puissante et compliquée à piloter, elle nécessitait un talent exceptionnel qui a conforté son statut de légende du sport automobile.",
     "de": "Der Lancia Stratos HF mit seinem 250 PS starken Ferrari-Motor, Heckantrieb und innovativem Design dominierte den Rallyesport in den 1970er Jahren. Dieses anspruchsvolle Kraftpaket erforderte außergewöhnliches Können und festigte so seinen Status als Motorsportlegende.",
     "it": "La Lancia Stratos HF, con il suo motore Ferrari da 250 cavalli, la trazione posteriore e il design all'avanguardia, ha dominato la scena del rally degli anni '70. Potente ma difficile da guidare, richiedeva abilità eccezionali che cementano il suo status di leggenda degli sport motoristici."
-   }
+   },
+   "picture": "img/rally/cars/LanciaStratosHF.webp"
   },
   "MiniCooperS1275": {
    "livery": {
@@ -471,7 +482,8 @@
     "fr": "Icône des années 60 au style légendaire, la Mini Cooper S est un symbole du rallye de par sa taille compacte, sa puissance et sa technologie avancée. Sa transmission par traction et sa maniabilité remarquable la rendent idéale pour les débutants.",
     "de": "Der Mini Cooper S ist eine Ikone der 1960er und Stillegende und gilt als Symbol des Rallyesports, das mit kompakter Größe, Leistung und fortschrittlicher Technik aufwartet. Sein Frontantrieb und das hervorragende Handling machen ihn ideal für Einsteiger.",
     "it": "Leggenda degli anni '60 e icona di stile, la Mini Cooper S è un simbolo del rally grazie alle sue dimensioni compatte, alla sua potenza e alla sua ingegneria avanzata. La sua trazione anteriore e l'ottima manovrabilità la rendono perfetta per i principianti."
-   }
+   },
+   "picture": "img/rally/cars/MiniCooperS1275.webp"
   },
   "Peugeot206": {
    "livery": {
@@ -486,7 +498,8 @@
     "fr": "La Peugeot 206 WRC compte parmi les voitures les plus emblématiques de la marque française. Équipée de pare-chocs spécialement élargis afin de respecter les dimensions minimales d’homologation de la catégorie reine, elle a réussi à s’imposer et est devenue l’une des voitures les plus désirées par les jeunes, entraînant un essor des ventes de la version routière.",
     "de": "Der Peugeot 206 WRC zählt zu den ikonischsten Fahrzeugen der französischen Marke. Ausgestattet mit eigens vergrößerten Stoßfängern, um die Mindestmaße für die Homologation in der Topklasse zu erfüllen, konnte er gewinnen und wurde zu einem der begehrtesten Autos unter jungen Menschen, was einen Verkaufsboom der Straßenversion auslöste.",
     "it": "La Peugeot 206 WRC è tra le auto più iconiche del marchio francese. Dotata di paraurti appositamente maggiorati per raggiungere le dimensioni minime di omologazione della classe regina, è riuscita a vincere e a diventare una delle auto più desiderate dai giovani, garantendo un boom di vendite per la versione stradale."
-   }
+   },
+   "picture": "img/rally/cars/Peugeot206.webp"
   },
   "Peugeot208Rally4": {
    "livery": {
@@ -498,7 +511,8 @@
     "fr": "La Peugeot 208 Rally4 est une voiture moderne à traction avant, extrêmement agile et réactive. Elle peut être très rapide, mais nécessite une conduite particulièrement fluide afin de maîtriser la rotation rapide de l'essieu arrière et d'éviter les tête-à-queue.",
     "de": "Der Peugeot 208 Rally4 ist ein moderner Fronttriebler, der äußerst agil und reaktionsschnell ist. Er kann sehr schnell sein, erfordert jedoch eine sehr sanfte Fahrweise, um die schnelle Rotation der Hinterachse zu kontrollieren und ein Ausbrechen des Fahrzeugs zu vermeiden.",
     "it": "La Peugeot 208 Rally4 è una moderna auto a trazione anteriore, estremamente agile e reattiva. Sa essere molto veloce, ma richiede una guida molto fluida per gestire le veloci rotazioni dell'asse posteriore ed evitare i testacoda."
-   }
+   },
+   "picture": "img/rally/cars/Peugeot208Rally4.webp"
   },
   "Peugeot306IIMaxiKitCar": {
    "livery": {
@@ -510,7 +524,8 @@
     "fr": "L'une des rares kit-cars à traction avant qui, grâce à son faible poids et à sa puissance exceptionnelle, a réussi à tenir tête, au moins sur les spéciales asphaltées, aux voitures de pointe du World Rally Championship durant la seconde moitié des années 1990.",
     "de": "Eines der wenigen Kit-Cars mit Frontantrieb, das dank seines geringen Gewichts und seiner außergewöhnlichen Leistung zumindest auf Asphalt-Wertungsprüfungen mit den Spitzenfahrzeugen der World Rally Championship in der zweiten Hälfte der 1990er Jahre mithalten konnte.",
     "it": "Una delle poche kit car a trazione anteriore che, grazie al peso ridotto e alla potenza eccezionale, è riuscita a competere — almeno sulle prove speciali asfaltate — con le vetture di punta del World Rally Championship nella seconda metà degli anni ’90."
-   }
+   },
+   "picture": "img/rally/cars/Peugeot306IIMaxiKitCar.webp"
   },
   "SkodaFabiaRSRally2": {
    "livery": {
@@ -522,7 +537,8 @@
     "fr": "La Škoda Fabia RS Rally2 est l'une des voitures les plus utilisées en compétition régionale et nationale ces dernières années. Ses performances équilibrées et son excellente maniabilité en font l'une des meilleures de sa catégorie.",
     "de": "Der Škoda Fabia RS Rally2 ist eines der in den letzten Jahren am häufigsten in regionalen und nationalen Meisterschaften eingesetzten Fahrzeuge. Sein ausgewogenes Leistungsprofil und sein hervorragendes Handling verleihen ihm den Status als einer der besten Wagen seiner Klasse.",
     "it": "La Škoda Fabia RS Rally2 è una delle vetture più utilizzate negli ultimi anni nei campionati regionali e nazionali. Le sue prestazioni equilibrate e la grande maneggevolezza la rendono una delle migliori della categoria."
-   }
+   },
+   "picture": "img/rally/cars/SkodaFabiaRSRally2.webp"
   },
   "SubaruImprezaS3": {
    "livery": {
@@ -538,7 +554,8 @@
     "fr": "L'Impreza S3, introduite en 1993, a remplacé la Legacy dans le programme rallye Groupe A de Subaru. Avec sa légendaire livrée bleue et jaune, elle a révolutionné le World Rally Championship et a été propulsée sur le devant de la scène par le pilote mythique Colin McRae.",
     "de": "Der 1993 eingeführte Impreza S3 ersetzte den Legacy im Gruppe-A-Rallyeprogramm von Subaru. Mit seiner ikonischen blau-gelben Lackierung revolutionierte er die World Rally Championship und wurde durch den legendären Fahrer Colin McRae weltbekannt.",
     "it": "Introdotta nel 1993, l’Impreza S3 ha sostituito la Legacy nel programma rally Gruppo A di Subaru. Con la sua iconica livrea blu e gialla, ha rivoluzionato il World Rally Championship ed è stata portata alla ribalta dal leggendario pilota Colin McRae."
-   }
+   },
+   "picture": "img/rally/cars/SubaruImprezaS3.webp"
   },
   "VWPoloGTIR5": {
    "livery": {
@@ -554,7 +571,8 @@
     "fr": "Présentée pour la première fois en 2018 et développée en étroite collaboration avec Škoda, la Volkswagen Polo GTI R5 est une descendante directe de la Polo R WRC, qui a dominé le Championnat du monde. Homologuée dans l’ancienne catégorie R5, elle a continué à courir dans des championnats régionaux et nationaux du monde entier après le changement de réglementation.",
     "de": "Der Volkswagen Polo GTI R5 wurde 2018 erstmals vorgestellt und in enger Zusammenarbeit mit Škoda entwickelt. Er ist ein direkter Nachfahre des Polo R WRC, der die Weltmeisterschaft dominierte. Für die frühere R5-Kategorie homologiert, trat er nach der Reglementänderung weiterhin in regionalen und nationalen Meisterschaften auf der ganzen Welt an.",
     "it": "Presentata per la prima volta nel 2018 e sviluppata in stretta collaborazione con Škoda, la Volkswagen Polo GTI R5 è una diretta discendente della Polo R WRC, che ha dominato il mondiale. Omologata per la vecchia categoria R5, dopo il cambio regolamentare ha continuato a competere nei campionati regionali e nazionali di tutto il mondo."
-   }
+   },
+   "picture": "img/rally/cars/VWPoloGTIR5.webp"
   }
  },
  "media": {
@@ -741,6 +759,1300 @@
   "WelesS4HafrenSouthFullReverse": {
    "map": "img/rally/stages/WelesS4HafrenSouthFullReverse.png",
    "chip": "img/rally/stages/WelesS4HafrenSouthFullReverse-chip.png"
+  }
+ },
+ "setup": {
+  "groups": {
+   "Wheels": {
+    "en": "Wheels",
+    "es": "Ruedas",
+    "fr": "Roues",
+    "de": "Räder",
+    "it": "Ruote"
+   },
+   "Brakes": {
+    "en": "Brakes",
+    "es": "Frenos",
+    "fr": "Freins",
+    "de": "Bremsen",
+    "it": "Freni"
+   },
+   "Suspensions": {
+    "en": "Suspensions",
+    "es": "Suspensiones",
+    "de": "Federung",
+    "it": "Sospensioni"
+   },
+   "Dampers": {
+    "en": "Dampers",
+    "es": "Amortiguadores",
+    "fr": "Amortisseurs",
+    "de": "Stoßdämpfer",
+    "it": "Ammortizzatori"
+   },
+   "Axles": {
+    "en": "Axles",
+    "es": "Ejes",
+    "fr": "Essieux",
+    "de": "Achsen",
+    "it": "Assi"
+   },
+   "Differentials": {
+    "en": "Differentials",
+    "es": "Diferenciales",
+    "fr": "Différentiels",
+    "de": "Differenziale",
+    "it": "Differenziali"
+   },
+   "Gearbox": {
+    "en": "Gearbox",
+    "es": "Caja de cambios",
+    "fr": "Boîte de vitesse",
+    "de": "Getriebe",
+    "it": "Trasmissione"
+   },
+   "Other": {
+    "en": "Electronics & Aerodynamics",
+    "es": "Electrónica y aerodinámica",
+    "fr": "Équipement électronique et aérodynamisme",
+    "de": "Elektronik & Aerodynamik",
+    "it": "Elettronica e aereodinamica"
+   }
+  },
+  "positions": {
+   "FrontLeft": {
+    "en": "Front Left",
+    "es": "Delant. izq.",
+    "fr": "Avant gauche",
+    "de": "Vorne links",
+    "it": "Anteriore sinistro"
+   },
+   "FrontRight": {
+    "en": "Front Right",
+    "es": "Delant. der.",
+    "fr": "Avant droite",
+    "de": "Vorne rechts",
+    "it": "Anteriore destro"
+   },
+   "RearLeft": {
+    "en": "Rear Left",
+    "es": "Tras. izq.",
+    "fr": "Arrière gauche",
+    "de": "Hinten links",
+    "it": "Posteriore sinistro"
+   },
+   "RearRight": {
+    "en": "Rear Right",
+    "es": "Tras. der.",
+    "fr": "Arrière droit",
+    "de": "Hinten rechts",
+    "it": "Posteriore destro"
+   },
+   "Front": {
+    "en": "Front",
+    "es": "Frontal",
+    "fr": "Avant",
+    "it": "Anteriore"
+   },
+   "Rear": {
+    "en": "Rear",
+    "es": "Trasero",
+    "fr": "Arrière",
+    "de": "Heck",
+    "it": "Posteriore"
+   },
+   "Steering": {
+    "en": "Steering",
+    "es": "Girar",
+    "fr": "Direction",
+    "de": "Lenkung",
+    "it": "Sterzo"
+   },
+   "Electronic": {
+    "en": "Electronics",
+    "es": "Electrónica",
+    "fr": "Équipement électronique",
+    "de": "Elektronik",
+    "it": "Dispositivi elettronici"
+   },
+   "Lights": {
+    "en": "Lights",
+    "es": "Luces",
+    "fr": "Phares",
+    "de": "Scheinwerfer",
+    "it": "Fari"
+   }
+  },
+  "settings": {
+   "TyrePressure": {
+    "en": "Pressure",
+    "es": "Presión",
+    "fr": "Pression des pneus",
+    "de": "Druck",
+    "it": "Pressione"
+   },
+   "Camber": {
+    "en": "Camber",
+    "es": "Ángulo de caída",
+    "fr": "Angle de carrossage",
+    "de": "Sturz",
+    "it": "Campanatura"
+   },
+   "Toe": {
+    "en": "Toe",
+    "es": "Convergencia",
+    "fr": "Pincement et ouverture",
+    "de": "Spur",
+    "it": "Convergenza"
+   },
+   "FFBPlayerMultiplier": {
+    "en": "FFB Multiplier",
+    "es": "Multiplicador de FFB",
+    "fr": "Multiplicateur FFB",
+    "de": "FFB-Multiplikator",
+    "it": "Moltiplicatore FFB"
+   },
+   "FrontBias": {
+    "en": "Front Bias",
+    "es": "Balance frontal",
+    "fr": "Répartition avant",
+    "de": "Vorverlegte Bremskraftverteilung",
+    "it": "Bilanciamento frontale"
+   },
+   "HandbrakeForce": {
+    "en": "Handbrake Force",
+    "es": "Fuerza del freno de mano",
+    "fr": "Force du frein à main",
+    "de": "Handbremskraft",
+    "it": "Forza del freno a mano"
+   },
+   "MasterCylinder": {
+    "en": "Master Cylinder",
+    "es": "Cilindro maestro",
+    "fr": "Maître-cylindre",
+    "de": "Hauptbremszylinder",
+    "it": "Pompa freno"
+   },
+   "MasterCylinderFront": {
+    "en": "Front Cylinder",
+    "es": "Cilindro delantero",
+    "fr": "Maître-cylindre avant",
+    "de": "Hauptbremszylinder vorne",
+    "it": "Cilindro maestro anteriore"
+   },
+   "MasterCylinderRear": {
+    "en": "Rear Cylinder",
+    "es": "Cilindro trasero",
+    "fr": "Maître-cylindre arrière",
+    "de": "Hauptbremszylinder hinten",
+    "it": "Cilindro maestro posteriore"
+   },
+   "ProportioningPreload": {
+    "en": "Proportioning Preload",
+    "es": "Precarga proporcional",
+    "fr": "Précharge de la valve de proportion",
+    "de": "Voreinstellung der Bremskraftverteilung",
+    "it": "Precarico proporzionale"
+   },
+   "ProportioningRatio": {
+    "en": "Proportioning Ratio",
+    "es": "Relación proporcional",
+    "fr": "Rapport de proportion",
+    "de": "Bremskraftverhältnis",
+    "it": "Rapporto proporzionale"
+   },
+   "Disc": {
+    "en": "Discs",
+    "es": "Discos",
+    "fr": "Disques de frein",
+    "de": "Bremsscheiben",
+    "it": "Dischi"
+   },
+   "Caliper": {
+    "en": "Calipers",
+    "es": "Pinzas de freno",
+    "fr": "Étriers",
+    "de": "Bremssättel",
+    "it": "Pinze"
+   },
+   "PadCompound": {
+    "en": "Pads/Shoe",
+    "es": "Pastillas/zapatas",
+    "fr": "Plaquettes/Mâchoires",
+    "de": "Bremsbeläge/Bremsbacken",
+    "it": "Pastiglie/Ganasce"
+   },
+   "AdjusterRing": {
+    "en": "Adjuster ring",
+    "es": "Anillo de ajuste",
+    "fr": "Bague de réglage",
+    "de": "Einstellring",
+    "it": "Anello di regolazione"
+   },
+   "SpringStiffness": {
+    "en": "Spring Stiffness",
+    "es": "Rigidez de los muelles",
+    "fr": "Rigidité du ressort",
+    "de": "Federsteifigkeit",
+    "it": "Rigidità della molla"
+   },
+   "SlowBump": {
+    "en": "Slow Bump",
+    "es": "Tope lento",
+    "fr": "Butée lente",
+    "de": "Langsame Druckstufe",
+    "it": "Compressione lenta"
+   },
+   "SlowRebound": {
+    "en": "Slow Rebound",
+    "es": "Rebote lento",
+    "fr": "Détente lente",
+    "de": "Langsame Zugstufe",
+    "it": "Estensione lenta"
+   },
+   "FastBump": {
+    "en": "Fast Bump",
+    "es": "Tope rápido",
+    "fr": "Butée rapide",
+    "de": "Schnelle Druckstufe",
+    "it": "Compressione veloce"
+   },
+   "FastRebound": {
+    "en": "Fast Rebound",
+    "es": "Rebote rápido",
+    "fr": "Détente rapide",
+    "it": "Estensione veloce"
+   },
+   "BumpTransition": {
+    "en": "Bump Transition",
+    "es": "Velocidad umbral del tope",
+    "fr": "Transition de compression",
+    "de": "Stoßübergang",
+    "it": "Variazione di compressione"
+   },
+   "ReboundTransition": {
+    "en": "Rebound Transition",
+    "es": "Transición de rebote",
+    "fr": "Transition de détente",
+    "it": "Variazione in estensione"
+   },
+   "ARBStiffness": {
+    "en": "Anti-roll Bar Stiffness",
+    "es": "Barra estabilizadora",
+    "fr": "Rigidité de la barre antiroulis",
+    "de": "Stabilisatorsteifigkeit",
+    "it": "Rigidità barra antirollio"
+   },
+   "DifferentialRatio": {
+    "en": "Differential Ratio",
+    "es": "Relación de diferencial",
+    "fr": "Rapport de différentiel",
+    "de": "Differenzialübersetzung",
+    "it": "Rapporto differenziale"
+   },
+   "CentreDifferentialRatio": {
+    "en": "Center Differential Ratio",
+    "es": "Relación de diferencial central",
+    "fr": "Rapport du différentiel central",
+    "de": "Mitteldifferenzial-Übersetzung",
+    "it": "Rapporto differenziale centrale"
+   },
+   "CentreRatioToRear": {
+    "en": "Center Ratio to Rear",
+    "es": "Relación central a trasera",
+    "fr": "Rapport de couple centre/arrière",
+    "it": "Rapporto centro/parte posteriore"
+   },
+   "LSDRamps": {
+    "en": "LSD Power/Coast Ramp",
+    "es": "Rampa de potencia/inercia LSD",
+    "fr": "Rampe d'accélération/décélération du différentiel à glissement limité",
+    "it": "Angolo di rampa in accelerazione/rilascio del differenziale autobloccante"
+   },
+   "LSDPreload": {
+    "en": "LSD Preload",
+    "es": "Precarga del LSD",
+    "fr": "Précharge du différentiel à glissement limité",
+    "de": "LSD-Vorspannung",
+    "it": "Precarico differenziale autobloccante"
+   },
+   "LSDFrictionPlates": {
+    "en": "Plates number",
+    "es": "Número de placas",
+    "fr": "Nombre de disques",
+    "de": "Scheibenanzahl",
+    "it": "Numero di piastre"
+   },
+   "GearsSet": {
+    "en": "Gear set",
+    "es": "Conjunto de cambios",
+    "fr": "Ensemble de rapports",
+    "de": "Getriebesatz",
+    "it": "Set di ingranaggi"
+   },
+   "GearPrimary": {
+    "en": "Primary Gear",
+    "es": "Engranaje primario",
+    "fr": "Engrenage principal",
+    "de": "Primärgetriebe",
+    "it": "Ingranaggio primario"
+   },
+   "ABS": {
+    "en": "ABS Map",
+    "es": "Sistema de ABS",
+    "fr": "Cartographie de l'ABS",
+    "de": "ABS-Kennfeld",
+    "it": "Mappa ABS"
+   },
+   "TCS": {
+    "en": "TCS Map",
+    "es": "Sist. de control de tracción",
+    "fr": "Cartographie du SCT",
+    "de": "TCS-Kennfeld",
+    "it": "Mappa TCS"
+   },
+   "EngineMap": {
+    "en": "Engine Map",
+    "es": "Programa del motor",
+    "fr": "Cartographie moteur",
+    "de": "Motorkennfeld",
+    "it": "Mappa motore"
+   },
+   "ThrottleMap": {
+    "en": "Throttle Map",
+    "es": "Programa de acelerador",
+    "fr": "Cartographie d'accélérateur",
+    "de": "Gaspedal-Kennfeld",
+    "it": "Mappa acceleratore"
+   },
+   "AdditionalLights": {
+    "en": "Additional Lights",
+    "es": "Luces adicionales",
+    "fr": "Phares additionnels",
+    "de": "Zusätzliche Beleuchtung",
+    "it": "Fari aggiuntivi"
+   }
+  }
+ },
+ "ai": {
+  "AlsaceS2MunsterFullForward": {
+   "AlfaRomeoGTA1300": 360950,
+   "AlpineA110": 327933,
+   "AudiQuattroGr4": 319305,
+   "CitroenXsaraWRC": 310256,
+   "Fiat124Abarth": 361215,
+   "Fiat131Abarth": 344728,
+   "Hyundaii20NRally2": 309019,
+   "LanciaDeltaIntegraleEvo": 306956,
+   "LanciaFulviaHF": 354212,
+   "LanciaRally037Evo2": 331320,
+   "LanciaStratosHF": 335267,
+   "MiniCooperS1275": 377316,
+   "Peugeot206": 305558,
+   "Peugeot208Rally4": 333278,
+   "Peugeot306IIMaxiKitCar": 304404,
+   "SkodaFabiaRSRally2": 293576,
+   "SubaruImprezaS3": 319586,
+   "VWPoloGTIR5": 313702
+  },
+  "AlsaceS2MunsterFullReverse": {
+   "AlfaRomeoGTA1300": 345503,
+   "AlpineA110": 316424,
+   "AudiQuattroGr4": 322408,
+   "CitroenXsaraWRC": 304345,
+   "Fiat124Abarth": 343491,
+   "Fiat131Abarth": 341700,
+   "Hyundaii20NRally2": 303268,
+   "LanciaDeltaIntegraleEvo": 324624,
+   "LanciaFulviaHF": 338789,
+   "LanciaRally037Evo2": 324624,
+   "LanciaStratosHF": 328839,
+   "MiniCooperS1275": 364163,
+   "Peugeot206": 307617,
+   "Peugeot208Rally4": 321270,
+   "Peugeot306IIMaxiKitCar": 299300,
+   "SkodaFabiaRSRally2": 297209,
+   "SubaruImprezaS3": 310066,
+   "VWPoloGTIR5": 309449
+  },
+  "AlsaceS2MunsterShort1Forward": {
+   "AlfaRomeoGTA1300": 250977,
+   "AlpineA110": 227541,
+   "AudiQuattroGr4": 222277,
+   "CitroenXsaraWRC": 218114,
+   "Fiat124Abarth": 252234,
+   "Fiat131Abarth": 243894,
+   "Hyundaii20NRally2": 216466,
+   "LanciaDeltaIntegraleEvo": 217237,
+   "LanciaFulviaHF": 248033,
+   "LanciaRally037Evo2": 232681,
+   "LanciaStratosHF": 237868,
+   "MiniCooperS1275": 269042,
+   "Peugeot206": 212298,
+   "Peugeot208Rally4": 229012,
+   "Peugeot306IIMaxiKitCar": 215997,
+   "SkodaFabiaRSRally2": 206136,
+   "SubaruImprezaS3": 220922,
+   "VWPoloGTIR5": 215239
+  },
+  "AlsaceS2MunsterShort1Reverse": {
+   "AlfaRomeoGTA1300": 229545,
+   "AlpineA110": 214447,
+   "AudiQuattroGr4": 214486,
+   "CitroenXsaraWRC": 206693,
+   "Fiat124Abarth": 232681,
+   "Fiat131Abarth": 225129,
+   "Hyundaii20NRally2": 208922,
+   "LanciaDeltaIntegraleEvo": 216097,
+   "LanciaFulviaHF": 225394,
+   "LanciaRally037Evo2": 215472,
+   "LanciaStratosHF": 226158,
+   "MiniCooperS1275": 238696,
+   "Peugeot206": 201231,
+   "Peugeot208Rally4": 213956,
+   "Peugeot306IIMaxiKitCar": 204267,
+   "SkodaFabiaRSRally2": 197849,
+   "SubaruImprezaS3": 209256,
+   "VWPoloGTIR5": 205355
+  },
+  "AlsaceS2MunsterShort2Forward": {
+   "AlfaRomeoGTA1300": 175233,
+   "AlpineA110": 160852,
+   "AudiQuattroGr4": 155760,
+   "CitroenXsaraWRC": 154563,
+   "Fiat124Abarth": 175866,
+   "Fiat131Abarth": 171656,
+   "Hyundaii20NRally2": 154389,
+   "LanciaDeltaIntegraleEvo": 151838,
+   "LanciaFulviaHF": 177205,
+   "LanciaRally037Evo2": 161244,
+   "LanciaStratosHF": 163029,
+   "MiniCooperS1275": 186088,
+   "Peugeot206": 150560,
+   "Peugeot208Rally4": 168806,
+   "Peugeot306IIMaxiKitCar": 150877,
+   "SkodaFabiaRSRally2": 145183,
+   "SubaruImprezaS3": 157563,
+   "VWPoloGTIR5": 157783
+  },
+  "AlsaceS2MunsterShort2Reverse": {
+   "AlfaRomeoGTA1300": 179791,
+   "AlpineA110": 163771,
+   "AudiQuattroGr4": 161877,
+   "CitroenXsaraWRC": 156796,
+   "Fiat124Abarth": 180774,
+   "Fiat131Abarth": 176374,
+   "Hyundaii20NRally2": 157100,
+   "LanciaDeltaIntegraleEvo": 157064,
+   "LanciaFulviaHF": 177874,
+   "LanciaRally037Evo2": 166121,
+   "LanciaStratosHF": 168002,
+   "MiniCooperS1275": 194027,
+   "Peugeot206": 155896,
+   "Peugeot208Rally4": 166667,
+   "Peugeot306IIMaxiKitCar": 156129,
+   "SkodaFabiaRSRally2": 152264,
+   "SubaruImprezaS3": 160840,
+   "VWPoloGTIR5": 158737
+  },
+  "AlsaceS4SaverneFullForward": {
+   "AlfaRomeoGTA1300": 305905,
+   "AlpineA110": 274696,
+   "AudiQuattroGr4": 278983,
+   "CitroenXsaraWRC": 265749,
+   "Fiat124Abarth": 309869,
+   "Fiat131Abarth": 297903,
+   "Hyundaii20NRally2": 261178,
+   "LanciaDeltaIntegraleEvo": 262433,
+   "LanciaFulviaHF": 296111,
+   "LanciaRally037Evo2": 278661,
+   "LanciaStratosHF": 285802,
+   "MiniCooperS1275": 318112,
+   "Peugeot206": 263315,
+   "Peugeot208Rally4": 280240,
+   "Peugeot306IIMaxiKitCar": 259485,
+   "SkodaFabiaRSRally2": 254306,
+   "SubaruImprezaS3": 274294,
+   "VWPoloGTIR5": 270846
+  },
+  "AlsaceS4SaverneFullReverse": {
+   "AlfaRomeoGTA1300": 302010,
+   "AlpineA110": 273168,
+   "AudiQuattroGr4": 275933,
+   "CitroenXsaraWRC": 263066,
+   "Fiat124Abarth": 299393,
+   "Fiat131Abarth": 293440,
+   "Hyundaii20NRally2": 259624,
+   "LanciaDeltaIntegraleEvo": 261559,
+   "LanciaFulviaHF": 292312,
+   "LanciaRally037Evo2": 275231,
+   "LanciaStratosHF": 282454,
+   "MiniCooperS1275": 313802,
+   "Peugeot206": 262573,
+   "Peugeot208Rally4": 278154,
+   "Peugeot306IIMaxiKitCar": 255328,
+   "SkodaFabiaRSRally2": 251596,
+   "SubaruImprezaS3": 266370,
+   "VWPoloGTIR5": 266437
+  },
+  "AlsaceS4SaverneShort1Forward": {
+   "AlfaRomeoGTA1300": 162802,
+   "AlpineA110": 146818,
+   "AudiQuattroGr4": 144193,
+   "CitroenXsaraWRC": 141903,
+   "Fiat124Abarth": 162052,
+   "Fiat131Abarth": 159777,
+   "Hyundaii20NRally2": 138930,
+   "LanciaDeltaIntegraleEvo": 138892,
+   "LanciaFulviaHF": 158261,
+   "LanciaRally037Evo2": 147320,
+   "LanciaStratosHF": 150050,
+   "MiniCooperS1275": 167621,
+   "Peugeot206": 138293,
+   "Peugeot208Rally4": 150235,
+   "Peugeot306IIMaxiKitCar": 136871,
+   "SkodaFabiaRSRally2": 134066,
+   "SubaruImprezaS3": 143330,
+   "VWPoloGTIR5": 141729
+  },
+  "AlsaceS4SaverneShort1Reverse": {
+   "AlfaRomeoGTA1300": 165792,
+   "AlpineA110": 145901,
+   "AudiQuattroGr4": 146582,
+   "CitroenXsaraWRC": 142267,
+   "Fiat124Abarth": 161160,
+   "Fiat131Abarth": 159380,
+   "Hyundaii20NRally2": 140541,
+   "LanciaDeltaIntegraleEvo": 140950,
+   "LanciaFulviaHF": 158895,
+   "LanciaRally037Evo2": 150230,
+   "LanciaStratosHF": 151689,
+   "MiniCooperS1275": 170262,
+   "Peugeot206": 142352,
+   "Peugeot208Rally4": 151987,
+   "Peugeot306IIMaxiKitCar": 138937,
+   "SkodaFabiaRSRally2": 135219,
+   "SubaruImprezaS3": 145537,
+   "VWPoloGTIR5": 142767
+  },
+  "MonteCarloS1BolleneFullForward": {
+   "AlfaRomeoGTA1300": 779860,
+   "AlpineA110": 769895,
+   "AudiQuattroGr4": 754071,
+   "CitroenXsaraWRC": 702996,
+   "Fiat124Abarth": 777403,
+   "Fiat131Abarth": 766486,
+   "Hyundaii20NRally2": 709793,
+   "LanciaDeltaIntegraleEvo": 733526,
+   "LanciaFulviaHF": 778686,
+   "LanciaRally037Evo2": 720182,
+   "LanciaStratosHF": 739084,
+   "MiniCooperS1275": 792176,
+   "Peugeot206": 723553,
+   "Peugeot208Rally4": 727361,
+   "Peugeot306IIMaxiKitCar": 698740,
+   "SkodaFabiaRSRally2": 667043,
+   "SubaruImprezaS3": 719651,
+   "VWPoloGTIR5": 712830
+  },
+  "MonteCarloS1BolleneFullReverse": {
+   "AlfaRomeoGTA1300": 758749,
+   "AlpineA110": 754065,
+   "AudiQuattroGr4": 776905,
+   "CitroenXsaraWRC": 692797,
+   "Fiat124Abarth": 755926,
+   "Fiat131Abarth": 747295,
+   "Hyundaii20NRally2": 692743,
+   "LanciaDeltaIntegraleEvo": 731687,
+   "LanciaFulviaHF": 763496,
+   "LanciaRally037Evo2": 719004,
+   "LanciaStratosHF": 734417,
+   "MiniCooperS1275": 799571,
+   "Peugeot206": 732135,
+   "Peugeot208Rally4": 724351,
+   "Peugeot306IIMaxiKitCar": 693334,
+   "SkodaFabiaRSRally2": 674625,
+   "SubaruImprezaS3": 717529,
+   "VWPoloGTIR5": 721269
+  },
+  "MonteCarloS1BolleneCut1Forward": {
+   "AlfaRomeoGTA1300": 551198,
+   "AlpineA110": 547641,
+   "AudiQuattroGr4": 526182,
+   "CitroenXsaraWRC": 490866,
+   "Fiat124Abarth": 549603,
+   "Fiat131Abarth": 543900,
+   "Hyundaii20NRally2": 487549,
+   "LanciaDeltaIntegraleEvo": 510451,
+   "LanciaFulviaHF": 553712,
+   "LanciaRally037Evo2": 532358,
+   "LanciaStratosHF": 531052,
+   "MiniCooperS1275": 580273,
+   "Peugeot206": 508736,
+   "Peugeot208Rally4": 519486,
+   "Peugeot306IIMaxiKitCar": 497676,
+   "SkodaFabiaRSRally2": 480801,
+   "SubaruImprezaS3": 505895,
+   "VWPoloGTIR5": 500423
+  },
+  "WelesS4HafrenSouthFullForward": {
+   "AlfaRomeoGTA1300": 201074,
+   "AlpineA110": 195055,
+   "AudiQuattroGr4": 189709,
+   "CitroenXsaraWRC": 185909,
+   "Fiat124Abarth": 209983,
+   "Fiat131Abarth": 196668,
+   "Hyundaii20NRally2": 179797,
+   "LanciaDeltaIntegraleEvo": 180590,
+   "LanciaFulviaHF": 198768,
+   "LanciaRally037Evo2": 198494,
+   "LanciaStratosHF": 199758,
+   "MiniCooperS1275": 206239,
+   "Peugeot206": 177827,
+   "Peugeot208Rally4": 194144,
+   "Peugeot306IIMaxiKitCar": 183910,
+   "SkodaFabiaRSRally2": 174663,
+   "SubaruImprezaS3": 182108,
+   "VWPoloGTIR5": 182780
+  },
+  "WelesS4HafrenSouthFullReverse": {
+   "AlfaRomeoGTA1300": 207277,
+   "AlpineA110": 200741,
+   "AudiQuattroGr4": 189840,
+   "CitroenXsaraWRC": 190074,
+   "Fiat124Abarth": 210511,
+   "Fiat131Abarth": 203382,
+   "Hyundaii20NRally2": 183258,
+   "LanciaDeltaIntegraleEvo": 180837,
+   "LanciaFulviaHF": 207306,
+   "LanciaRally037Evo2": 199348,
+   "LanciaStratosHF": 204184,
+   "MiniCooperS1275": 210381,
+   "Peugeot206": 184956,
+   "Peugeot208Rally4": 202098,
+   "Peugeot306IIMaxiKitCar": 187871,
+   "SkodaFabiaRSRally2": 174798,
+   "SubaruImprezaS3": 185071,
+   "VWPoloGTIR5": 183157
+  },
+  "MonteCarloS1BolleneCut2Forward": {
+   "AlfaRomeoGTA1300": 224425,
+   "AlpineA110": 221828,
+   "AudiQuattroGr4": 215985,
+   "CitroenXsaraWRC": 202954,
+   "Fiat124Abarth": 223275,
+   "Fiat131Abarth": 221327,
+   "Hyundaii20NRally2": 203951,
+   "LanciaDeltaIntegraleEvo": 215594,
+   "LanciaFulviaHF": 225923,
+   "LanciaRally037Evo2": 219979,
+   "LanciaStratosHF": 222115,
+   "MiniCooperS1275": 236220,
+   "Peugeot206": 205402,
+   "Peugeot208Rally4": 213420,
+   "Peugeot306IIMaxiKitCar": 203114,
+   "SkodaFabiaRSRally2": 192980,
+   "SubaruImprezaS3": 209898,
+   "VWPoloGTIR5": 205920
+  },
+  "MonteCarloS1BolleneCut2Reverse": {
+   "AlfaRomeoGTA1300": 234081,
+   "AlpineA110": 226850,
+   "AudiQuattroGr4": 220698,
+   "CitroenXsaraWRC": 208353,
+   "Fiat124Abarth": 232503,
+   "Fiat131Abarth": 226671,
+   "Hyundaii20NRally2": 208186,
+   "LanciaDeltaIntegraleEvo": 217283,
+   "LanciaFulviaHF": 234341,
+   "LanciaRally037Evo2": 215748,
+   "LanciaStratosHF": 221975,
+   "MiniCooperS1275": 246439,
+   "Peugeot206": 208826,
+   "Peugeot208Rally4": 219567,
+   "Peugeot306IIMaxiKitCar": 208704,
+   "SkodaFabiaRSRally2": 195286,
+   "SubaruImprezaS3": 223590,
+   "VWPoloGTIR5": 212954
+  },
+  "MonteCarloS1BolleneCut3Forward": {
+   "AlfaRomeoGTA1300": 233869,
+   "AlpineA110": 233204,
+   "AudiQuattroGr4": 220589,
+   "CitroenXsaraWRC": 211996,
+   "Fiat124Abarth": 233996,
+   "Fiat131Abarth": 229486,
+   "Hyundaii20NRally2": 212532,
+   "LanciaDeltaIntegraleEvo": 222503,
+   "LanciaFulviaHF": 237597,
+   "LanciaRally037Evo2": 216734,
+   "LanciaStratosHF": 222185,
+   "MiniCooperS1275": 243474,
+   "Peugeot206": 212497,
+   "Peugeot208Rally4": 221546,
+   "Peugeot306IIMaxiKitCar": 212471,
+   "SkodaFabiaRSRally2": 203838,
+   "SubaruImprezaS3": 216787,
+   "VWPoloGTIR5": 211169
+  },
+  "MonteCarloS1BolleneCut3Reverse": {
+   "AlfaRomeoGTA1300": 224616,
+   "AlpineA110": 225556,
+   "AudiQuattroGr4": 222797,
+   "CitroenXsaraWRC": 208428,
+   "Fiat124Abarth": 226794,
+   "Fiat131Abarth": 223213,
+   "Hyundaii20NRally2": 208120,
+   "LanciaDeltaIntegraleEvo": 218365,
+   "LanciaFulviaHF": 233072,
+   "LanciaRally037Evo2": 216368,
+   "LanciaStratosHF": 218802,
+   "MiniCooperS1275": 239807,
+   "Peugeot206": 210922,
+   "Peugeot208Rally4": 215435,
+   "Peugeot306IIMaxiKitCar": 211168,
+   "SkodaFabiaRSRally2": 200479,
+   "SubaruImprezaS3": 216781,
+   "VWPoloGTIR5": 212241
+  },
+  "MonteCarloS1BolleneCut1Reverse": {
+   "AlfaRomeoGTA1300": 534567,
+   "AlpineA110": 477421,
+   "AudiQuattroGr4": 532616,
+   "CitroenXsaraWRC": 498860,
+   "Fiat124Abarth": 536456,
+   "Fiat131Abarth": 533831,
+   "Hyundaii20NRally2": 495165,
+   "LanciaDeltaIntegraleEvo": 515916,
+   "LanciaFulviaHF": 538176,
+   "LanciaRally037Evo2": 509043,
+   "LanciaStratosHF": 523867,
+   "MiniCooperS1275": 556471,
+   "Peugeot206": 508451,
+   "Peugeot208Rally4": 510384,
+   "Peugeot306IIMaxiKitCar": 491925,
+   "SkodaFabiaRSRally2": 478140,
+   "SubaruImprezaS3": 501205,
+   "VWPoloGTIR5": 504916
+  },
+  "WelesS3HafrenNorthFullForward": {
+   "AlfaRomeoGTA1300": 465989,
+   "AlpineA110": 442003,
+   "AudiQuattroGr4": 431767,
+   "CitroenXsaraWRC": 418674,
+   "Fiat124Abarth": 477382,
+   "Fiat131Abarth": 456374,
+   "Hyundaii20NRally2": 410266,
+   "LanciaDeltaIntegraleEvo": 411748,
+   "LanciaFulviaHF": 454360,
+   "LanciaRally037Evo2": 456926,
+   "LanciaStratosHF": 457086,
+   "MiniCooperS1275": 472020,
+   "Peugeot206": 403369,
+   "Peugeot208Rally4": 446491,
+   "Peugeot306IIMaxiKitCar": 418798,
+   "SkodaFabiaRSRally2": 401280,
+   "SubaruImprezaS3": 404228,
+   "VWPoloGTIR5": 405503
+  },
+  "WelesS3HafrenNorthFullReverse": {
+   "AlfaRomeoGTA1300": 471085,
+   "AlpineA110": 447081,
+   "AudiQuattroGr4": 435975,
+   "CitroenXsaraWRC": 419284,
+   "Fiat124Abarth": 476833,
+   "Fiat131Abarth": 458377,
+   "Hyundaii20NRally2": 409346,
+   "LanciaDeltaIntegraleEvo": 404528,
+   "LanciaFulviaHF": 458253,
+   "LanciaRally037Evo2": 451451,
+   "LanciaStratosHF": 446654,
+   "MiniCooperS1275": 469427,
+   "Peugeot206": 407287,
+   "Peugeot208Rally4": 447475,
+   "Peugeot306IIMaxiKitCar": 424453,
+   "SkodaFabiaRSRally2": 403974,
+   "SubaruImprezaS3": 412478,
+   "VWPoloGTIR5": 411922
+  },
+  "WelesS3HafrenNorthCut1Forward": {
+   "AlfaRomeoGTA1300": 252943,
+   "AlpineA110": 240999,
+   "AudiQuattroGr4": 234416,
+   "CitroenXsaraWRC": 227460,
+   "Fiat124Abarth": 257666,
+   "Fiat131Abarth": 245049,
+   "Hyundaii20NRally2": 228657,
+   "LanciaDeltaIntegraleEvo": 220390,
+   "LanciaFulviaHF": 248204,
+   "LanciaRally037Evo2": 243739,
+   "LanciaStratosHF": 246571,
+   "MiniCooperS1275": 256783,
+   "Peugeot206": 221224,
+   "Peugeot208Rally4": 243330,
+   "Peugeot306IIMaxiKitCar": 226070,
+   "SkodaFabiaRSRally2": 219111,
+   "SubaruImprezaS3": 221866,
+   "VWPoloGTIR5": 221824
+  },
+  "WelesS3HafrenNorthCut1Reverse": {
+   "AlfaRomeoGTA1300": 254358,
+   "AlpineA110": 245350,
+   "AudiQuattroGr4": 236600,
+   "CitroenXsaraWRC": 225525,
+   "Fiat124Abarth": 257141,
+   "Fiat131Abarth": 247723,
+   "Hyundaii20NRally2": 222230,
+   "LanciaDeltaIntegraleEvo": 220124,
+   "LanciaFulviaHF": 250980,
+   "LanciaRally037Evo2": 247376,
+   "LanciaStratosHF": 248068,
+   "MiniCooperS1275": 260515,
+   "Peugeot206": 225164,
+   "Peugeot208Rally4": 243397,
+   "Peugeot306IIMaxiKitCar": 229818,
+   "SkodaFabiaRSRally2": 218207,
+   "SubaruImprezaS3": 226283,
+   "VWPoloGTIR5": 223456
+  },
+  "WelesS3HafrenNorthCut2Forward": {
+   "AlfaRomeoGTA1300": 225513,
+   "AlpineA110": 211242,
+   "AudiQuattroGr4": 207886,
+   "CitroenXsaraWRC": 200216,
+   "Fiat124Abarth": 228259,
+   "Fiat131Abarth": 217392,
+   "Hyundaii20NRally2": 198217,
+   "LanciaDeltaIntegraleEvo": 196977,
+   "LanciaFulviaHF": 220269,
+   "LanciaRally037Evo2": 218777,
+   "LanciaStratosHF": 218523,
+   "MiniCooperS1275": 224264,
+   "Peugeot206": 199131,
+   "Peugeot208Rally4": 217197,
+   "Peugeot306IIMaxiKitCar": 205848,
+   "SkodaFabiaRSRally2": 190446,
+   "SubaruImprezaS3": 197267,
+   "VWPoloGTIR5": 195711
+  },
+  "WelesS3HafrenNorthCut2Reverse": {
+   "AlfaRomeoGTA1300": 227002,
+   "AlpineA110": 214060,
+   "AudiQuattroGr4": 213978,
+   "CitroenXsaraWRC": 204822,
+   "Fiat124Abarth": 230204,
+   "Fiat131Abarth": 221309,
+   "Hyundaii20NRally2": 198072,
+   "LanciaDeltaIntegraleEvo": 199056,
+   "LanciaFulviaHF": 223542,
+   "LanciaRally037Evo2": 217783,
+   "LanciaStratosHF": 221784,
+   "MiniCooperS1275": 221834,
+   "Peugeot206": 203627,
+   "Peugeot208Rally4": 217026,
+   "Peugeot306IIMaxiKitCar": 206133,
+   "SkodaFabiaRSRally2": 193119,
+   "SubaruImprezaS3": 201736,
+   "VWPoloGTIR5": 203922
+  },
+  "LivignoTestTrack01FullForward": {
+   "AlfaRomeoGTA1300": 51760,
+   "AlpineA110": 51135,
+   "AudiQuattroGr4": 53628,
+   "CitroenXsaraWRC": 48553,
+   "Fiat124Abarth": 51889,
+   "Fiat131Abarth": 51666,
+   "Hyundaii20NRally2": 47236,
+   "LanciaDeltaIntegraleEvo": 48215,
+   "LanciaFulviaHF": 55727,
+   "LanciaRally037Evo2": 53223,
+   "LanciaStratosHF": 50892,
+   "MiniCooperS1275": 51846,
+   "Peugeot206": 51727,
+   "Peugeot208Rally4": 51831,
+   "Peugeot306IIMaxiKitCar": 55469,
+   "SkodaFabiaRSRally2": 51473,
+   "SubaruImprezaS3": 53148,
+   "VWPoloGTIR5": 49212
+  },
+  "LivignoTestTrack01FullReverse": {
+   "AlfaRomeoGTA1300": 50928,
+   "AlpineA110": 50770,
+   "AudiQuattroGr4": 54012,
+   "CitroenXsaraWRC": 47469,
+   "Fiat124Abarth": 51292,
+   "Fiat131Abarth": 50628,
+   "Hyundaii20NRally2": 47331,
+   "LanciaDeltaIntegraleEvo": 46679,
+   "LanciaFulviaHF": 56603,
+   "LanciaRally037Evo2": 51241,
+   "LanciaStratosHF": 50492,
+   "MiniCooperS1275": 51929,
+   "Peugeot206": 52125,
+   "Peugeot208Rally4": 50957,
+   "Peugeot306IIMaxiKitCar": 56743,
+   "SkodaFabiaRSRally2": 51214,
+   "SubaruImprezaS3": 53466,
+   "VWPoloGTIR5": 49597
+  },
+  "MonteCarloS2SisteronFullForward": {
+   "AlfaRomeoGTA1300": 494704,
+   "AlpineA110": 487835,
+   "AudiQuattroGr4": 473896,
+   "CitroenXsaraWRC": 443146,
+   "Fiat124Abarth": 488274,
+   "Fiat131Abarth": 483304,
+   "Hyundaii20NRally2": 441284,
+   "LanciaDeltaIntegraleEvo": 457231,
+   "LanciaFulviaHF": 503563,
+   "LanciaRally037Evo2": 460633,
+   "LanciaStratosHF": 466629,
+   "MiniCooperS1275": 513092,
+   "Peugeot206": 456820,
+   "Peugeot208Rally4": 461262,
+   "Peugeot306IIMaxiKitCar": 447036,
+   "SkodaFabiaRSRally2": 436704,
+   "SubaruImprezaS3": 458174,
+   "VWPoloGTIR5": 460323
+  },
+  "MonteCarloS2SisteronFullReverse": {
+   "AlfaRomeoGTA1300": 491694,
+   "AlpineA110": 496615,
+   "AudiQuattroGr4": 486719,
+   "CitroenXsaraWRC": 442673,
+   "Fiat124Abarth": 494991,
+   "Fiat131Abarth": 488887,
+   "Hyundaii20NRally2": 437162,
+   "LanciaDeltaIntegraleEvo": 464601,
+   "LanciaFulviaHF": 500539,
+   "LanciaRally037Evo2": 457725,
+   "LanciaStratosHF": 463623,
+   "MiniCooperS1275": 506066,
+   "Peugeot206": 454468,
+   "Peugeot208Rally4": 460240,
+   "Peugeot306IIMaxiKitCar": 446594,
+   "SkodaFabiaRSRally2": 439213,
+   "SubaruImprezaS3": 464485,
+   "VWPoloGTIR5": 459287
+  },
+  "MonteCarloS2SisteronCut1Forward": {
+   "AlfaRomeoGTA1300": 310517,
+   "AlpineA110": 303726,
+   "AudiQuattroGr4": 289568,
+   "CitroenXsaraWRC": 269899,
+   "Fiat124Abarth": 302906,
+   "Fiat131Abarth": 332799,
+   "Hyundaii20NRally2": 271281,
+   "LanciaDeltaIntegraleEvo": 283802,
+   "LanciaFulviaHF": 312281,
+   "LanciaRally037Evo2": 287973,
+   "LanciaStratosHF": 291202,
+   "MiniCooperS1275": 316051,
+   "Peugeot206": 277895,
+   "Peugeot208Rally4": 289982,
+   "Peugeot306IIMaxiKitCar": 275841,
+   "SkodaFabiaRSRally2": 270378,
+   "SubaruImprezaS3": 284091,
+   "VWPoloGTIR5": 277894
+  },
+  "MonteCarloS2SisteronCut1Reverse": {
+   "AlfaRomeoGTA1300": 302642,
+   "AlpineA110": 306212,
+   "AudiQuattroGr4": 292206,
+   "CitroenXsaraWRC": 268796,
+   "Fiat124Abarth": 296038,
+   "Fiat131Abarth": 293875,
+   "Hyundaii20NRally2": 266025,
+   "LanciaDeltaIntegraleEvo": 288632,
+   "LanciaFulviaHF": 302822,
+   "LanciaRally037Evo2": 286572,
+   "LanciaStratosHF": 284688,
+   "MiniCooperS1275": 309226,
+   "Peugeot206": 278680,
+   "Peugeot208Rally4": 283273,
+   "Peugeot306IIMaxiKitCar": 277009,
+   "SkodaFabiaRSRally2": 270591,
+   "SubaruImprezaS3": 280922,
+   "VWPoloGTIR5": 278613
+  },
+  "MonteCarloS2SisteronCut2Forward": {
+   "AlfaRomeoGTA1300": 168963,
+   "AlpineA110": 163587,
+   "AudiQuattroGr4": 154412,
+   "CitroenXsaraWRC": 146960,
+   "Fiat124Abarth": 162191,
+   "Fiat131Abarth": 158520,
+   "Hyundaii20NRally2": 146541,
+   "LanciaDeltaIntegraleEvo": 153164,
+   "LanciaFulviaHF": 168785,
+   "LanciaRally037Evo2": 152833,
+   "LanciaStratosHF": 155090,
+   "MiniCooperS1275": 173841,
+   "Peugeot206": 148486,
+   "Peugeot208Rally4": 157468,
+   "Peugeot306IIMaxiKitCar": 148377,
+   "SkodaFabiaRSRally2": 147583,
+   "SubaruImprezaS3": 151499,
+   "VWPoloGTIR5": 149694
+  },
+  "MonteCarloS2SisteronCut2Reverse": {
+   "AlpineA110": 164659,
+   "AudiQuattroGr4": 156286,
+   "CitroenXsaraWRC": 150967,
+   "Fiat124Abarth": 162860,
+   "Fiat131Abarth": 162425,
+   "Hyundaii20NRally2": 149209,
+   "LanciaDeltaIntegraleEvo": 154972,
+   "LanciaFulviaHF": 168554,
+   "LanciaRally037Evo2": 154793,
+   "LanciaStratosHF": 156216,
+   "MiniCooperS1275": 170146,
+   "Peugeot206": 149907,
+   "Peugeot208Rally4": 158339,
+   "Peugeot306IIMaxiKitCar": 147083,
+   "SkodaFabiaRSRally2": 148262,
+   "SubaruImprezaS3": 154516,
+   "VWPoloGTIR5": 147217
+  },
+  "GreeceS4LoutrakiFullForward": {
+   "AlfaRomeoGTA1300": 420816,
+   "AlpineA110": 417831,
+   "AudiQuattroGr4": 419106,
+   "CitroenXsaraWRC": 390066,
+   "Fiat124Abarth": 433830,
+   "Fiat131Abarth": 427627,
+   "Hyundaii20NRally2": 386383,
+   "LanciaDeltaIntegraleEvo": 396518,
+   "LanciaFulviaHF": 429732,
+   "LanciaRally037Evo2": 430959,
+   "LanciaStratosHF": 408045,
+   "MiniCooperS1275": 444844,
+   "Peugeot206": 394829,
+   "Peugeot208Rally4": 415109,
+   "Peugeot306IIMaxiKitCar": 410983,
+   "SkodaFabiaRSRally2": 387962,
+   "SubaruImprezaS3": 393814,
+   "VWPoloGTIR5": 387179
+  },
+  "GreeceS4LoutrakiFullReverse": {
+   "AlfaRomeoGTA1300": 408897,
+   "AlpineA110": 402228,
+   "AudiQuattroGr4": 413917,
+   "CitroenXsaraWRC": 382808,
+   "Fiat124Abarth": 421131,
+   "Fiat131Abarth": 413915,
+   "Hyundaii20NRally2": 380215,
+   "LanciaDeltaIntegraleEvo": 386819,
+   "LanciaFulviaHF": 415263,
+   "LanciaRally037Evo2": 417320,
+   "LanciaStratosHF": 408376,
+   "MiniCooperS1275": 429572,
+   "Peugeot206": 384245,
+   "Peugeot208Rally4": 406341,
+   "Peugeot306IIMaxiKitCar": 404213,
+   "SkodaFabiaRSRally2": 388799,
+   "SubaruImprezaS3": 384137,
+   "VWPoloGTIR5": 375016
+  },
+  "GreeceS4LoutrakiCut1Forward": {
+   "AlfaRomeoGTA1300": 210224,
+   "AlpineA110": 203549,
+   "AudiQuattroGr4": 197470,
+   "CitroenXsaraWRC": 188533,
+   "Fiat124Abarth": 215958,
+   "Fiat131Abarth": 206828,
+   "Hyundaii20NRally2": 186863,
+   "LanciaDeltaIntegraleEvo": 191529,
+   "LanciaFulviaHF": 216032,
+   "LanciaRally037Evo2": 209713,
+   "LanciaStratosHF": 201611,
+   "MiniCooperS1275": 219462,
+   "Peugeot206": 193793,
+   "Peugeot208Rally4": 204761,
+   "Peugeot306IIMaxiKitCar": 201453,
+   "SkodaFabiaRSRally2": 188007,
+   "SubaruImprezaS3": 190040,
+   "VWPoloGTIR5": 186200
+  },
+  "GreeceS4LoutrakiCut1Reverse": {
+   "AlfaRomeoGTA1300": 200095,
+   "AlpineA110": 193258,
+   "AudiQuattroGr4": 196130,
+   "CitroenXsaraWRC": 187535,
+   "Fiat124Abarth": 204690,
+   "Fiat131Abarth": 195483,
+   "Hyundaii20NRally2": 181580,
+   "LanciaDeltaIntegraleEvo": 188814,
+   "LanciaFulviaHF": 200649,
+   "LanciaRally037Evo2": 201378,
+   "LanciaStratosHF": 194625,
+   "MiniCooperS1275": 205972,
+   "Peugeot206": 184087,
+   "Peugeot208Rally4": 194514,
+   "Peugeot306IIMaxiKitCar": 192782,
+   "SkodaFabiaRSRally2": 184383,
+   "SubaruImprezaS3": 184508,
+   "VWPoloGTIR5": 179987
+  },
+  "GreeceS4LoutrakiCut2Forward": {
+   "AlfaRomeoGTA1300": 245867,
+   "AlpineA110": 241771,
+   "AudiQuattroGr4": 242065,
+   "CitroenXsaraWRC": 228051,
+   "Fiat124Abarth": 250935,
+   "Fiat131Abarth": 247377,
+   "Hyundaii20NRally2": 226371,
+   "LanciaDeltaIntegraleEvo": 229187,
+   "LanciaFulviaHF": 247494,
+   "LanciaRally037Evo2": 253493,
+   "LanciaStratosHF": 239813,
+   "MiniCooperS1275": 257217,
+   "Peugeot206": 228332,
+   "Peugeot208Rally4": 244620,
+   "Peugeot306IIMaxiKitCar": 239346,
+   "SkodaFabiaRSRally2": 225192,
+   "SubaruImprezaS3": 226130,
+   "VWPoloGTIR5": 225899
+  },
+  "GreeceS4LoutrakiCut2Reverse": {
+   "AlfaRomeoGTA1300": 247750,
+   "AlpineA110": 238854,
+   "AudiQuattroGr4": 238508,
+   "CitroenXsaraWRC": 223893,
+   "Fiat124Abarth": 250951,
+   "Fiat131Abarth": 242565,
+   "Hyundaii20NRally2": 225903,
+   "LanciaDeltaIntegraleEvo": 231764,
+   "LanciaFulviaHF": 247190,
+   "LanciaRally037Evo2": 247678,
+   "LanciaStratosHF": 240717,
+   "MiniCooperS1275": 257949,
+   "Peugeot206": 226079,
+   "Peugeot208Rally4": 240958,
+   "Peugeot306IIMaxiKitCar": 235289,
+   "SkodaFabiaRSRally2": 222272,
+   "SubaruImprezaS3": 222739,
+   "VWPoloGTIR5": 220645
+  },
+  "GreeceS3ElatiaFullForward": {
+   "AlfaRomeoGTA1300": 418685,
+   "AlpineA110": 404492,
+   "AudiQuattroGr4": 385721,
+   "CitroenXsaraWRC": 377991,
+   "Fiat124Abarth": 423141,
+   "Fiat131Abarth": 408597,
+   "Hyundaii20NRally2": 369590,
+   "LanciaDeltaIntegraleEvo": 377296,
+   "LanciaFulviaHF": 426091,
+   "LanciaRally037Evo2": 412842,
+   "LanciaStratosHF": 401232,
+   "MiniCooperS1275": 436548,
+   "Peugeot206": 374403,
+   "Peugeot208Rally4": 405792,
+   "Peugeot306IIMaxiKitCar": 396916,
+   "SkodaFabiaRSRally2": 370599,
+   "SubaruImprezaS3": 375354,
+   "VWPoloGTIR5": 375826
+  },
+  "GreeceS3ElatiaFullReverse": {
+   "AlfaRomeoGTA1300": 359890,
+   "AlpineA110": 404109,
+   "AudiQuattroGr4": 387203,
+   "CitroenXsaraWRC": 367344,
+   "Fiat124Abarth": 405390,
+   "Fiat131Abarth": 348339,
+   "Hyundaii20NRally2": 358051,
+   "LanciaDeltaIntegraleEvo": 374325,
+   "LanciaFulviaHF": 407986,
+   "LanciaRally037Evo2": 387109,
+   "LanciaStratosHF": 383839,
+   "MiniCooperS1275": 414779,
+   "Peugeot206": 365606,
+   "Peugeot208Rally4": 385428,
+   "Peugeot306IIMaxiKitCar": 393320,
+   "SkodaFabiaRSRally2": 361763,
+   "SubaruImprezaS3": 369971,
+   "VWPoloGTIR5": 363725
+  },
+  "GreeceS3ElatiaCut1Forward": {
+   "AlfaRomeoGTA1300": 245224,
+   "AlpineA110": 235320,
+   "AudiQuattroGr4": 229078,
+   "CitroenXsaraWRC": 219966,
+   "Fiat124Abarth": 246066,
+   "Fiat131Abarth": 238653,
+   "Hyundaii20NRally2": 216327,
+   "LanciaDeltaIntegraleEvo": 216742,
+   "LanciaFulviaHF": 247825,
+   "LanciaRally037Evo2": 243898,
+   "LanciaStratosHF": 233750,
+   "MiniCooperS1275": 257857,
+   "Peugeot206": 214144,
+   "Peugeot208Rally4": 234179,
+   "Peugeot306IIMaxiKitCar": 237124,
+   "SkodaFabiaRSRally2": 217833,
+   "SubaruImprezaS3": 221823,
+   "VWPoloGTIR5": 218578
+  },
+  "GreeceS3ElatiaCut1Reverse": {
+   "AlfaRomeoGTA1300": 220278,
+   "AlpineA110": 218974,
+   "AudiQuattroGr4": 217384,
+   "CitroenXsaraWRC": 201595,
+   "Fiat124Abarth": 224203,
+   "Fiat131Abarth": 223817,
+   "Hyundaii20NRally2": 203244,
+   "LanciaDeltaIntegraleEvo": 206070,
+   "LanciaFulviaHF": 238992,
+   "LanciaRally037Evo2": 219552,
+   "LanciaStratosHF": 215840,
+   "MiniCooperS1275": 231552,
+   "Peugeot206": 204431,
+   "Peugeot208Rally4": 216293,
+   "Peugeot306IIMaxiKitCar": 210999,
+   "SkodaFabiaRSRally2": 203864,
+   "SubaruImprezaS3": 207560,
+   "VWPoloGTIR5": 205759
+  },
+  "GreeceS3ElatiaCut2Forward": {
+   "AlfaRomeoGTA1300": 186455,
+   "AlpineA110": 179803,
+   "AudiQuattroGr4": 173360,
+   "CitroenXsaraWRC": 170499,
+   "Fiat124Abarth": 184948,
+   "Fiat131Abarth": 183146,
+   "Hyundaii20NRally2": 170234,
+   "LanciaDeltaIntegraleEvo": 169285,
+   "LanciaFulviaHF": 188812,
+   "LanciaRally037Evo2": 178806,
+   "LanciaStratosHF": 176156,
+   "MiniCooperS1275": 195731,
+   "Peugeot206": 165538,
+   "Peugeot208Rally4": 180225,
+   "Peugeot306IIMaxiKitCar": 180261,
+   "SkodaFabiaRSRally2": 168324,
+   "SubaruImprezaS3": 168899,
+   "VWPoloGTIR5": 170119
+  },
+  "GreeceS3ElatiaCut2Reverse": {
+   "AlfaRomeoGTA1300": 188886,
+   "AlpineA110": 186856,
+   "AudiQuattroGr4": 179127,
+   "CitroenXsaraWRC": 174781,
+   "Fiat124Abarth": 195459,
+   "Fiat131Abarth": 184841,
+   "Hyundaii20NRally2": 171739,
+   "LanciaDeltaIntegraleEvo": 169905,
+   "LanciaFulviaHF": 191971,
+   "LanciaRally037Evo2": 186360,
+   "LanciaStratosHF": 183051,
+   "MiniCooperS1275": 199930,
+   "Peugeot206": 171157,
+   "Peugeot208Rally4": 184673,
+   "Peugeot306IIMaxiKitCar": 179182,
+   "SkodaFabiaRSRally2": 170753,
+   "SubaruImprezaS3": 174255,
+   "VWPoloGTIR5": 177861
   }
  }
 }

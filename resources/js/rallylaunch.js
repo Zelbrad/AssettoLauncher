@@ -75,7 +75,7 @@ export function rallyStage(id) {
 // and a null, or, when the length is negative, that many UTF-16LE characters
 // (Unreal's form for text with any non-ASCII character, e.g. a livery folder
 // named "Rzeźnik 2026"). `max` caps the length in characters.
-function fstrAt(b, at, max = 4096) {
+export function fstrAt(b, at, max = 4096) {
   if (at < 0 || at + 4 > b.length) return null;
   const dv = new DataView(b.buffer, b.byteOffset);
   const n = dv.getInt32(at, true);
@@ -97,7 +97,7 @@ function readStr(b, at) {
   if (!s) throw new Error('bad string');
   return s;
 }
-function fstr(s) {
+export function fstr(s) {
   if (/^[\x00-\x7f]*$/.test(s)) {
     const out = new Uint8Array(4 + s.length + 1);
     new DataView(out.buffer).setInt32(0, s.length + 1, true);
@@ -275,6 +275,17 @@ export async function readRallySave(paths) {
 // (splits + penalty = total, checked.) Map<"stage|car", { ms, at, penalty }>.
 export async function rallyBests(paths) {
   const out = new Map();
+  for (const r of await rallyRecords(paths)) {
+    const key = `${r.stage}|${r.car}`;
+    if (!out.has(key) || r.ms < out.get(key).ms) out.set(key, { ms: r.ms, penalty: r.penalty, at: r.at });
+  }
+  return out;
+}
+
+// Every stage record in the save: [{ stage, car, weather (WT_CLEAR…), ms, penalty, at }]
+// (a stage and car can have one per weather).
+export async function rallyRecords(paths) {
+  const out = [];
   if (!(await exists(paths.rally.save))) return out;
   const b = new Uint8Array(await Neutralino.filesystem.readBinaryFile(paths.rally.save));
   const dv = new DataView(b.buffer, b.byteOffset);
@@ -294,12 +305,14 @@ export async function rallyBests(paths) {
       for (let i = 0; i < n; i++) sum += dv.getUint32(end + 12 + 4 * i, true);
       if (sum !== total || !total) continue; // not a stage record
       const ticks = dv.getBigUint64(end + 12 + 4 * n, true);
-      const key = `${stage}|${str(car)}`;
-      if (!out.has(key) || total < out.get(key).ms) out.set(key, { ms: total, penalty, at: Number((ticks - 621355968000000000n) / 10000n) });
+      out.push({ stage, car: str(car), weather: m[0].slice(14, -1), ms: total, penalty, at: Number((ticks - 621355968000000000n) / 10000n) });
     } catch { /* past the end */ }
   }
   return out;
 }
+
+// The save's weather names, in RALLY_WEATHERS order.
+export const RALLY_WEATHER_IDS = ['WT_CLEAR', 'WT_LIGHT_CLOUDS', 'WT_HEAVY_CLOUDS', 'WT_LIGHT_FOG', 'WT_HEAVY_FOG', 'WT_LIGHT_RAIN', 'WT_HEAVY_RAIN', 'WT_STORM', 'WT_LIGHT_SNOW', 'WT_HEAVY_SNOW', 'WT_BLIZZARD'];
 
 export async function isRallyRunning() {
   return isProcessRunning('acr');
@@ -321,18 +334,23 @@ function menuCars(b) {
   };
   const ticksOk = at => at + 8 <= b.length && b[at + 7] === 0x08 && b[at + 6] >= 0xd0; // years ~2016-2100
   for (let p = 0; p + 4 < b.length; p++) {
+    // k is 0 in some saves (seen in one that had only driven a few stages).
     const k = dv.getInt32(p, true);
-    if (k < 1 || k > 16) continue;
+    if (k < 0 || k > 16) continue;
     const list = [];
     let q = p + 4;
     for (let i = 0; i < k; i++) { const s = str(q); if (!s) break; list.push(s); q = s.end; }
     if (list.length !== k || q + 12 > b.length || dv.getInt32(q, true) !== 0 || dv.getInt32(q + 4, true) !== 0) continue;
     const m = dv.getInt32(q + 8, true), first = str(q + 12);
     if (m < 1 || m > 64 || !first || !ticksOk(first.end)) continue;
-    return { start: p, list };
+    return { start: p, list, end: q };
   }
   return null;
 }
+
+// Car ids as the game compares them (Unreal names ignore case): saves from older
+// game versions spell some differently ("Hyundaii20NRally2").
+const sameCar = (a, b) => a.toLowerCase() === b.toLowerCase();
 
 const concat = parts => {
   const out = new Uint8Array(parts.reduce((n, x) => n + x.length, 0));
@@ -346,7 +364,7 @@ function lastDriven(b) {
   const found = menuCars(b);
   if (!found) return null;
   const dv = new DataView(b.buffer, b.byteOffset);
-  const countAt = found.list[found.list.length - 1].end + 8, m = dv.getInt32(countAt, true), entries = [];
+  const countAt = found.end + 8, m = dv.getInt32(countAt, true), entries = [];
   let q = countAt + 4;
   for (let i = 0; i < m; i++) {
     const n = dv.getInt32(q, true);
@@ -363,7 +381,7 @@ function withLastDriven(b, car) {
   if (!map) { log('rally: last-driven map not found'); return b; }
   const ticks = new Uint8Array(8);
   new DataView(ticks.buffer).setBigUint64(0, nowTicks(), true);
-  const e = map.entries.find(x => x.value === car);
+  const e = map.entries.find(x => sameCar(x.value, car));
   if (e) { const out = b.slice(); out.set(ticks, e.ticksAt); return out; }
   // A car the save hasn't seen yet: add it to the map.
   const out = concat([b.subarray(0, map.end), fstr(car), ticks, b.subarray(map.end)]);
@@ -391,6 +409,9 @@ export function liveryMap(b) {
     }
     if (entries.length === k && q === b.length) return { countAt: p, entries };
   }
+  // A player who has never picked a livery has the map with no entries: a count
+  // of 0 as the file's last 4 bytes (after the co-driver's country and one byte).
+  if (b.length > 8 && dv.getInt32(b.length - 4, true) === 0) return { countAt: b.length - 4, entries: [] };
   return null;
 }
 
@@ -399,7 +420,7 @@ function withLivery(b, car, livery) {
   if (!livery) return b;
   const map = liveryMap(b);
   if (!map) { log('rally: livery map not found'); return b; }
-  const e = map.entries.find(x => x.car === car);
+  const e = map.entries.find(x => sameCar(x.car, car));
   if (e?.livery === livery) return b;
   const out = e ? concat([b.subarray(0, e.liveryAt), fstr(livery), b.subarray(e.end)]) : concat([b, fstr(car), fstr(livery)]);
   if (!e) new DataView(out.buffer).setInt32(map.countAt, map.entries.length + 1, true);
@@ -451,7 +472,7 @@ export async function writeRallySession(paths, { stage, car, seconds, livery, we
     const check = parse(out);
     if (check.stage.value !== stage || check.car.value !== car) throw new Error('Could not update the Rally save');
   }
-  if (sizeAt >= 0 && livery && liveryMap(out) && liveryMap(out).entries.find(e => e.car === car)?.livery !== livery) throw new Error('Could not update the Rally save');
+  if (sizeAt >= 0 && livery && liveryMap(out) && liveryMap(out).entries.find(e => sameCar(e.car, car))?.livery !== livery) throw new Error('Could not update the Rally save');
   // The save as it was before this change, so it can always be put back.
   await Neutralino.filesystem.writeBinaryFile(`${file}.launcher-backup`, b.slice().buffer);
   await Neutralino.filesystem.writeBinaryFile(file, out.buffer);

@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Assetto Launcher</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="css/overlay.css">
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: transparent; }
+    /* The banner: centred, --top down from the window's top (the screen's). */
+    #root { display: flex; justify-content: center; padding-top: var(--top); }
+    /* The safety rating's tile: 40 px in from the screen's right edge, centred in its window. */
+    .right #root { height: 100%; box-sizing: border-box; padding: 0 40px 0 0; justify-content: flex-end; align-items: center; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script src="js/overlay-card.js"></script>
+  <script src="js/neutralino.js"></script>
+  <script type="module" src="js/overlay.js"></script>
+</body>
+</html>

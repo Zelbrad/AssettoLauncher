@@ -1,7 +1,8 @@
 // Car and stage/track pictures from the official site (assettocorsa.gg), for the
-// games whose own pictures are locked in their packages (ACC, Rally). The launcher
+// games whose own pictures are locked in their packages (ACC's cars and tracks,
+// Rally's stages; Rally's cars come from the game, tools/rally-data.py). The launcher
 // ships them in img/site/ (tools/site-images.mjs) and, when online, checks the
-// site once a week for cars or stages added since (siteSync in main.js), caching
+// site for Rally stages added since (siteSync in main.js), caching
 // those next to the app, so everything works offline.
 // Pure functions only: the build tool runs this file under Node too.
 

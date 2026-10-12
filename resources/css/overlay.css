@@ -1,0 +1,130 @@
+/* The cards over EVO (overlay.html). Their windows are transparent: only the
+   cards show.
+   The result: a banner at the top centre, a little down the screen (under the
+   game's own top HUD), that slides down from above and back up. Two slanted
+   plates: the medal on one of its metal (a glance says which), the event and the
+   time on a dark one, with a line along its foot running down while it stays.
+   The safety rating: a tile on the right, half way down, that slides in from the
+   edge: "SR" over three chevrons, lit by how much it went down (or up). */
+@font-face { font-family: 'Michroma'; src: url(../fonts/michroma.woff2) format('woff2'); }
+@font-face { font-family: 'Bebas Neue'; src: url(../fonts/bebas-neue.woff2) format('woff2'); }
+@font-face { font-family: 'Montserrat'; src: url(../fonts/montserrat.woff2) format('woff2'); font-weight: 100 900; }
+
+:root {
+  --font-display: 'Michroma', 'Bahnschrift', sans-serif;
+  --font-head: 'Bebas Neue', 'Bahnschrift', sans-serif;
+  --font-body: 'Montserrat', 'Segoe UI', system-ui, sans-serif;
+  --top: 12vh; /* how far down the screen the banner sits (overlay.js sets it in pixels) */
+}
+
+/* ---- The result banner */
+.ov-card {
+  --c: 150, 152, 158;              /* the medal's colour: the timer */
+  --metal: linear-gradient(100deg, #3a3b40, #4a4b51 50%, #34353a);
+  --ink: #f2f2f3;                  /* on the plate */
+  --slant: 16px;
+  --secs: 8s;
+  display: flex;
+  align-items: stretch;
+  height: 66px;
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  cursor: default;
+  pointer-events: none;
+  filter: drop-shadow(0 10px 18px rgba(0, 0, 0, 0.45)) drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
+  transform: translateY(calc(-1 * (var(--top) + 100% + 40px)));
+  transition: transform 0.5s cubic-bezier(0.55, 0, 0.8, 0.2); /* back up */
+}
+.ov-card.in { pointer-events: auto; transform: none; transition: transform 0.75s cubic-bezier(0.16, 1, 0.3, 1); }
+/* Brushed metals, lit from the upper left; dark ink on them. */
+.ov-card.platinum { --c: 196, 232, 246; --ink: #0f1a20; --metal: linear-gradient(100deg, #8fadbb 0%, #cfe6ef 30%, #f7fcff 48%, #d9edf4 62%, #9fbccb 100%); }
+.ov-card.gold { --c: 232, 178, 32; --ink: #1d1404; --metal: linear-gradient(100deg, #9c6c0c 0%, #d9a425 30%, #f6d36b 48%, #e0ad2f 62%, #a2730f 100%); }
+.ov-card.silver { --c: 205, 211, 218; --ink: #15181b; --metal: linear-gradient(100deg, #7e8790 0%, #b9c1c9 30%, #eef2f5 48%, #c3cad1 62%, #858e97 100%); }
+.ov-card.bronze { --c: 214, 134, 76; --ink: #1d0e04; --metal: linear-gradient(100deg, #7a421b 0%, #b56e3a 30%, #e5a676 48%, #bd7643 62%, #7f4520 100%); }
+.ov-card.void { --c: 226, 36, 36; --metal: linear-gradient(100deg, #8f0b0b, #cf1919 50%, #9a0d0d); }
+
+/* The medal's plate: slanted at both ends, the metal with a fine brush and a
+   light sweeping across once it's down. */
+.ov-plate {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 132px;
+  padding: 0 calc(var(--slant) + 22px);
+  background: repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.05) 0 1px, transparent 1px 3px), var(--metal);
+  clip-path: polygon(var(--slant) 0, 100% 0, calc(100% - var(--slant)) 100%, 0 100%);
+  overflow: hidden;
+}
+.ov-plate::before { content: ''; position: absolute; inset: 0; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), inset 0 -1px 0 rgba(0, 0, 0, 0.25); }
+.ov-plate::after { content: ''; position: absolute; top: 0; bottom: 0; left: -60%; width: 45%; background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.55), transparent); transform: skewX(-16deg); opacity: 0; }
+.ov-card.run:not(.none):not(.void) .ov-plate::after { animation: ov-sheen 0.9s cubic-bezier(0.3, 0, 0.2, 1) 0.6s; }
+@keyframes ov-sheen { from { left: -60%; opacity: 1; } to { left: 120%; opacity: 1; } }
+.ov-title { position: relative; font-family: var(--font-head); font-size: 44px; line-height: 1; letter-spacing: 0.05em; padding-top: 4px; color: var(--ink); text-transform: uppercase; white-space: nowrap; }
+.ov-card:is(.platinum, .gold, .silver, .bronze) .ov-title { text-shadow: 0 1px 0 rgba(255, 255, 255, 0.35); }
+
+/* The event and the time: dark, slanted the same way, a step to the right. */
+.ov-info {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  min-width: 200px;
+  margin-left: calc(6px - var(--slant));
+  padding: 0 calc(var(--slant) + 30px) 2px calc(var(--slant) + 20px);
+  background: linear-gradient(180deg, rgba(30, 31, 34, 0.96), rgba(13, 13, 15, 0.96));
+  clip-path: polygon(var(--slant) 0, 100% 0, calc(100% - var(--slant)) 100%, 0 100%);
+}
+.ov-info::before { content: ''; position: absolute; inset: 0; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08); pointer-events: none; }
+.ov-kicker { font-family: var(--font-display); font-size: 9.5px; line-height: 1.2; letter-spacing: 0.16em; text-transform: uppercase; color: #8e9097; white-space: nowrap; }
+.ov-time { font-size: 27px; font-weight: 700; line-height: 1; letter-spacing: 0.01em; font-variant-numeric: tabular-nums; color: #fff; white-space: nowrap; }
+.ov-sub { font-size: 14px; font-weight: 600; line-height: 1.2; color: #e4e4e6; white-space: nowrap; }
+/* Along its foot, in the medal's colour: how long it stays. */
+.ov-timer { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: rgb(var(--c)); transform-origin: left; }
+.ov-card.run .ov-timer { animation: ov-timer var(--secs) linear forwards; }
+@keyframes ov-timer { to { transform: scaleX(0); } }
+
+/* ---- The safety rating's tile */
+.ov-sr {
+  --c: 22, 196, 74; /* one chevron: green */
+  position: relative;
+  isolation: isolate;
+  box-sizing: border-box;
+  width: 108px;
+  padding: 26px 0 34px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  cursor: default;
+  pointer-events: none;
+  transform: translateX(calc(100% + 60px));
+  transition: transform 0.45s cubic-bezier(0.55, 0, 0.8, 0.2);
+}
+.ov-sr.in { pointer-events: auto; transform: none; transition: transform 0.55s cubic-bezier(0.16, 1, 0.3, 1); }
+.ov-sr.l2 { --c: 245, 176, 0; }
+.ov-sr.l3 { --c: 232, 22, 22; }
+.ov-sr.up { --c: 46, 160, 255; }
+/* Dark, with the colour glowing behind the chevrons, fading out at the bottom. */
+.ov-sr::before { content: ''; position: absolute; z-index: -1; inset: 0; background: radial-gradient(85% 42% at 50% 68%, rgba(var(--c), 0.34), rgba(var(--c), 0.06) 70%, transparent), linear-gradient(180deg, rgba(15, 15, 16, 0.95), rgba(22, 22, 24, 0.95)); -webkit-mask-image: linear-gradient(180deg, #000, #000 86%, transparent); mask-image: linear-gradient(180deg, #000, #000 86%, transparent); }
+.ov-sr-label { font-size: 30px; font-weight: 900; line-height: 1; letter-spacing: -0.01em; color: #f2f2f3; transform: scaleX(1.14); }
+.ov-chevrons { display: flex; flex-direction: column; align-items: center; }
+.ov-chevrons i { display: block; width: 62px; height: 36px; margin-top: -9px; }
+.ov-chevrons i:first-child { margin-top: 0; }
+.ov-chevrons svg { display: block; width: 100%; height: 100%; overflow: visible; }
+/* Unlit: an outline. Lit: the colour, lighter at the top, glowing. */
+.ov-chev { fill: none; stroke: rgba(var(--c), 0.42); stroke-width: 1.5px; stroke-linejoin: miter; vector-effect: non-scaling-stroke; }
+.ov-chev-shade { fill: none; }
+.ov-chevrons i.on { filter: drop-shadow(0 0 9px rgba(var(--c), 0.55)) drop-shadow(0 3px 0 rgba(0, 0, 0, 0.35)); }
+.ov-chevrons i.on .ov-chev { fill: rgb(var(--c)); stroke: none; }
+.ov-chevrons i.on .ov-chev-shade { fill: url(#ov-shade); }
+/* As it comes in, the lit ones drop into place one after another (rise, going up). */
+.ov-sr.run .ov-chevrons i.on { animation: ov-drop 0.32s cubic-bezier(0.2, 0.8, 0.2, 1) backwards; animation-delay: calc(0.32s + var(--i) * 0.1s); }
+.ov-sr.up.run .ov-chevrons i.on { animation-name: ov-rise; }
+@keyframes ov-drop { from { opacity: 0; transform: translateY(-10px); } }
+@keyframes ov-rise { from { opacity: 0; transform: translateY(10px); } }

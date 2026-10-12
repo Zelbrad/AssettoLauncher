@@ -1,25 +1,5 @@
 {
  "rally": {
-  "cars": {
-   "CitroenXsaraWRC": "rally/cars-CitroenXsaraWRC.jpg",
-   "LanciaStratosHF": "rally/cars-LanciaStratosHF.jpg",
-   "LanciaRally037Evo2": "rally/cars-LanciaRally037Evo2.jpg",
-   "Hyundaii20NRally2": "rally/cars-Hyundaii20NRally2.jpg",
-   "AlfaRomeoGTA1300": "rally/cars-AlfaRomeoGTA1300.jpg",
-   "LanciaDeltaIntegraleEvo": "rally/cars-LanciaDeltaIntegraleEvo.jpg",
-   "MiniCooperS1275": "rally/cars-MiniCooperS1275.jpg",
-   "Peugeot208Rally4": "rally/cars-Peugeot208Rally4.jpg",
-   "Fiat131Abarth": "rally/cars-Fiat131Abarth.jpg",
-   "Fiat124Abarth": "rally/cars-Fiat124Abarth.jpg",
-   "AlpineA110": "rally/cars-AlpineA110.jpg",
-   "LanciaFulviaHF": "rally/cars-LanciaFulviaHF.jpg",
-   "SkodaFabiaRSRally2": "rally/cars-SkodaFabiaRSRally2.jpg",
-   "Peugeot306IIMaxiKitCar": "rally/cars-Peugeot306IIMaxiKitCar.jpg",
-   "SubaruImprezaS3": "rally/cars-SubaruImprezaS3.jpg",
-   "AudiQuattroGr4": "rally/cars-AudiQuattroGr4.jpg",
-   "Peugeot206": "rally/cars-Peugeot206.jpg",
-   "VWPoloGTIR5": "rally/cars-VWPoloGTIR5.jpg"
-  },
   "stages": {
    "AlsaceS4Saverne": "rally/stages-AlsaceS4Saverne.jpg",
    "AlsaceS2Munster": "rally/stages-AlsaceS2Munster.jpg",

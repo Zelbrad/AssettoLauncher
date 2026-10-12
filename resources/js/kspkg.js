@@ -7,7 +7,7 @@
 // thumbnails, track photos/maps), never a whole package. Decoded images are
 // cached as JPGs keyed by package size + mtime, so later scans are one stat call.
 import { decodeBC7 } from './bc7.js';
-import { join, basename, log, readText, writeText, mapLimit, prettifyId, fileUrl } from './util.js';
+import { join, basename, log, readText, writeText, mapLimit, prettifyId, fileUrl, listDir } from './util.js';
 
 const KEY = [0xC1, 0x35, 0x11, 0x7D, 0xA9, 0x21, 0x97, 0x9F]; // 0x9F9721A97D1135C1, little-endian
 const TABLE_SIZES = [0x4000000, 0x2000000];
@@ -22,6 +22,7 @@ const BGRA8_FORMATS = new Set([6]);
 
 // XOR in place; `start` is the byte position within the entry (key is aligned to the entry start).
 const xor = (b, start = 0) => { for (let i = 0; i < b.length; i++) b[i] ^= KEY[(start + i) & 7]; return b; };
+export const kspkgXor = xor;
 
 async function readBytes(path, pos, size) {
   return new Uint8Array(await Neutralino.filesystem.readBinaryFile(path, { pos, size }));
@@ -46,12 +47,12 @@ async function readIndex(path, fileSize) {
         });
       }
     }
-    if (entries.length && /^content[\\/]/i.test(entries[0].name)) return entries;
+    if (entries.length && /^(content|uiresources)[\\/]/i.test(entries[0].name)) return entries;
   }
   return null;
 }
 
-async function openPackage(path) {
+export async function openPackage(path) {
   const st = await Neutralino.filesystem.getStats(path);
   const entries = await readIndex(path, st.size);
   if (!entries) return null;
@@ -188,8 +189,9 @@ async function decodeTexture(pkg, texEntry, maxWidth = Infinity) {
 }
 
 // JPEG has no alpha: composite transparent thumbnails onto the dark grey the
-// game's own thumbnails use, so all cards look consistent.
-async function toJpeg(img) {
+// game's own thumbnails use, so all cards look consistent. frame: a mod car's
+// picture, framed as EVO frames its own (frameCar).
+async function toJpeg(img, frame = false) {
   const src = document.createElement('canvas');
   src.width = img.width;
   src.height = img.height;
@@ -201,17 +203,114 @@ async function toJpeg(img) {
   ctx.fillStyle = '#2b2b2b';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(src, 0, 0);
+  if (frame) {
+    try { frameCar(canvas); } catch (err) { log(`kspkg: framing failed: ${err?.message || err}`); }
+  }
   const blob = await new Promise(r => canvas.toBlob(r, 'image/jpeg', 0.88));
   return blob.arrayBuffer();
+}
+
+// EVO renders its car pictures on a grey studio backdrop (a soft gradient), the car
+// and its shadow across at most three quarters of the width and half the height.
+// Some mods ship theirs closer, the car touching the sides, so their cards look
+// zoomed in. Such a picture is redone at EVO's framing: the backdrop without the
+// car is worked out, and the car alone (how the picture differs from that
+// backdrop) is put back on it smaller, in the middle, so no edge shows. Anything
+// else is left as it is: cars already framed like EVO's, pictures that aren't
+// square, and any picture whose border or top isn't mostly plain backdrop (a
+// photo, say). Measured on a 128 px copy; a few milliseconds a picture.
+// Returns whether the picture changed.
+const CAR_FRAME = { width: 0.75, height: 0.5 };
+export const FRAMING = 1; // in the pictures' names: a new number when frameCar changes makes them again
+const canvasOf = (w, h) => Object.assign(document.createElement('canvas'), { width: w, height: h });
+// src drawn into a w x h canvas (at rect, or filling it), as RGBA bytes. Big ones
+// are drawn by the GPU (read once), small ones by the CPU.
+function drawn(src, w, h, rect = [0, 0, w, h]) {
+  const ctx = canvasOf(w, h).getContext('2d', { willReadFrequently: w * h <= 256 * 256 });
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(src, ...rect);
+  return ctx.getImageData(0, 0, w, h).data;
+}
+export function frameCar(canvas) {
+  const w = canvas.width, h = canvas.height, N = 128;
+  if (Math.abs(w / h - 1) > 0.1) return false;
+  const px = drawn(canvas, N, N);
+  // The backdrop's grey: the median colour of the outer ring of pixels.
+  const ring = [];
+  for (let i = 0; i < N; i++) ring.push(i, (N - 1) * N + i, i * N, i * N + N - 1);
+  const median = c => ring.map(i => px[i * 4 + c]).sort((a, b) => a - b)[ring.length >> 1];
+  const bg = [median(0), median(1), median(2)], bgLum = (bg[0] + bg[1] + bg[2]) / 3;
+  // Car or shadow: lighter, darker or more colourful than the backdrop.
+  const car = new Uint8Array(N * N);
+  for (let i = 0; i < N * N; i++) {
+    const r = px[i * 4], g = px[i * 4 + 1], b = px[i * 4 + 2];
+    car[i] = Math.abs((r + g + b) / 3 - bgLum) > 22 || Math.max(r, g, b) - Math.min(r, g, b) > 24 ? 1 : 0;
+  }
+  if (ring.filter(i => car[i]).length > ring.length / 4) return false;
+  const cols = new Uint16Array(N), rows = new Uint16Array(N);
+  for (let i = 0; i < N * N; i++) if (car[i]) { cols[i % N]++; rows[Math.floor(i / N)]++; }
+  const span = a => { const i = a.findIndex(n => n > 1); return i < 0 ? null : [i, a.findLastIndex(n => n > 1) + 1]; };
+  const xs = span(cols), ys = span(rows);
+  if (!xs || ys[0] < N * 0.15) return false;
+  const s = Math.min(CAR_FRAME.width * N / (xs[1] - xs[0]), CAR_FRAME.height * N / (ys[1] - ys[0]));
+  if (s > 0.92) return false;
+
+  // The backdrop without the car, on a 32 x 32 grid: cells clear of the car (and
+  // of its edges) keep the picture's colour; the rest are filled in smoothly from
+  // their neighbours.
+  const G = 32, C = N / G, back = new Float32Array(G * G * 3), known = new Uint8Array(G * G), hit = new Uint8Array(G * G);
+  for (let i = 0; i < N * N; i++) if (car[i]) hit[Math.floor(Math.floor(i / N) / C) * G + Math.floor((i % N) / C)] = 1;
+  for (let gy = 0; gy < G; gy++) for (let gx = 0; gx < G; gx++) {
+    let near = 0;
+    for (let y = Math.max(0, gy - 1); y <= Math.min(G - 1, gy + 1); y++) for (let x = Math.max(0, gx - 1); x <= Math.min(G - 1, gx + 1); x++) near |= hit[y * G + x];
+    const k = gy * G + gx;
+    if (near) { back.set(bg, k * 3); continue; }
+    known[k] = 1;
+    for (let c = 0; c < 3; c++) {
+      let sum = 0;
+      for (let y = 0; y < C; y++) for (let x = 0; x < C; x++) sum += px[((gy * C + y) * N + gx * C + x) * 4 + c];
+      back[k * 3 + c] = sum / (C * C);
+    }
+  }
+  const holes = [];
+  for (let k = 0; k < G * G; k++) {
+    const gx = k % G, gy = Math.floor(k / G);
+    if (!known[k]) holes.push([k, [gx > 0 && k - 1, gx < G - 1 && k + 1, gy > 0 && k - G, gy < G - 1 && k + G].filter(n => n !== false)]);
+  }
+  for (let pass = 0; pass < 200; pass++) {
+    for (const [k, nb] of holes) for (let c = 0; c < 3; c++) back[k * 3 + c] = nb.reduce((t, n) => t + back[n * 3 + c], 0) / nb.length;
+  }
+  const grid = canvasOf(G, G), img = new ImageData(G, G);
+  for (let k = 0; k < G * G; k++) { img.data.set([back[k * 3], back[k * 3 + 1], back[k * 3 + 2]], k * 4); img.data[k * 4 + 3] = 255; }
+  grid.getContext('2d').putImageData(img, 0, 0);
+
+  // out = backdrop + (shrunk picture - shrunk backdrop), fading out at the shrunk
+  // picture's edges (where a car that touched the sides is cut off).
+  const cx = (xs[0] + xs[1]) / 2 / N, cy = (ys[0] + ys[1]) / 2 / N;
+  const rect = [w / 2 - cx * w * s, h / 2 - cy * h * s, w * s, h * s];
+  const [dx, dy, dw, dh] = rect, feather = 0.05 * dw;
+  const B = drawn(grid, w, h), Bs = drawn(grid, w, h, rect), Is = drawn(canvas, w, h, rect);
+  const out = new ImageData(w, h);
+  out.data.set(B);
+  for (let y = Math.max(0, Math.floor(dy)); y < Math.min(h, Math.ceil(dy + dh)); y++) {
+    for (let x = Math.max(0, Math.floor(dx)); x < Math.min(w, Math.ceil(dx + dw)); x++) {
+      const f = Math.min(1, (x + 0.5 - dx) / feather, (dx + dw - x - 0.5) / feather, (y + 0.5 - dy) / feather, (dy + dh - y - 0.5) / feather);
+      if (f <= 0) continue;
+      const i = (y * w + x) * 4;
+      for (let c = 0; c < 3; c++) out.data[i + c] = B[i + c] + f * (Is[i + c] - Bs[i + c]);
+    }
+  }
+  canvas.getContext('2d').putImageData(out, 0, 0);
+  return true;
 }
 
 async function exists(path) {
   try { await Neutralino.filesystem.getStats(path); return true; } catch { return false; }
 }
 
-async function saveTexture(pkg, entry, out, maxWidth) {
+async function saveTexture(pkg, entry, out, maxWidth, frame = false) {
   if (await exists(out)) return true; // resumable: keep work from an interrupted scan
-  await Neutralino.filesystem.writeBinaryFile(out, await toJpeg(await decodeTexture(pkg, entry, maxWidth)));
+  await Neutralino.filesystem.writeBinaryFile(out, await toJpeg(await decodeTexture(pkg, entry, maxWidth), frame));
   return true;
 }
 
@@ -233,7 +332,15 @@ export async function readModInfo(file, cacheDir) {
   const key = cacheKey(file, st);
   const manifestPath = join(cacheDir, `${key}.json`);
   const cached = await readText(manifestPath);
-  if (cached) { try { return withPaths(JSON.parse(cached), cacheDir); } catch { /* rebuild */ } }
+  let old = null;
+  if (cached) {
+    try {
+      old = JSON.parse(cached);
+      // Read again: tracks read before they were named from their ui\previews.json,
+      // and cars whose pictures were framed differently (frameCar), or not at all.
+      if (old.kind === 'track' ? old.named : old.kind !== 'car' || old.framing === FRAMING) return withPaths(old, cacheDir);
+    } catch { /* rebuild */ }
+  }
 
   const pkg = await openPackage(file);
   if (!pkg) { log(`kspkg: no file table in ${file}`); return null; }
@@ -263,8 +370,8 @@ export async function readModInfo(file, cacheDir) {
       const visual = tex.name.split(/[\\/]/).pop().replace(/\.texture$/i, '').split('-').pop();
       if (seen.has(visual)) continue;
       try {
-        const name = `${key}-${seen.size}.jpg`;
-        await saveTexture(pkg, tex, join(cacheDir, name), 1024);
+        const name = `${key}-f${FRAMING}-${seen.size}.jpg`;
+        await saveTexture(pkg, tex, join(cacheDir, name), 1024, true);
         // Visual presets carry [brand, trim, livery name]: "Porsche", "Weissach", "Manthey Racing Tuned".
         const preset = pkg.files.find(e => e.name.toLowerCase().endsWith(`${visual.toLowerCase()}.visualcarpreset`));
         const labels = preset ? protoStrings(await pkg.read(preset)) : [];
@@ -274,9 +381,14 @@ export async function readModInfo(file, cacheDir) {
         log(`kspkg: thumbnail failed ${tex.name}: ${err?.message || err}`);
       }
     }
+    info.framing = FRAMING;
+    // The pictures made before (other names) aren't needed any more.
+    for (const t of old?.thumbs || []) {
+      if (!info.thumbs.some(x => x.file === t.file)) await Neutralino.filesystem.remove(join(cacheDir, t.file)).catch(() => {});
+    }
   } else if (info.kind === 'track') {
-    // Best effort until track mods with a known layout exist: first UI/preview texture.
-    const tex = pkg.find(/^content\\tracks\\.*(\\ui\\|preview|thumb|layout).*\.texture$/i)[0];
+    // A UI or preview texture, a photo first (a converted track has ui\photo and ui\map).
+    const tex = pkg.find(/^content\\tracks\\.*(\\ui\\|preview|thumb|layout).*\.texture$/i).sort((a, b) => +!/photo|preview/i.test(a.name) - +!/photo|preview/i.test(b.name))[0];
     if (tex) {
       try {
         const name = `${key}-0.jpg`;
@@ -284,27 +396,212 @@ export async function readModInfo(file, cacheDir) {
         info.thumbs.push({ file: name, label: '' });
       } catch (err) { log(`kspkg: track preview failed ${tex.name}: ${err?.message || err}`); }
     }
-    if (!info.name) info.name = prettifyId(pkg.find(/^content\\tracks\\[^\\]+\\/i)[0]?.name.split('\\')[2] || '');
+    if (!info.name) {
+      const previews = pkg.get(`content\\tracks\\${info.contentId}\\ui\\previews.json`);
+      info.name = evoTrackName(info.contentId, previews ? parseJson(utf8.decode(await pkg.read(previews))) : null);
+    }
+    info.named = true;
   }
   await writeText(manifestPath, JSON.stringify(info));
   return withPaths(info, cacheDir);
 }
 
-// Delete cached thumbnails/manifests for packages that changed or were removed.
+// Delete cached files of mod packages that changed or were removed: the files
+// named after a package's key (its manifest and pictures, presets-<key>.json,
+// evotracks.js's trackreg-<key>-….json and trackmap-<key>-….svg) whose key isn't
+// a live one. Other files (known-cars.json, the game package's presets) stay.
 export async function pruneCache(cacheDir, liveKeys) {
   let entries = [];
   try { entries = await Neutralino.filesystem.readDirectory(cacheDir); } catch { return; }
   for (const e of entries) {
-    if (e.type !== 'FILE' || [...liveKeys].some(k => e.entry.startsWith(k))) continue;
+    if (e.type !== 'FILE' || !/\.kspkg-\d+-\d+-v\d+/i.test(e.entry) || /(^|-)content\.kspkg-\d/i.test(e.entry)) continue;
+    if ([...liveKeys].some(k => e.entry.includes(k))) continue;
     try { await Neutralino.filesystem.remove(join(cacheDir, e.entry)); } catch { /* in use */ }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Writing a package: a loose mod folder made into one EVO loads from its mods
+// folder. The files' data one after another, then the file table: an entry per
+// file and per folder (from the mod's own folder down, as car mods have
+// content\cars\<id>), named as EVO looks it up (FNV-1a 64 of the path in lower
+// case, UTF-16, with \'s) and sorted by that hash, since EVO finds files by
+// binary search. Nothing is XOR'd but the table.
+
+const pathHash = name => {
+  let h = 0xcbf29ce484222325n;
+  for (let i = 0; i < name.length; i++) {
+    const c = name.charCodeAt(i);
+    for (const b of [c & 255, c >> 8]) { h ^= BigInt(b); h = (h * 0x100000001b3n) & 0xffffffffffffffffn; }
+  }
+  return h;
+};
+
+// files: [{ name: 'content\\tracks\\<id>\\…', src, size, optional }]. Optional ones
+// (pictures for the game's menus) are left out if one would sort first: readers
+// find a package by its first entry being under content\. Written to <out>.part,
+// renamed when done, removed if it fails. onProgress(done, total) in bytes of the
+// package; it may throw to stop.
+export async function writePackage(out, files, onProgress) {
+  const part = `${out}.part`;
+  try {
+    return await writePackageTo(out, part, files, onProgress);
+  } catch (err) {
+    await Neutralino.filesystem.remove(part).catch(() => {});
+    throw err;
+  }
+}
+
+async function writePackageTo(out, part, files, onProgress) {
+  const top = 3, CH = 8 << 20;
+  const named = files.map(f => ({ ...f, hash: pathHash(f.name.toLowerCase()) }));
+  const bad = named.find(f => !/^[\x20-\x7e]+$/.test(f.name) || f.name.length > 0xE0);
+  if (bad) throw new Error(`a file name EVO can't take: ${bad.name}`);
+  const first = list => list.reduce((m, f) => (f.hash < m ? f.hash : m), 0xffffffffffffffffn);
+  const used = first(named.filter(f => f.optional)) < first(named.filter(f => !f.optional)) ? named.filter(f => !f.optional) : named;
+
+  const entries = [], data = used.reduce((n, f) => n + f.size, 0), total = data + TABLE_SIZES[0];
+  let offset = 0, pending = [], pendingSize = 0;
+  const flush = async () => {
+    if (!pendingSize) return;
+    const buf = new Uint8Array(pendingSize);
+    let at = 0;
+    for (const p of pending) { buf.set(p, at); at += p.length; }
+    await Neutralino.filesystem.appendBinaryFile(part, buf.buffer);
+    pending = []; pendingSize = 0;
+    onProgress?.(offset, total);
+  };
+  await Neutralino.filesystem.writeBinaryFile(part, new ArrayBuffer(0));
+  onProgress?.(0, total);
+  for (const f of used) {
+    entries.push({ name: f.name, hash: f.hash, flags: 0, size: f.size, offset });
+    for (let pos = 0; pos < f.size; pos += CH) {
+      const bytes = new Uint8Array(await Neutralino.filesystem.readBinaryFile(f.src, { pos, size: Math.min(CH, f.size - pos) }));
+      pending.push(bytes); pendingSize += bytes.length; offset += bytes.length;
+      if (pendingSize >= CH) await flush();
+    }
+  }
+  await flush();
+  if (offset !== data) throw new Error('a file changed while it was packed');
+
+  const dirs = new Set();
+  for (const f of used) {
+    const parts = f.name.split('\\');
+    for (let i = top; i < parts.length; i++) dirs.add(parts.slice(0, i).join('\\'));
+  }
+  for (const d of dirs) entries.push({ name: d, hash: pathHash(d.toLowerCase()), flags: FLAG_DIR, size: 0, offset: 0 });
+  if (entries.length > TABLE_SIZES[0] / ENTRY_SIZE) throw new Error('too many files for one package');
+  entries.sort((a, b) => (a.hash < b.hash ? -1 : a.hash > b.hash ? 1 : 0));
+
+  const table = new Uint8Array(TABLE_SIZES[0]), dv = new DataView(table.buffer);
+  entries.forEach((e, i) => {
+    const o = i * ENTRY_SIZE;
+    for (let k = 0; k < e.name.length; k++) table[o + k] = e.name.charCodeAt(k);
+    dv.setUint16(o + 0xE4, e.flags, true);
+    dv.setInt16(o + 0xE6, e.name.length, true);
+    dv.setBigUint64(o + 0xE8, e.hash, true);
+    dv.setBigInt64(o + 0xF0, BigInt(e.size), true);
+    dv.setBigInt64(o + 0xF8, BigInt(e.offset), true);
+  });
+  xor(table);
+  for (let pos = 0; pos < table.length; pos += CH) {
+    await Neutralino.filesystem.appendBinaryFile(part, table.slice(pos, pos + CH).buffer);
+    onProgress?.(data + Math.min(pos + CH, table.length), total);
+  }
+  await Neutralino.filesystem.remove(out).catch(() => {});
+  await Neutralino.filesystem.move(part, out);
+  return { files: used.length, dirs: dirs.size, skipped: named.length - used.length, size: offset + table.length };
+}
+
+// ---------------------------------------------------------------------------
+// Mod track names. EvoForge (the tool converting Assetto Corsa tracks) writes
+// ui\previews.json with the Assetto Corsa track it came from ("sources.photo":
+// ...\content\tracks\ek_tsubaki_line\ui\...): its folder name reads better than
+// the converted id (ek_tsubak_hv).
+
+const parseJson = text => { try { return JSON.parse(text); } catch { return null; } };
+
+export function evoTrackName(id, previews) {
+  const from = /[\\/]tracks[\\/]([^\\/]+)[\\/]ui[\\/]/i.exec(previews?.sources?.photo || previews?.sources?.outline || '')?.[1];
+  return prettifyId(from || id);
+}
+export const evoLayoutName = layout => prettifyId(layout);
+
+// A track's layouts as EVO finds them: each containers\layout_<id>.scene (all of
+// EVO's own tracks; only Brands Hatch and Imola also have .track_layout files) and
+// each layouts\<id>.track_layout (converted tracks have both). names: the track's
+// files, relative to its folder. [{ id, aiLine }], aiLine: it has
+// layouts\layout_<id>.ideal_line.aisplinedata, the line EVO's AI drives (Assetto
+// Corsa layouts without an AI line, such as free roam ones, convert without it).
+export function evoTrackLayouts(names) {
+  const lower = new Set(names.map(n => n.toLowerCase())), ids = new Map();
+  for (const n of names) {
+    const m = /^containers\\layout_([^\\]+)\.scene$/i.exec(n) || /^layouts\\([^\\]+)\.track_layout$/i.exec(n);
+    if (m && !ids.has(m[1].toLowerCase())) ids.set(m[1].toLowerCase(), m[1]);
+  }
+  return [...ids.values()].sort().map(id => ({
+    id, aiLine: [`layout_${id}`, id].some(s => lower.has(`layouts\\${s}.ideal_line.aisplinedata`.toLowerCase())),
+  }));
+}
+
+// The name EVO's menus give a track's picture and map (ksUI.getTrackId in
+// uiresources\js\components.js): "<track name>-<layout name>", spaces as _.
+export const evoUiTrackId = (name, layout) => [name.trim().replace('-', '_'), layout.trim()].join('-').replaceAll(' ', '_').toLowerCase();
+
+// An EVO track as a loose folder (<id>.track, <id>.scene, containers\layout_<layout>.scene,
+// the way EVO's own are, as tools converting Assetto Corsa tracks make them; see
+// evoTrackLayouts) packed for the mods folder: the folder as content\tracks\<id>. The folder's
+// ui\photo and ui\map, when there, are also put where EVO's menus look for a
+// track's picture and map: uiresources\images\tracks\<name>-<layout>.texture and
+// uiresources\images\trackmaps\<name>-<layout>.svg and .texture (evoUiTrackId), for
+// each layout, with the names the track is listed under (evotracks.js).
+export async function packEvoTrack(dir, id, out, onProgress) {
+  const files = [];
+  const walk = async (abs, rel) => {
+    for (const e of await listDir(abs)) {
+      if (e.entry === '.' || e.entry === '..') continue;
+      const src = join(abs, e.entry), name = rel ? `${rel}\\${e.entry}` : e.entry;
+      if (e.type === 'DIRECTORY') await walk(src, name);
+      else files.push({ name: `content\\tracks\\${id}\\${name}`, src, size: (await Neutralino.filesystem.getStats(src)).size });
+    }
+  };
+  await walk(dir, '');
+  const has = rel => files.find(f => f.name.toLowerCase() === `content\\tracks\\${id}\\${rel}`.toLowerCase());
+  const prefix = `content\\tracks\\${id}\\`;
+  const layouts = evoTrackLayouts(files.map(f => f.name.slice(prefix.length))).map(l => l.id);
+  const photo = has('ui\\photo.texture'), mips = has('ui\\photo.texturemips'), map = has('ui\\map.svg');
+  const mapTex = has('ui\\map.texture'), mapMips = has('ui\\map.texturemips');
+  const previews = has('ui\\previews.json'), name = evoTrackName(id, previews ? parseJson(await readText(previews.src)) : null);
+  for (const layout of layouts) {
+    const ui = evoUiTrackId(name, evoLayoutName(layout));
+    if (photo && mips) files.push({ ...photo, name: `uiresources\\images\\tracks\\${ui}.texture`, optional: true }, { ...mips, name: `uiresources\\images\\tracks\\${ui}.texturemips`, optional: true });
+    if (map) files.push({ ...map, name: `uiresources\\images\\trackmaps\\${ui}.svg`, optional: true });
+    // The in-game map takes the texture, the menus the svg (EVO's own have both).
+    if (mapTex && mapMips) files.push({ ...mapTex, name: `uiresources\\images\\trackmaps\\${ui}.texture`, optional: true }, { ...mapMips, name: `uiresources\\images\\trackmaps\\${ui}.texturemips`, optional: true });
+  }
+  const r = await writePackage(out, files, onProgress);
+  log(`kspkg: packed ${dir} as ${out}: ${r.files} files, ${r.dirs} folders, ${r.size} bytes${r.skipped ? `, ${r.skipped} menu pictures left out` : ''}`);
+  return r;
+}
+
+// A loose texture (.texture beside its .texturemips) as a JPG, for a preview.
+export async function looseTextureJpeg(texPath, out, maxWidth = 1000) {
+  const read = async (path, pos, size) => new Uint8Array(await Neutralino.filesystem.readBinaryFile(path, size == null ? undefined : { pos, size }));
+  const entry = name => ({ name, path: name });
+  const pkg = {
+    get: name => entry(name),
+    read: e => read(e.path),
+    readRange: (e, pos, len) => read(e.path, pos, len),
+  };
+  await Neutralino.filesystem.writeBinaryFile(out, await toJpeg(await decodeTexture(pkg, entry(texPath), maxWidth)));
+  return out;
 }
 
 // ---------------------------------------------------------------------------
 // Official content (content.kspkg): car list with car-select thumbnails and
 // track list with layout photos + SVG maps, as the game's menus show them.
 
-const BASE_VERSION = 'v5'; // v5: pictures decoded when shown (catalogue lists their textures)
+const BASE_VERSION = 'v6'; // v6: academy arches per layout; v5: pictures decoded when shown (catalogue lists their textures)
 const slug = name => name.toLowerCase().replace(/\s+/g, '_');
 const layoutName = id => prettifyId(id.replace(/-/g, ' ')).replace(/\bV(\d)/g, 'v$1');
 
@@ -423,13 +720,17 @@ export async function readEvoCatalog(contentPath, cacheDir, onProgress = () => {
   // Track containers describe each layout per game mode: Practice uses the
   // "Time Attack" container (flag field 6), Race and Race Weekend the "Race" one
   // (flag field 5). Each carries the track_item values the game mode saves need
-  // (container name, max drivers, length).
-  const containers = { practice: new Map(), race: new Map() };
+  // (container name, max drivers, length). The Driving Academy's containers
+  // (is_a_to_b, field 13: "Academy R1-1"…) put a start arch with lights and a
+  // finish arch on the layout; a layout can have several (`arches`).
+  const containers = { practice: new Map(), race: new Map() }, arches = new Map();
   for (const c of rows(await table('system\\track_containers.table'), 8)) {
-    const mode = num(c, 6) === 1 ? 'practice' : num(c, 5) === 1 ? 'race' : '';
+    const mode = num(c, 6) === 1 ? 'practice' : num(c, 5) === 1 ? 'race' : num(c, 13) === 1 ? 'arch' : '';
     const venue = str(c, 10), layout = str(c, 14);
     if (!mode || !venue || !layout) continue;
-    containers[mode].set(`${slug(venue)}|${slug(layout)}`, { layoutName: layout, container: str(c, 1), maxDrivers: num(c, 9) ?? 0, length: num(c, 8) ?? 0 });
+    const item = { layoutName: layout, container: str(c, 1), maxDrivers: num(c, 9) ?? 0, length: num(c, 8) ?? 0 }, at = `${slug(venue)}|${slug(layout)}`;
+    if (mode === 'arch') arches.set(at, [...(arches.get(at) || []), item]);
+    else containers[mode].set(at, item);
   }
 
   const photos = pkg.find(/^uiresources\\images\\tracks\\[^\\]+\.texture$/i);
@@ -444,7 +745,7 @@ export async function readEvoCatalog(contentPath, cacheDir, onProgress = () => {
         const file = basename(e.name.replace(/\\/g, '/')).replace(/\.texture$/i, '');
         const id = file.slice(s.length + 1);
         const practice = containers.practice.get(`${s}|${id}`) || null, race = containers.race.get(`${s}|${id}`) || null;
-        return { id, name: (practice || race)?.layoutName || layoutName(id), file, practice, race };
+        return { id, name: (practice || race)?.layoutName || layoutName(id), file, practice, race, arches: arches.get(`${s}|${id}`) || [] };
       }).sort((a, b) => a.name.localeCompare(b.name)),
     };
   });
@@ -511,11 +812,15 @@ export async function readEvoExtras({ liveries = [], brands = [], contentPkg = '
     }
   }
 
+  // A mod's livery pictures are framed like the game's (frameCar); ones framed
+  // differently, or not at all, are made again.
+  const isMod = r => r.pkgPath !== contentPkg;
+  const ready = r => { const e = index.liveries[liveryKey(r)]; return !!e && (!isMod(r) || e.framing === FRAMING); };
   // Group missing work by package so each package's table is read once.
   const todo = new Map(); // pkgPath -> { liveries: [], brands: [] }
   const job = p => todo.get(p) || todo.set(p, { liveries: [], brands: [] }).get(p);
   if (!cachedOnly) {
-    for (const r of liveries) if (r.pkgPath && !(liveryKey(r) in index.liveries)) job(r.pkgPath).liveries.push(r);
+    for (const r of liveries) if (r.pkgPath && !ready(r)) job(r.pkgPath).liveries.push(r);
     for (const b of brands) if (contentPkg && !(brandSlug(b) in index.brands)) job(contentPkg).brands.push(b);
   }
 
@@ -524,17 +829,20 @@ export async function readEvoExtras({ liveries = [], brands = [], contentPkg = '
     let pkg = null;
     try { pkg = await openPackage(pkgPath); } catch (err) { log(`extras: ${pkgPath}: ${err?.message || err}`); }
     for (const r of work.liveries) {
-      const key = liveryKey(r);
-      let entry = { image: '', label: '' };
+      const key = liveryKey(r), mod = isMod(r);
+      let entry = { image: '', label: '', ...(mod ? { framing: FRAMING } : {}) };
       if (pkg) {
         const base = `content\\cars\\${r.carId}\\`;
         // Some combinations have no thumbnail of their own; any mech with the same visual looks the same.
         const exact = pkg.get(`${base}generated\\thumbnails\\${r.carId}-${r.mech}-${r.visual}.texture`);
         const tex = (exact?.size > 20 ? exact : null) || pkg.find(new RegExp(`^content\\\\cars\\\\${r.carId}\\\\generated\\\\thumbnails\\\\[^\\\\]+-${r.visual}\\.texture$`, 'i')).find(e => e.size > 20);
         if (tex) {
-          try { const file = `livery-${key}.jpg`; await saveTexture(pkg, tex, join(dir, file), 512); entry.image = file; }
+          try { const file = mod ? `livery-${key}-f${FRAMING}.jpg` : `livery-${key}.jpg`; await saveTexture(pkg, tex, join(dir, file), 512, mod); entry.image = file; }
           catch (err) { log(`extras: livery thumb ${key}: ${err?.message || err}`); }
         }
+        // The picture made before (another name) isn't needed any more.
+        const before = index.liveries[key]?.image;
+        if (before && before !== entry.image) await Neutralino.filesystem.remove(join(dir, before)).catch(() => {});
         const preset = pkg.get(`${base}presets\\${r.visual}.visualcarpreset`) || pkg.files.find(e => e.name.toLowerCase().endsWith(`\\${r.visual.toLowerCase()}.visualcarpreset`));
         // Presets carry [brand, full name, short name]: "Porsche", "992 GT3 Cup Black Falcon 632",
         // "Black Falcon 632" (visual) and "Porsche", "... Carrera Cup ABS TC Variant", "ABS TC" (mechanical).
@@ -562,7 +870,7 @@ export async function readEvoExtras({ liveries = [], brands = [], contentPkg = '
 
   const abs = f => f ? join(dir, f) : '';
   return {
-    liveries: Object.fromEntries(liveries.filter(r => liveryKey(r) in index.liveries).map(r => [liveryKey(r), { ...index.liveries[liveryKey(r)], image: abs(index.liveries[liveryKey(r)].image) }])),
+    liveries: Object.fromEntries(liveries.filter(r => cachedOnly ? ready(r) : liveryKey(r) in index.liveries).map(r => [liveryKey(r), { ...index.liveries[liveryKey(r)], image: abs(index.liveries[liveryKey(r)].image) }])),
     brands: Object.fromEntries(brands.filter(b => brandSlug(b) in index.brands).map(b => [brandSlug(b), abs(index.brands[brandSlug(b)])])),
     liveryKey, brandSlug,
   };

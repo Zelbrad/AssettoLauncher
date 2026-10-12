@@ -8,6 +8,11 @@ export const basename = p => norm(p).split('/').pop();
 
 export const log = msg => { try { Neutralino.debug.log(String(msg)); } catch { /* not ready */ } };
 
+// What the launcher tells its result card over the games (overlay.html), a
+// window of its own process: a small JSON file both find in the temp folder.
+// side: '' for the result card (top left), 'right' for the safety rating's.
+export const overlayFile = async (side = '') => join(norm(await Neutralino.os.getPath('temp')), `assetto-launcher-overlay${side ? `-${side}` : ''}.json`);
+
 // Windows runs the games natively; Linux runs them through Steam's Proton, so
 // their user folders live in each game's Wine prefix (see games.js) and the
 // helpers below use sh, pgrep and xdg-open instead of PowerShell.
@@ -193,9 +198,12 @@ export function powershell(script, opts) {
 // For scripts with quotes or backslashes (C# signatures): passed base64 (UTF-16LE),
 // so nothing in them is touched on the way.
 export function powershellEncoded(script, opts) {
+  return Neutralino.os.execCommand(powershellEncodedCommand(script), opts);
+}
+export function powershellEncodedCommand(script) {
   let bin = '';
   for (let i = 0; i < script.length; i++) { const c = script.charCodeAt(i); bin += String.fromCharCode(c & 255, c >> 8); }
-  return Neutralino.os.execCommand(`powershell -NoProfile -NonInteractive -WindowStyle Hidden -EncodedCommand ${btoa(bin)}`, opts);
+  return `powershell -NoProfile -NonInteractive -WindowStyle Hidden -EncodedCommand ${btoa(bin)}`;
 }
 
 // Linux: a POSIX shell command (execCommand runs it through /bin/sh).

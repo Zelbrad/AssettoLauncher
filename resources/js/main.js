@@ -1,8 +1,11 @@
 import { GAMES, gameByKey, resolvePaths, SCANNERS, setEnabled, contentFolder, evoCacheDir, uninstallPaths, uninstallItem, rallyIncompatible, ACC_CARS, RALLY_CARS, rallyCarName, rallyCarIds, appCacheDir, rallyGameStages, markFresh } from './games.js';
 import { ACC_TRACKS, ACC_MODES, ACC_WEATHER, ACC_TIME_SPEEDS, accSeasonName, accOwnedDlcs, accModelOwned, accTrackOwned, accSeasonOwned, accModelClass, readAccSession, accCustomCars, writeAccSession, ensureModelCar } from './acclaunch.js';
-import { readRallySave, rallyStage, writeRallySession, rallyBests, RALLY_KNOWN_STAGES, rallyCover, rallySelectedLiveries, RALLY_WEATHERS, RALLY_TIME_SPEEDS, RALLY_FORECAST_PROBABILITY, RALLY_PERSISTENCE, RALLY_GRIP, rallyLocationWeathers, rallyWeatherFor } from './rallylaunch.js';
-import { loadRallyData, refreshRallyData, rallyGroupText, rallyCarText, rallyStageMedia } from './rallydata.js';
-import { SITE_PAGES, siteCars, siteMaps, rallyStagePhotos, imageSizes, bestMatch, stageGroupOf, words } from './sitecatalog.js';
+import { readRallySave, rallyStage, writeRallySession, rallyBests, rallyRecords, RALLY_WEATHER_IDS, RALLY_KNOWN_STAGES, rallyCover, rallySelectedLiveries, RALLY_WEATHERS, RALLY_TIME_SPEEDS, RALLY_FORECAST_PROBABILITY, RALLY_PERSISTENCE, RALLY_GRIP, rallyLocationWeathers, rallyWeatherFor } from './rallylaunch.js';
+import { loadRallyData, refreshRallyData, rallyGroupText, rallyGroupName, rallyCarText, rallyCarPicture, rallyStageMedia, rallyAiTime } from './rallydata.js';
+import { TIERS, AC_LEVELS, academyProgress, eventTier, acCareer, acSpecialEvents, seriesState, seriesGoalText, seriesLocked, nextRound, standings, goalValue, scoreText, betterScore, startAcEvent, writeAcEvent, readAcResult, recordResult, setLastEvent, restartChampionship, useAcademyStore, evoAcademy, rallyAcademy, levelMedals, levelLocked, levelBefore, levelGolds, bonusLocked, levelEvents, driverLevel, srOf, srGrade, srGradeMin, srLoss, changeSR, srShort, srReader, evoSessionFor, readEvoResult, evoResultFile, readEvoSprint, sprintReader, raceReader, lapReader, acClasses, classEventLocked, classSession, classGrid } from './academy.js';
+import { RALLY_RELEASED } from './academy-data.js';
+import { setupGroups, compareGroups, positionLabel, setupTrackName, renameSetup, duplicateSetup, deleteSetup, exportSetup, exportName, readSetupFile, importSetup, setupSig, allSetupRuns, runsOf, addSetupRun, readAcRun, ACC_SETUP_CARS } from './setups.js';
+import { SITE_PAGES, siteMaps, rallyStagePhotos, imageSizes, stageGroupOf, words } from './sitecatalog.js';
 import { acBests, acBestKey, evoBests, evoBestKey, lapTime } from './bests.js';
 import { checkMods } from './health.js';
 import { acUpdates, cupDetails } from './updates.js';
@@ -12,16 +15,19 @@ import { quickDrive, readAcSession, defaultAcSession, acWeathers, roadTemperatur
 import { readCsp, cspVersions, cspVersionInfo, installCsp, uninstallWeatherMod, deselectWeatherMod, writeCspSetting, compareVersions, cspWeatherLabel, isWetWeather, CSP_WEATHER_TYPES, CSP_PAGE, VCREDIST_URL, SOL_URL, PURE_URL, PROTON_DLL_OVERRIDE } from './csp.js';
 import { readVideo, writeVideo, displayModes, AA_LEVELS, ANISO_LEVELS, SHADOW_SIZES, FPS_LIMITS } from './acvideo.js';
 import { listPpFilters, uninstallPpFilter, restorePpFilter } from './ppfilters.js';
+import { primeChime, playChime } from './chime.js';
+import { startTelemetry } from './evotelemetry.js';
 import { knownCars, withAllConfigs, launchEvo, readEvoSession, defaultEvoSession, EVO_MODES, EVO_WEATHER, EVO_GRIP, EVO_TIME_SPEEDS } from './evolaunch.js';
 import { IMPORT_RE, resolveDropped, prepareImport, installItem, setItemCar, carChoices, discardImport } from './installer.js';
+import { syncEvoTrackList, restoreEvoTrackList, evoTrackListStatus } from './evotracks.js';
 import { readEvoExtras, readCarPresets, isLazyImage, lazyImage } from './kspkg.js';
 import { latestRelease, isNewer, isInstalledCopy, installUpdate } from './appupdate.js';
-import { esc, timeAgo, openExternal, openFolder, storageGet, storageSet, norm, log, exists, basename, prettifyId, fileUrl, mountDir, listDir, join, run, runningProcesses, stopProcess, CURL, NULL_DEV, IS_LINUX } from './util.js';
+import { esc, timeAgo, openExternal, openFolder, powershellEncodedCommand, storageGet, storageSet, norm, log, exists, basename, prettifyId, fileUrl, mountDir, listDir, join, run, runningProcesses, stopProcess, readText, writeText, ensureDir, overlayFile, CURL, NULL_DEV, IS_LINUX } from './util.js';
 import { tr, trn, N_, loadLanguage, systemLanguage, LANGUAGES, lang } from './i18n.js';
 
 Neutralino.init();
 
-const DEFAULT_SETTINGS = { overrides: {}, minimizeOnLaunch: true, lastGame: 'rally', acFilter: 'all' };
+const DEFAULT_SETTINGS = { overrides: {}, minimizeOnLaunch: true, lastGame: 'rally', acFilter: 'all', academyCard: true, academyCardSeconds: 8, academyCardSound: true };
 
 const state = {
   view: 'games',
@@ -40,7 +46,7 @@ const state = {
 const $ = (sel, root = document) => root.querySelector(sel);
 const main = $('#main');
 // Games whose Cars/Tracks tabs list the game's own content next to mods (Mods / All content).
-const hasOfficialContent = (g, tab = currentTab(g)) => g.key === 'ac' || g.key === 'evo' || (g.key === 'rally' && (tab === 'cars' || tab === 'tracks'));
+const hasOfficialContent = (g, tab = currentTab(g)) => ((g.key === 'ac' || g.key === 'evo') && tab !== 'setups') || (g.key === 'rally' && (tab === 'cars' || tab === 'tracks'));
 const isInstalled = g => !!state.installed[g.appid] || !!state.settings.overrides[`${g.key}_install`];
 
 // ---------------------------------------------------------------------------
@@ -91,6 +97,52 @@ function imgTag(src, fallback, cls = 'main') {
   const fb = src ? (fallback || '') : '';
   return `<img class="${cls}${!src ? ' contain' : ''}" src="${esc(first)}" data-fallback="${esc(fb)}" loading="lazy" onerror="__imgFail(this)" alt="">`;
 }
+
+// Track outlines on cards and detail pages (AC's outline.png, EVO's, Rally's maps)
+// come with any amount of empty space around the drawing. Each one is cropped to
+// the drawing when it first loads (once per picture), so the CSS can fit every
+// outline in the same corner box. Hidden until then (app.css); a picture that
+// can't be read (from another site) is shown as it is.
+const trimmedOutlines = new Map();
+function trimOutline(img) {
+  const src = img.getAttribute('src');
+  if (!trimmedOutlines.has(src)) trimmedOutlines.set(src, new Promise(done => {
+    try {
+      const k = Math.min(1, 400 / Math.max(img.naturalWidth, img.naturalHeight, 1));
+      const w = Math.max(1, Math.round(img.naturalWidth * k)), h = Math.max(1, Math.round(img.naturalHeight * k));
+      const c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      const g = c.getContext('2d');
+      g.drawImage(img, 0, 0, w, h);
+      const a = g.getImageData(0, 0, w, h).data;
+      let x0 = w, y0 = h, x1 = -1, y1 = -1;
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          if (a[(y * w + x) * 4 + 3] <= 40) continue;
+          if (x < x0) x0 = x;
+          if (x > x1) x1 = x;
+          if (y < y0) y0 = y;
+          if (y > y1) y1 = y;
+        }
+      }
+      // Empty, or nothing to cut away (no transparent border).
+      if (x1 < 0 || (x0 === 0 && y0 === 0 && x1 === w - 1 && y1 === h - 1)) { done(src); return; }
+      x0 = Math.max(0, x0 - 2); y0 = Math.max(0, y0 - 2); x1 = Math.min(w - 1, x1 + 2); y1 = Math.min(h - 1, y1 + 2);
+      const out = document.createElement('canvas');
+      out.width = x1 - x0 + 1; out.height = y1 - y0 + 1;
+      out.getContext('2d').drawImage(c, x0, y0, out.width, out.height, 0, 0, out.width, out.height);
+      done(out.toDataURL('image/png'));
+    } catch { done(src); }
+  }));
+  trimmedOutlines.get(src).then(url => {
+    img.dataset.trimmed = '1';
+    if (url !== src) img.src = url;
+  });
+}
+document.addEventListener('load', e => {
+  const img = e.target;
+  if (img instanceof HTMLImageElement && img.classList.contains('overlay') && !img.dataset.trimmed) trimOutline(img);
+}, true);
 
 function initials(title) {
   const words = String(title).replace(/[^\p{L}\p{N}]+/gu, ' ').trim().split(/\s+/);
@@ -277,27 +329,70 @@ async function checkRunning() {
   running.clear();
   for (const k of Object.keys(GAME_PROCESS)) if (procs.has(GAME_PROCESS[k])) { running.add(k); starting.delete(k); }
   for (const k of [...forceStop]) if (!running.has(k)) forceStop.delete(k);
+  // A game seen running (launched here or not) that has closed, or a launch whose
+  // game ran while the launcher was minimized: its results are read now.
+  for (const k of Object.keys(GAME_PROCESS)) {
+    if (running.has(k)) { (launches[k] ||= { at: Date.now() }).seen = true; continue; }
+    const l = launches[k];
+    if (l && (l.seen || Date.now() - l.at > STARTING_MS)) {
+      delete launches[k];
+      gameClosed(k, l).catch(err => log(`results ${k}: ${err?.message || err}`));
+    }
+  }
   // Also catches a launch that never started (its STARTING_MS ran out).
   if (upState() !== shownUp) syncRunning();
+}
+
+// Each launch (and each game seen running): { at, seen, …what Quick Drive set up
+// (nextLaunch) }, until the game has closed and its results were read.
+const launches = {}, nextLaunch = {};
+async function gameClosed(key, l) {
+  if (key === 'evo') watchStop();
+  if (l.academy) await academyClosed(key, l).catch(err => log(`academy result: ${err?.stack || err}`));
+  if (key === 'ac' && l.academy?.layout) await restoreClassLayout(l.academy.layout).catch(err => log(`academy layout: ${err?.message || err}`));
+  if (key === 'ac') {
+    const r = await readAcRun(state.paths, l.at - 5000);
+    if (!r?.ms || !r.values.length) return;
+    const sig = setupSig(r.values);
+    const named = (await getItems(gameByKey('ac'), 'setups', true).catch(() => [])).find(i => i.carId.toLowerCase() === r.car.toLowerCase())?.setups.find(s => setupSig(s.values) === sig);
+    await addSetupRun({ game: 'ac', car: r.car, track: r.track, sig, name: named?.name || '', ms: r.ms, laps: r.laps, at: Date.now() });
+    if (named) toast(tr('Best lap {time} with your setup {name} (saved to its times).', { time: lapTime(r.ms), name: named.name }));
+    log(`results ac: ${r.car} ${r.track} ${r.ms} ms, ${r.laps} laps, setup ${named?.name || sig}`);
+  }
+  if (key === 'rally' && l.setup) {
+    // Stage records that are new or better than when Rally was started.
+    const after = await rallyBests(state.paths);
+    let n = 0;
+    for (const [k, v] of after) {
+      const [stage, car] = k.split('|');
+      if (car.toLowerCase() !== l.car.toLowerCase() || (l.before[k] && v.ms >= l.before[k])) continue;
+      await addSetupRun({ game: 'rally', car, track: stage, sig: l.setup.sig, name: l.setup.name, ms: v.ms, laps: 1, at: Date.now() });
+      n++;
+      toast(tr('New best on {stage}: {time} with {name}.', { stage: rallyStage(stage).name || rallyStage(stage).stage, time: lapTime(v.ms), name: l.setup.name }));
+    }
+    log(`results rally: ${n} new stage bests with ${l.setup.name}`);
+  }
 }
 const upState = () => Object.keys(GAME_PROCESS).map(k => `${isUp(k)}${forceStop.has(k)}`).join();
 let shownUp = '';
 
 function markStarting(key) {
   starting.set(key, Date.now());
+  launches[key] = { at: Date.now(), ...(nextLaunch[key] || {}) };
+  delete nextLaunch[key];
   syncRunning();
 }
 
-// Quick Drive's button says just "Close"; Play buttons get a ■ to match their ▶.
-const stopLabel = (key, b) => closing.has(key) ? tr('Closing…') : `${b.id === 'qd-go' ? '' : '■ '}${forceStop.has(key) ? tr('Force close') : tr('Close')}`;
+// While the game runs, a start button says just "Close".
+const stopLabel = key => closing.has(key) ? tr('Closing…') : forceStop.has(key) ? tr('Force close') : tr('Close');
 
 // Launch buttons carry data-launch-game; their own label is kept in data-label.
 function syncRunning(root = document) {
-  if (root === document) shownUp = upState();
+  if (root === document) { shownUp = upState(); if (state.view === 'academy') drawAcademyRunning(); }
   for (const b of root.querySelectorAll('[data-launch-game]')) {
     const key = b.dataset.launchGame, up = isUp(key);
     b.dataset.label ??= b.innerHTML;
-    if (up) b.textContent = stopLabel(key, b); else b.innerHTML = b.dataset.label;
+    if (up) b.textContent = stopLabel(key); else b.innerHTML = b.dataset.label;
     if (up || b.classList.contains('stop')) b.disabled = up && closing.has(key);
     b.classList.toggle('stop', up);
     delete b.dataset.armed;
@@ -313,7 +408,7 @@ document.addEventListener('click', async e => {
   if (!b.dataset.armed) {
     b.dataset.armed = '1';
     b.textContent = force ? tr('Click again: unsaved progress is lost') : tr('Click again to close');
-    setTimeout(() => { if (b.isConnected && b.dataset.armed) { delete b.dataset.armed; b.textContent = stopLabel(key, b); } }, 4000);
+    setTimeout(() => { if (b.isConnected && b.dataset.armed) { delete b.dataset.armed; b.textContent = stopLabel(key); } }, 4000);
     return;
   }
   closing.add(key); starting.delete(key);
@@ -337,6 +432,7 @@ checkRunning();
 
 async function launchGame(g) {
   if (g.key === 'rally' && !(await rallyPreflight(g))) return;
+  if (g.key === 'evo') await evoTrackSync({ quiet: true });
   await openExternal(steamUrls.run(g.appid));
   markStarting(g.key);
   toast(tr('Launching {game} via Steam…', { game: `${g.title} ${g.sub || ''}`.trim() }));
@@ -695,8 +791,35 @@ async function getItems(g, tab, force = false, onProgress) {
   if (!force && state.cache[key]) return state.cache[key];
   const items = await SCANNERS[g.key][tab](state.paths, onProgress);
   if (g.key === 'rally' && (tab === 'cars' || tab === 'tracks')) await decorateRally(items, tab);
+  if (tab === 'setups') await decorateSetups(g, items);
   state.cache[key] = items;
   return items;
+}
+
+// Setups cards (games.js lists a card per car): the car's name and picture as the
+// game's other pages show them, the setups' track names, newest car first.
+async function decorateSetups(g, items) {
+  const cars = g.key === 'ac' && items.length ? await getItems(g, 'cars').catch(() => []) : [];
+  const tracks = g.key === 'ac' && items.length ? await getItems(g, 'tracks').catch(() => []) : [];
+  for (const i of items) {
+    if (g.key === 'ac') {
+      const c = cars.find(x => x.id.toLowerCase() === i.carId.toLowerCase());
+      if (c) Object.assign(i, { title: c.title, image: c.image, fallbackImage: c.fallbackImage, badge: c.badge, brand: c.brand });
+    } else if (g.key === 'acc') {
+      const model = ACC_SETUP_CARS[i.carId.toLowerCase()];
+      if (model != null) Object.assign(i, { title: ACC_CARS[model] || i.title, image: siteImage('acc', 'cars', String(model)) });
+    } else if (g.key === 'rally') {
+      const id = Object.keys(RALLY_CARS).find(k => k.toLowerCase() === i.carId.toLowerCase()) || i.carId;
+      Object.assign(i, { title: rallyCarName(id), image: rallyCarImage(id) });
+    }
+    for (const s of i.setups) s.trackName = g.key === 'rally' ? rallyGroupName(s.track) || rallyStage(`${s.track}FullForward`).stage || s.track : setupTrackName(s, tracks);
+    const where = [...new Set(i.setups.map(s => s.trackName).filter(Boolean))];
+    i.subtitle = [trn(i.setups.length, '1 setup', '{n} setups'), where.length === 1 ? where[0] : where.length ? trn(where.length, '1 track', '{n} tracks') : ''].filter(Boolean).join(' · ');
+    // The setups' names on the card, newest first.
+    const names = i.setups.map(s => s.name);
+    i.author = names.length > 3 ? `${names.slice(0, 3).join(', ')} ${tr('+{n} more', { n: names.length - 3 })}` : names.join(', ');
+  }
+  items.sort((a, b) => b.date - a.date);
 }
 
 // Rally's cars and stages (games.js lists them) get their pictures, flags and the
@@ -740,6 +863,12 @@ function emptyState(g, tab) {
   const installed = isInstalled(g);
   const btnInstall = `<button class="btn primary small" data-act="install">${tr('Install via Steam')}</button>`;
   const code = s => `<code>${esc(s)}</code>`;
+  if (tab === 'setups') {
+    const where = g.key === 'rally' ? tr("Rally's Personal setups (Car Setup › Save/Load Setup)") : code(folder);
+    return `<h3>${tr('No setups yet')}</h3>${tr('Setups you save in the game show up here, one card per car, from {where}.', { where })}
+      <br>${tr('Compare them, back them up, and share them: Export makes a file a friend can import.')}
+      <br><button class="btn primary small" data-act="import-setup">＋ ${tr('Import setup')}</button>`;
+  }
   switch (g.key) {
     case 'ac':
       if (!installed) return `<h3>${tr('Assetto Corsa not found')}</h3>${tr('Install it through Steam, or set its folder in Settings.')}<br>${btnInstall}`;
@@ -807,10 +936,12 @@ async function renderMods(force = false) {
         ${hasOfficialContent(g) ? `<div class="seg" id="ac-filter">
           <button data-f="mods" class="${state.settings.acFilter === 'mods' ? 'active' : ''}">${tr('Mods')}</button>
           <button data-f="all" class="${state.settings.acFilter === 'all' ? 'active' : ''}">${tr('All content')}</button></div>` : ''}
-        <button class="btn small subtle" id="btn-health" title="${esc(tr('Look for broken, incomplete or conflicting mods'))}">${tr('Check mods')}</button>
+        ${tab === 'setups' ? '' : `<button class="btn small subtle" id="btn-health" title="${esc(tr('Look for broken, incomplete or conflicting mods'))}">${tr('Check mods')}</button>`}
         <button class="btn small subtle" id="btn-refresh" title="${esc(tr('Rescan folders'))}">↻ ${tr('Rescan')}</button>
         <button class="btn small subtle" id="btn-folder" ${folder ? '' : 'disabled'}>${tr('Open folder')}</button>
-        <button class="btn small subtle" id="btn-install" title="${esc(tr('Install a mod from a .zip, .rar, .7z, .kspkg or .pak (or drop it on the window)'))}">＋ ${tr('Install mod')}</button>
+        ${tab === 'setups'
+          ? `<button class="btn small subtle" id="btn-import-setup" title="${esc(tr('Add a setup file a friend shared (AC .ini, ACC .json, or a Rally setup exported by the launcher)'))}">＋ ${tr('Import setup')}</button>`
+          : `<button class="btn small subtle" id="btn-install" title="${esc(tr('Install a mod from a .zip, .rar, .7z, .kspkg or .pak (or drop it on the window)'))}">＋ ${tr('Install mod')}</button>`}
         <button class="btn small primary" id="btn-play-mods" data-launch-game="${g.key}" ${isInstalled(g) ? '' : 'disabled'}>▶ ${tr('Play')}</button>
       </div>
     </div>
@@ -827,9 +958,10 @@ async function renderMods(force = false) {
     renderMods();
   };
   $('#btn-refresh').onclick = () => renderMods(true);
-  $('#btn-health').onclick = () => openHealthCheck(g);
+  if ($('#btn-health')) $('#btn-health').onclick = () => openHealthCheck(g);
   $('#btn-folder').onclick = () => openFolder(folder);
-  $('#btn-install').onclick = pickModFiles;
+  if ($('#btn-install')) $('#btn-install').onclick = pickModFiles;
+  if ($('#btn-import-setup')) $('#btn-import-setup').onclick = () => importSetupFlow();
   $('#btn-play-mods').onclick = () => launchGame(g);
   syncRunning();
   $('#ac-filter')?.addEventListener('click', e => {
@@ -901,6 +1033,7 @@ async function renderMods(force = false) {
     $('.view.mods')?.classList.toggle('fill', !!rail);
     const media = tab === 'screens' || tab === 'replays';
     const total = media ? tr('{n} total', { n: items.length })
+      : tab === 'setups' ? `${trn(items.length, '1 car', '{n} cars')} · ${trn(items.reduce((n, i) => n + i.setups.length, 0), '1 setup', '{n} setups')}`
       : hasOfficialContent(g) ? tr('{mods} mods · {n} total', { mods: items.filter(i => i.isMod).length, n: items.length })
       : tr('{n} installed', { n: items.length });
     $('#count').textContent = `${tr('{n} shown', { n: list.length })} · ${total}`;
@@ -924,6 +1057,7 @@ async function renderMods(force = false) {
   $('#grid-wrap').onclick = async e => {
     const act = e.target.closest('[data-act]')?.dataset.act;
     if (act === 'install') return openExternal(steamUrls.install(g.appid));
+    if (act === 'import-setup') return importSetupFlow();
     if (act === 'mkdir') {
       try { await Neutralino.filesystem.createDirectory(folder); } catch { /* exists */ }
       return openFolder(folder);
@@ -931,7 +1065,327 @@ async function renderMods(force = false) {
     const brand = e.target.closest('[data-brand]');
     if (brand) { state.brand[g.key] = brand.dataset.brand; drawGrid(); return; }
     const card = e.target.closest('[data-idx]');
-    if (card) openDetail(g, items[+card.dataset.idx], () => drawGrid());
+    if (!card) return;
+    const item = items[+card.dataset.idx];
+    if (item.kind === 'setups') openSetups(g, item);
+    else openDetail(g, item, () => drawGrid());
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Setups (the Mods page's Setups tab): a window per car. Its setups on the left;
+// on the right the one picked, a tab per group of the game's setup menu with the
+// values at their wheel or axle on a drawing of the car, or two compared.
+
+// A noted time's track: Rally's stage and its length; AC's "<track>-<layout>" as its Tracks page names it.
+function runTrack(game, track, tracks) {
+  if (game === 'rally') { const st = rallyStage(track); return { name: st.name || st.stage || track, sub: tr(st.length || '') }; }
+  const t = tracks.find(x => x.id === track) || tracks.find(x => track.startsWith(`${x.id}-`));
+  if (!t) return { name: prettifyId(track), sub: '' };
+  const layout = t.id === track ? '' : track.slice(t.id.length + 1);
+  const l = layout && t.layouts?.find(x => x.id === layout);
+  return { name: t.title, sub: l?.name && l.name !== t.title ? l.name : '' };
+}
+const rallyBusy = game => game === 'rally' && isUp('rally');
+const RALLY_OPEN = () => tr("Close Rally first: the launcher doesn't change Rally's setups while it's running.");
+
+const SX_ICONS = {
+  import: '<path d="M8 2.5v7.5m0 0L5 7m3 3 3-3M3 11.5v2h10v-2"/>',
+  folder: '<path d="M2 4.5v7.75c0 .41.34.75.75.75h10.5c.41 0 .75-.34.75-.75V6.25a.75.75 0 0 0-.75-.75H8L6.5 3.75H2.75a.75.75 0 0 0-.75.75z"/>',
+  export: '<path d="M8 10V2.5m0 0L5 5.5m3-3 3 3M3 11.5v2h10v-2"/>',
+  duplicate: '<rect x="5.25" y="5.25" width="8.25" height="8.25" rx="1.5"/><path d="M10.75 5.25v-1.5c0-.83-.67-1.5-1.5-1.5h-5.5c-.83 0-1.5.67-1.5 1.5v5.5c0 .83.67 1.5 1.5 1.5h1.5"/>',
+  rename: '<path d="M10.25 3.25l2.5 2.5L6 12.5H3.5V10z"/>',
+  delete: '<path d="M2.75 4.25h10.5M6.25 4.25v-1.5h3.5v1.5M4.25 4.25l.6 9h6.3l.6-9"/>',
+  compare: '<path d="M2.5 5.25h9.5m0 0L9.5 2.75M12 5.25 9.5 7.75M13.5 10.75H4m0 0 2.5-2.5M4 10.75l2.5 2.5"/>',
+  pin: '<path d="M8 14s4.25-3.9 4.25-7.25a4.25 4.25 0 0 0-8.5 0C3.75 10.1 8 14 8 14z"/><circle cx="8" cy="6.75" r="1.5"/>',
+  clock: '<circle cx="8" cy="8" r="5.75"/><path d="M8 5v3l2 1.25"/>',
+  user: '<circle cx="8" cy="5.5" r="2.75"/><path d="M2.75 13.5c.6-2.4 2.7-3.75 5.25-3.75s4.65 1.35 5.25 3.75"/>',
+  info: '<circle cx="8" cy="8" r="6"/><path d="M8 7.25v4"/><path d="M8 4.75v.01" stroke-width="2"/>',
+  trophy: '<path d="M5 2.75h6v3.5a3 3 0 0 1-6 0zM5 4H2.75c0 1.75 1 2.75 2.4 2.9M11 4h2.25c0 1.75-1 2.75-2.4 2.9M8 9.25v2.5M5.5 13.25h5"/>',
+  done: '<path d="M3.5 3.5l9 9M12.5 3.5l-9 9"/>',
+};
+const sxIcon = k => `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${SX_ICONS[k]}</svg>`;
+const SX_TAB = {}; // the group last looked at, per game
+
+// The times noted with a setup (gameClosed), per track or stage: [{ track, best, n, last }], newest first.
+function setupTimes(runs) {
+  const by = new Map();
+  for (const r of runs) by.set(r.track, [...(by.get(r.track) || []), r]);
+  return [...by].map(([track, list]) => ({ track, best: Math.min(...list.map(r => r.ms)), n: list.length, last: Math.max(...list.map(r => r.at)) })).sort((a, b) => b.last - a.last);
+}
+
+// One group of a setup on a grid of four columns: a card per wheel (front left,
+// front right, rear left, rear right), under them a card per axle (front under the
+// two fronts, rear under the two rears), then the other values as tiles.
+function setupGroupHTML(s, grp) {
+  const card = (list, p, cls) => {
+    const rows = list.filter(r => r.cells[p]).map(r => `<div><dt>${esc(r.label)}</dt><dd>${esc(r.cells[p])}</dd></div>`).join('');
+    return rows ? `<div class="sx-card ${cls}"><h5>${esc(positionLabel(s.game, p))}</h5><dl>${rows}</dl></div>` : '';
+  };
+  const tiles = grp.singles.map(t => `<div class="sx-tile${String(t.value).length > 22 ? ' wide' : ''}">
+      <small>${esc(t.label)}</small><b>${esc(t.value)}</b>${t.note ? `<i>${esc(t.note)}</i>` : ''}</div>`).join('');
+  return `<div class="sx-grid">${['FL', 'FR', 'RL', 'RR'].map(p => card(grp.corners, p, 'wheel')).join('')}
+    ${['F', 'R', 'C'].map(p => card(grp.axles, p, `axle axle-${p}`)).join('')}${tiles}</div>`;
+}
+
+function openSetups(g, item) {
+  let current = 0, cmp = null, diffOnly = true, renaming = false, runs = null, tracks = [];
+  const view = () => el.querySelector('#setups-view');
+  const { el, close } = modal(`
+    <header class="qd-head sx-head">
+      ${item.image || item.fallbackImage ? `<div class="sx-head-img">${imgTag(item.image, item.fallbackImage)}</div>` : ''}
+      <div class="sx-head-text">
+        <small class="sx-kicker">${esc(`${g.title} ${g.sub || ''}`.trim())} · ${tr('Setups')}</small>
+        <h2>${esc(item.title)}</h2>
+        <div class="sx-head-sub" id="setups-sub"></div>
+      </div>
+      <div class="sx-head-actions">
+        <button class="btn small subtle" data-s="import">${sxIcon('import')}${tr('Import setup')}</button>
+        <button class="btn small subtle" data-s="folder">${sxIcon('folder')}${tr('Open folder')}</button>
+      </div>
+    </header>
+    <div class="sx-body">
+      <aside class="sx-list" id="setups-list"></aside>
+      <div class="sx-view" id="setups-view"></div>
+    </div>`, 'modal setups-modal');
+
+  const timesOf = s => (runs ? setupTimes(runsOf(s, runs)) : []);
+  const ago = s => (s.date ? timeAgo(s.date / 1000) : '');
+
+  const listHTML = () => `<div class="sx-list-title">${tr('Your setups')} <small>${item.setups.length}</small></div>` + item.setups.map((s, i) => {
+    const ab = cmp ? (cmp[0] === i ? 'a' : cmp[1] === i ? 'b' : '') : '';
+    const n = timesOf(s).length;
+    return `<button class="sx-item${!cmp && i === current ? ' active' : ''}${ab ? ` in-${ab}` : ''}" data-open="${i}">
+      ${ab ? `<i class="sx-ab ${ab}">${ab.toUpperCase()}</i>` : ''}
+      <span class="sx-item-name">${esc(s.name)}</span>
+      <span class="sx-item-meta">${esc([s.trackName, ago(s)].filter(Boolean).join(' · '))}</span>
+      ${n ? `<span class="sx-item-times">${sxIcon('trophy')}${esc(s.game === 'rally' ? trn(n, '1 stage time', '{n} stage times') : trn(n, '1 track time', '{n} track times'))}</span>` : ''}
+    </button>`;
+  }).join('');
+
+  const timesHTML = s => {
+    if (!runs || s.game === 'acc') return '';
+    const list = timesOf(s);
+    if (!list.length) {
+      return `<p class="sx-hint">${sxIcon('trophy')}<span>${s.game === 'ac'
+        ? tr('No times with it yet: drive with it, and when AC closes the launcher notes your best lap here.')
+        : tr("No times with it yet: pick it in Quick Drive's session settings (Car Setup), and the stage bests you set with it are noted here.")}</span></p>`;
+    }
+    return `<section class="sx-times"><h4>${sxIcon('trophy')}${tr('Your times with this setup')}</h4><div class="sx-time-grid">${list.map(r => {
+      const t = runTrack(s.game, r.track, tracks);
+      const n = s.game === 'rally' ? trn(r.n, '1 stage best', '{n} stage bests') : trn(r.n, '1 session', '{n} sessions');
+      return `<div class="sx-time"><div><b>${esc(t.name)}</b><small>${esc([t.sub, n, timeAgo(r.last / 1000)].filter(Boolean).join(' · '))}</small></div><span>${esc(lapTime(r.best))}</span></div>`;
+    }).join('')}</div></section>`;
+  };
+
+  const singleHTML = s => {
+    const groups = setupGroups(s);
+    const tab = groups.find(x => x.id === SX_TAB[g.key]) || groups[0];
+    const facts = [
+      s.trackName && `<span>${sxIcon('pin')}${esc(s.trackName)}</span>`,
+      s.date && `<span title="${esc(new Date(s.date).toLocaleString())}">${sxIcon('clock')}${esc(tr('Saved {when}', { when: ago(s) }))}</span>`,
+      s.author && `<span>${sxIcon('user')}${esc(s.author)}</span>`,
+      s.version && `<span>${esc(tr('Rally {version}', { version: s.version }))}</span>`,
+    ].filter(Boolean).join('');
+    const others = item.setups.map((x, i) => [x, i]).filter(([, i]) => i !== current);
+    return `<div class="sx-top">
+        <div class="sx-name">
+          ${renaming
+            ? `<div class="sx-rename"><input id="setup-rename" value="${esc(s.name)}" maxlength="60" aria-label="${esc(tr('New name'))}">
+                <button class="btn small primary" data-s="rename-save">${tr('Save')}</button><button class="btn small subtle" data-s="rename-cancel">${tr('Cancel')}</button></div>`
+            : `<h3>${esc(s.name)}</h3>`}
+          <div class="sx-facts">${facts}</div>
+        </div>
+        <div class="sx-tools">
+          ${others.length ? `<div class="sx-pick"><button class="sx-tool" data-s="compare-menu">${sxIcon('compare')}<span>${tr('Compare')}</span></button>
+            <div class="sx-menu" hidden><small>${tr('Compare {name} with', { name: s.name })}</small>${others.map(([x, i]) => `<button data-cmp="${i}"><b>${esc(x.name)}</b><small>${esc([x.trackName, ago(x)].filter(Boolean).join(' · '))}</small></button>`).join('')}</div></div>` : ''}
+          <button class="sx-tool" data-s="export">${sxIcon('export')}<span>${tr('Export')}</span></button>
+          <button class="sx-tool" data-s="duplicate">${sxIcon('duplicate')}<span>${tr('Duplicate')}</span></button>
+          <button class="sx-tool" data-s="rename">${sxIcon('rename')}<span>${tr('Rename')}</span></button>
+          <button class="sx-tool danger" data-s="delete">${sxIcon('delete')}<span>${tr('Delete')}</span></button>
+        </div>
+      </div>
+      ${s.game === 'rally' ? `<p class="sx-hint">${sxIcon('info')}<span>${tr('To drive with it, load it in Rally: Car Setup › Save/Load Setup › Personal.')}</span></p>` : ''}
+      ${timesHTML(s)}
+      ${groups.length > 1 ? `<nav class="sx-tabs">${groups.map(x => `<button data-tab="${esc(x.id)}" class="${x === tab ? 'active' : ''}">${esc(x.title)}</button>`).join('')}</nav>` : ''}
+      <div class="sx-panel${groups.length > 1 ? '' : ' alone'}">${tab ? setupGroupHTML(s, tab) : `<p class="sx-hint">${sxIcon('info')}<span>${tr('This setup has no values.')}</span></p>`}</div>`;
+  };
+
+  // Two setups side by side, group by group: the values that differ highlighted,
+  // with how much B changes them (B − A).
+  const compareHTML = () => {
+    const [a, b] = cmp.map(i => item.setups[i]);
+    const groups = compareGroups(a, b);
+    const diffs = groups.reduce((n, x) => n + x.rows.filter(r => !r.same).length, 0);
+    const short = { F: tr('F'), C: tr('C'), R: tr('R') };
+    const mini = (r, text, cls) => r.shape === 'one' ? `<span class="${cls('')}">${esc(text(''))}</span>`
+      : `<div class="sx-mini ${r.shape}">${r.positions.map(p => `<span class="${cls(p)}" title="${esc(positionLabel(a.game, p))}">${r.shape === 'axles' ? `<i>${esc(short[p])}</i>` : ''}${esc(text(p))}</span>`).join('')}</div>`;
+    const value = side => r => mini(r, p => r[side][p] || '—', p => (r.diff[p] ? 'd' : ''));
+    const change = r => (r.same ? '' : mini(r, p => (r.diff[p] ? r.delta[p] || tr('changed') : '·'), p => (r.diff[p] ? 'd' : '')));
+    const pick = (side, i) => `<select data-s="cmp-${side}" aria-label="${esc(side === 'a' ? tr('Setup A') : tr('Setup B'))}">${item.setups.map((x, j) => `<option value="${j}"${j === i ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select>`;
+    const body = groups.map(x => {
+      const rows = x.rows.filter(r => !diffOnly || !r.same);
+      if (!rows.length) return '';
+      const n = x.rows.filter(r => !r.same).length;
+      return `<section class="sx-cmp-group"><h4>${esc(x.title)}${n ? `<small>${esc(trn(n, '1 difference', '{n} differences'))}</small>` : ''}</h4>
+        ${rows.map(r => `<div class="sx-cmp-row${r.same ? '' : ' diff'}"><span class="sx-cmp-label">${esc(r.label)}${r.note ? `<small>${esc(r.note)}</small>` : ''}</span>
+          <div>${value('a')(r)}</div><div>${value('b')(r)}</div><div class="sx-delta">${change(r)}</div></div>`).join('')}</section>`;
+    }).join('');
+    return `<div class="sx-top">
+        <div class="sx-cmp-pick"><i class="sx-ab a">A</i>${pick('a', cmp[0])}<span class="sx-vs">${tr('vs')}</span><i class="sx-ab b">B</i>${pick('b', cmp[1])}</div>
+        <div class="sx-tools">
+          <div class="qd-seg sx-seg"><button data-diff="1" class="${diffOnly ? 'active' : ''}">${tr('Differences')}</button><button data-diff="0" class="${diffOnly ? '' : 'active'}">${tr('All values')}</button></div>
+          <button class="sx-tool" data-s="cmp-done">${sxIcon('done')}<span>${tr('Done')}</span></button>
+        </div>
+      </div>
+      <p class="sx-cmp-sum"><b>${esc(diffs ? trn(diffs, '1 setting differs', '{n} settings differ') : tr('These two setups are the same.'))}</b>
+        ${groups.some(x => x.rows.some(r => r.shape === 'corners')) ? `<span class="sx-legend-note"><span class="sx-legend"><b>FL</b><b>FR</b><b>RL</b><b>RR</b></span>${tr('Values per wheel are laid out like this')}</span>` : ''}</p>
+      ${body ? `<div class="sx-cmp"><div class="sx-cmp-head"><span>${tr('Setting')}</span><span><i class="sx-ab a">A</i>${esc(a.name)}</span><span><i class="sx-ab b">B</i>${esc(b.name)}</span><span>${tr('Change')}</span></div>${body}</div>` : ''}`;
+  };
+
+  const draw = () => {
+    el.querySelector('#setups-sub').textContent = item.subtitle;
+    el.querySelector('#setups-list').innerHTML = listHTML();
+    view().innerHTML = cmp ? compareHTML() : singleHTML(item.setups[current]);
+    if (renaming) { const i = el.querySelector('#setup-rename'); i.focus(); i.select(); }
+  };
+  // After a change: the tab and this window show the files as they are now.
+  const refresh = async keep => {
+    const items = await getItems(g, 'setups', true).catch(err => { toast(err.message, true); return []; });
+    if (state.view === 'mods' && state.game === g.key && currentTab(g) === 'setups') renderMods();
+    const next = items.find(i => i.id.toLowerCase() === item.id.toLowerCase());
+    if (!next) { close(); return; }
+    item = next;
+    current = Math.max(0, item.setups.findIndex(s => s.name === keep));
+    cmp = null; renaming = false;
+    draw();
+  };
+  const run = async (job, keep, done) => {
+    try { await job(); if (done) toast(done); await refresh(keep); }
+    catch (err) { toast(err?.message || String(err), true); }
+  };
+  draw();
+  // The times (and, for AC, the track names they're shown with) come in after.
+  Promise.all([allSetupRuns().catch(() => []), g.key === 'ac' ? getItems(g, 'tracks').catch(() => []) : []])
+    .then(([r, t]) => { runs = r; tracks = t; if (el.isConnected && !renaming) draw(); });
+
+  el.addEventListener('change', e => {
+    const side = e.target.dataset.s?.match(/^cmp-(a|b)$/)?.[1];
+    if (!side) return;
+    const i = +e.target.value, k = side === 'a' ? 0 : 1;
+    // Picking the other side's setup swaps the two.
+    if (cmp[1 - k] === i) cmp[1 - k] = cmp[k];
+    cmp[k] = i;
+    draw();
+  });
+  el.addEventListener('keydown', e => {
+    if (e.target.id !== 'setup-rename') return;
+    if (e.key === 'Enter') el.querySelector('[data-s="rename-save"]')?.click();
+    if (e.key === 'Escape') { e.stopPropagation(); renaming = false; draw(); }
+  });
+  el.addEventListener('click', async e => {
+    const menu = el.querySelector('.sx-menu');
+    if (menu && !e.target.closest('.sx-pick')) menu.hidden = true;
+    const open = e.target.closest('[data-open]');
+    if (open) { current = +open.dataset.open; cmp = null; renaming = false; draw(); view().scrollTop = 0; return; }
+    const tab = e.target.closest('[data-tab]');
+    if (tab) { SX_TAB[g.key] = tab.dataset.tab; draw(); return; }
+    const pickB = e.target.closest('[data-cmp]');
+    if (pickB) { cmp = [current, +pickB.dataset.cmp]; renaming = false; draw(); view().scrollTop = 0; return; }
+    const diff = e.target.closest('[data-diff]');
+    if (diff) { diffOnly = diff.dataset.diff === '1'; draw(); return; }
+    const b = e.target.closest('[data-s]');
+    const act = b?.dataset.s;
+    if (!act || /^cmp-[ab]$/.test(act)) return;
+    if (act === 'compare-menu') { if (menu) menu.hidden = !menu.hidden; return; }
+    if (act === 'cmp-done') { current = cmp[0]; cmp = null; draw(); return; }
+    const s = item.setups[current];
+    if (act === 'folder') return openFolder(g.key === 'rally' ? s.file.replace(/\/[^/]+$/, '') : item.path);
+    if (act === 'import') return importSetupFlow(item);
+    if (act === 'rename') { renaming = true; draw(); return; }
+    if (act === 'rename-cancel') { renaming = false; draw(); return; }
+    if (rallyBusy(g.key) && act !== 'export') { toast(RALLY_OPEN(), true); return; }
+    if (act === 'rename-save') {
+      const name = el.querySelector('#setup-rename').value.trim();
+      return run(() => renameSetup(s, name), name, tr('Renamed to {name}', { name }));
+    }
+    if (act === 'duplicate') return run(() => duplicateSetup(s), s.name, tr('{name} duplicated', { name: s.name }));
+    if (act === 'delete') {
+      // Two-step, like Uninstall.
+      const label = b.querySelector('span');
+      if (!b.dataset.armed) {
+        b.dataset.armed = '1';
+        label.textContent = tr('Click again to delete');
+        setTimeout(() => { if (b.isConnected) { delete b.dataset.armed; label.textContent = tr('Delete'); } }, 4000);
+        return;
+      }
+      const done = g.key === 'rally' ? tr('{name} deleted (a copy of the file before is kept as .launcher-backup)', { name: s.name }) : tr('{name} deleted (moved to the Recycle Bin)', { name: s.name });
+      return run(() => deleteSetup(s), '', done);
+    }
+    if (act === 'export') {
+      let target = '';
+      try {
+        target = await Neutralino.os.showSaveDialog(tr('Export setup'), { defaultPath: exportName(s), filters: [{ name: tr('Setup'), extensions: [s.game === 'ac' ? 'ini' : 'json'] }] });
+      } catch (err) { log(`save dialog: ${err?.message || JSON.stringify(err)}`); }
+      if (!target) return;
+      try { await exportSetup(s, norm(target)); toast(tr('Exported {file}', { file: basename(norm(target)) })); }
+      catch (err) { toast(tr('Could not export: {error}', { error: err?.message || err }), true); }
+    }
+  });
+}
+
+// Import: pick a setup file, then where it goes (AC/ACC: which track's folder).
+// `into`: the Setups window it was asked from (it then shows the new setup).
+async function importSetupFlow(into) {
+  let picked;
+  try {
+    picked = await Neutralino.os.showOpenDialog(tr('Import a setup'), { filters: [{ name: tr('Setups'), extensions: ['ini', 'json'] }, { name: tr('All files'), extensions: ['*'] }] });
+  } catch (err) { log(`open dialog: ${err?.message || JSON.stringify(err)}`); return; }
+  if (!picked?.length) return;
+  let s;
+  try { s = await readSetupFile(norm(picked[0])); } catch (err) { toast(err.message, true); return; }
+  const g = gameByKey(s.game);
+  let tracks = [];
+  if (s.game === 'ac') {
+    const own = (await listDir(join(state.paths.ac.setups, s.car))).filter(e => e.type === 'DIRECTORY' && !/^\.+$/.test(e.entry)).map(e => e.entry);
+    const installed = await getItems(g, 'tracks').catch(() => []);
+    const ids = [...new Set([...own, ...installed.map(t => t.id)])].filter(id => id !== 'generic');
+    tracks = [['generic', tr('Any track (generic)')], ...ids.map(id => [id, installed.find(t => t.id === id)?.title || prettifyId(id)]).sort((a, b) => a[1].localeCompare(b[1]))];
+  } else if (s.game === 'acc') tracks = ACC_TRACKS.map(t => [t.id, t.name]);
+  const existing = (await getItems(g, 'setups').catch(() => [])).find(i => i.carId.toLowerCase() === s.car.toLowerCase());
+  const carName = existing?.title || (s.game === 'rally' ? rallyCarName(s.car) : s.game === 'acc' ? ACC_CARS[ACC_SETUP_CARS[s.car.toLowerCase()]] : '') || prettifyId(s.car);
+  const versions = [...new Set((existing?.setups || []).map(x => x.version).filter(Boolean))];
+  const oldVersion = s.game === 'rally' && s.version && versions.length && !versions.includes(s.version);
+  const facts = [
+    s.author && `<span>${sxIcon('user')}${esc(s.author)}</span>`,
+    s.version && `<span>${esc(tr('Rally {version}', { version: s.version }))}</span>`,
+    `<span>${esc(trn(s.values.length, '1 value', '{n} values'))}</span>`,
+  ].filter(Boolean).join('');
+  const { el, close } = modal(`<div class="setup-import">
+      <small class="sx-kicker">${esc(`${g.title} ${g.sub || ''}`.trim())} · ${tr('Import setup')}</small>
+      <h2>${esc(carName)}</h2>
+      <div class="sx-facts">${facts}</div>
+      <label>${tr('Name')}<input id="si-name" value="${esc(s.name)}" maxlength="60"></label>
+      ${tracks.length ? `<label>${tr('Track')}<select id="si-track">${tracks.map(([id, name]) => `<option value="${esc(id)}">${esc(name)}</option>`).join('')}</select></label>` : ''}
+      ${s.game === 'rally' ? `<p class="sx-hint">${sxIcon('info')}<span>${tr("It goes into Rally's Personal setups for this car: load it in Car Setup › Save/Load Setup.")}</span></p>` : ''}
+      ${oldVersion ? `<p class="sx-hint warn">${sxIcon('info')}<span>${tr('Made with Rally {version}; your setups are from {yours}. Rally may change some values when it loads it.', { version: s.version, yours: versions.join(', ') })}</span></p>` : ''}
+      <div class="detail-actions"><button class="btn small primary" data-imp>${tr('Import')}</button><button class="btn small subtle" data-close>${tr('Cancel')}</button></div>
+    </div>`, 'modal slim setup-import-modal');
+  el.querySelector('[data-imp]').onclick = async e => {
+    if (rallyBusy(s.game)) { toast(RALLY_OPEN(), true); return; }
+    e.target.disabled = true;
+    try {
+      const name = await importSetup(s, state.paths, el.querySelector('#si-track')?.value || '', el.querySelector('#si-name').value);
+      close();
+      toast(tr('{name} imported for {car}', { name, car: carName }));
+      const items = await getItems(g, 'setups', true);
+      if (state.view === 'mods' && state.game === g.key && currentTab(g) === 'setups') renderMods();
+      const car = items.find(i => i.carId.toLowerCase() === s.car.toLowerCase());
+      if (car && (into || state.view === 'mods')) openSetups(g, car);
+    } catch (err) {
+      e.target.disabled = false;
+      toast(err?.message || String(err), true);
+    }
   };
 }
 
@@ -956,8 +1410,9 @@ function specsHTML(item) {
     add('0-100', s.acceleration); add('P/W ratio', s.pwratio); add('Year', item.year); add('Country', item.country);
     add('Skins', String(item.skins?.length || 0));
   } else if (item.kind === 'track') {
-    const l = item.layouts[0];
-    add('Location', item.subtitle); add('Length', l.length); add('Pit boxes', l.pitboxes); add('Layouts', String(item.layouts.length));
+    // EVO mod packages don't list layouts.
+    const l = item.layouts?.[0] || {};
+    add('Location', item.subtitle); add('Length', l.length); add('Pit boxes', l.pitboxes); add('Layouts', item.layouts ? String(item.layouts.length) : '');
   } else if (item.game === 'acc') {
     add('Car', item.subtitle); add('Race number', item.number != null ? `#${item.number}` : ''); add('Driver', item.author);
   }
@@ -1058,6 +1513,7 @@ function openDetail(g, item, onChange) {
         toast(tr(item.enabled ? '{name} enabled' : '{name} disabled', { name: item.title }));
         close();
         onChange?.();
+        if (item.game === 'evo' && item.kind === 'track') evoTrackSync();
       } catch (err) {
         toast(tr('Could not change {name}: {error}', { name: item.title, error: err?.message || tr('file in use?') }), true);
       }
@@ -1078,6 +1534,7 @@ function openDetail(g, item, onChange) {
         toast(tr(isMedia ? '{name} deleted (moved to the Recycle Bin)' : '{name} uninstalled (moved to the Recycle Bin)', { name: item.title }));
         close();
         onChange?.();
+        if (item.game === 'evo' && item.kind === 'track' && item.isMod) evoTrackSync();
       } catch (err) {
         b.disabled = false; delete b.dataset.armed; b.textContent = removeLabel;
         toast(tr('Could not uninstall {name}: {error}', { name: item.title, error: err?.message || tr('file in use?') }), true);
@@ -1590,31 +2047,29 @@ function mergeSettings(base, saved) {
 // EVO's brand logos, else AC's car badges, else the launcher's own for brands
 // neither game has (img/brands/<brandKey>.png), keyed by brandKey(name).
 
-// Official site pictures of ACC and Rally cars, stages and tracks (sitecatalog.js):
-// the ones shipped in img/site/ (manifest.json), plus cars/stages the weekly sync
+// Official site pictures of ACC cars and tracks and Rally stages (sitecatalog.js):
+// the ones shipped in img/site/ (manifest.json), plus Rally stages the weekly sync
 // found on the site since (cached in .cache/site, settings.siteExtra), so they
-// show without a connection.
-let siteManifest = { rally: { cars: {}, stages: {} }, acc: { cars: {}, tracks: {} } };
+// show without a connection. Rally's cars use the game's own pictures (rallydata.js).
+let siteManifest = { rally: { stages: {}, maps: {} }, acc: { cars: {}, tracks: {} } };
 async function loadSiteImages() {
   try { siteManifest = await (await fetch('/img/site/manifest.json')).json(); } catch (err) { log(`site images: ${err?.message}`); }
   const dir = await appCacheDir('site').catch(() => '');
   // Pictures the launcher now ships aren't needed from the cache (older syncs also
   // took Greece's stage maps for photos: Greece now ships with real ones).
-  if (state.settings.siteExtra) state.settings.siteExtra = state.settings.siteExtra.filter(x => !(x.key && siteManifest[x.game]?.[x.kind]?.[x.key]));
+  // Rally cars synced by older launchers are left out: the game's pictures replace them.
+  if (state.settings.siteExtra) state.settings.siteExtra = state.settings.siteExtra.filter(x => !(x.key && siteManifest[x.game]?.[x.kind]?.[x.key]) && !(x.game === 'rally' && x.kind === 'cars'));
   for (const x of state.settings.siteExtra || []) x.url = dir ? fileUrl(join(dir, x.file)) : '';
 }
-function siteImage(game, kind, key, name = '') {
+function siteImage(game, kind, key) {
   const rel = siteManifest[game]?.[kind]?.[key];
   if (rel) return `/img/site/${rel}`;
-  const extra = (state.settings.siteExtra || []).filter(x => x.game === game && x.kind === kind && x.url);
-  if (kind === 'stages' || kind === 'maps') return extra.find(x => x.key === key)?.url || '';
-  const k = name && bestMatch(name, extra.map(x => ({ key: x.url, name: x.name })));
-  return k || '';
+  return (state.settings.siteExtra || []).find(x => x.game === game && x.kind === kind && x.url && x.key === key)?.url || '';
 }
-const rallyCarImage = id => siteImage('rally', 'cars', id, `${rallyCarName(id)} ${id}`);
+const rallyCarImage = rallyCarPicture;
 
-// Each launch (when online): look on the official Rally page for cars, stages and
-// stage maps added since this launcher was built, and keep their pictures (the
+// Each launch (when online): look on the official Rally page for stages and stage
+// maps added since this launcher was built, and keep their pictures (the
 // game is in Early Access). The page is only downloaded when it changed since the
 // last look (If-Modified-Since: the site then answers 304 with no body); a
 // changed page is ~70 KB compressed.
@@ -1633,7 +2088,6 @@ async function siteSync() {
   const dir = await appCacheDir('site');
   const extra = state.settings.siteExtra ||= [];
   const known = (kind, key, name) => siteManifest.rally[kind]?.[key] || extra.some(x => x.kind === kind && (x.key === key || x.name === name));
-  const ids = (await rallyCarIds(state.paths).catch(() => Object.keys(RALLY_CARS))).map(k => ({ key: k, name: `${rallyCarName(k)} ${k}` }));
   // Stages: known ones by name; stages added later by the save's stage ids
   // ("PortugalS1Arganil..." matches a caption naming Arganil).
   const stageIds = [...(state.settings.rallyStages || []), ...await rallyGameStages(state.paths, state.settings.rallyStages || []).catch(() => [])];
@@ -1644,7 +2098,6 @@ async function siteSync() {
     return words(name).some(w => w.length > 3 && !generic.test(w) && gw.has(w));
   }) || '';
   const jobs = [
-    ...siteCars(page.stdOut).map(c => ({ kind: 'cars', key: bestMatch(c.name, ids) || '', name: c.name, img: c.img })),
     ...rallyStagePhotos(page.stdOut).map(p => ({ kind: 'stages', key: groupOf(p.name), name: p.name, img: p.img })).filter(p => p.key),
     ...siteMaps(page.stdOut).map(p => ({ kind: 'maps', key: groupOf(p.name), name: p.name, img: p.img })).filter(p => p.key),
   ].filter(j => !known(j.kind, j.key, j.name));
@@ -1885,8 +2338,14 @@ async function openRallyQuickDrive() {
   const weatherKey = w => w && JSON.stringify({ ...w, seconds: undefined });
   let minutes = Math.round((saved.minutes !== undefined && saved.minutesBase === fromGame.seconds ? saved.minutes : fromGame.seconds / 60) / 15) * 15 % (24 * 60);
   let weather = fromGame.weather && (saved.weather && saved.weatherBase === weatherKey(fromGame.weather) ? { ...fromGame.weather, ...saved.weather } : { ...fromGame.weather });
+  // The Personal setup you'll drive (Rally can't be given one: the player loads it in
+  // Car Setup). Noted per car, so the stage times set with it go to its times.
+  const carSetups = await getItems(g, 'setups').catch(() => []);
+  const setupsOf = car => carSetups.find(i => i.carId.toLowerCase() === String(car || '').toLowerCase())?.setups || [];
+  const setupPick = { ...(saved.setups || {}) };
+  const pickedSetup = car => setupsOf(car).find(x => x.name === setupPick[car]);
   const rememberSession = () => {
-    state.settings.rallyQD = { ...(state.settings.rallyQD || {}), minutes, minutesBase: fromGame.seconds, weather, weatherBase: weatherKey(fromGame.weather) };
+    state.settings.rallyQD = { ...(state.settings.rallyQD || {}), minutes, minutesBase: fromGame.seconds, weather, weatherBase: weatherKey(fromGame.weather), setups: setupPick };
   };
 
   const placeholder = title => `<div class="placeholder">${esc(initials(title))}</div>`;
@@ -2006,7 +2465,7 @@ async function openRallyQuickDrive() {
   const startWeather = s => rallyWeatherFor(locationOf(s), weather.weather);
   const weatherOptions = (s, random) => [...(random ? [[-1, N_('Random')]] : []), ...rallyLocationWeathers(locationOf(s)).map(v => [v, RALLY_WEATHERS[v].label])];
   const session = {
-    summary: s => ({ title: tr('Free Practice'), sub: [tr('Starts at {time}', { time: hhmm(minutes) }), weather && tr(RALLY_WEATHERS[startWeather(s)].label)].filter(Boolean).join(' · ') }),
+    summary: s => ({ title: tr('Free Practice'), sub: [tr('Starts at {time}', { time: hhmm(minutes) }), weather && tr(RALLY_WEATHERS[startWeather(s)].label), pickedSetup(s.car)?.name].filter(Boolean).join(' · ') }),
     get: () => ({ minutes, weather }),
     set: d => { if (Number.isFinite(d?.minutes)) minutes = d.minutes; if (weather && d?.weather) weather = { ...weather, ...d.weather }; },
     sheetNote: saveProblem || tr("Set in Rally's Free Practice menu: Rally opens it on this stage and car."),
@@ -2014,10 +2473,15 @@ async function openRallyQuickDrive() {
       const time = { title: N_('Event Start Time'), fields: [
         { label: N_('Event start time'), icon: '/img/rally/weather/clock.png', type: 'select', options: timeOptions(minutes), get: () => minutes, set: v => { minutes = v; } },
       ] };
-      if (!weather) return [{ ...time, note: N_("Rally's save doesn't have its Weather & Time settings where the launcher expects them, so pick them in Free Practice's Weather & Time screen.") }];
+      const mine = setupsOf(s.car);
+      const setup = { title: N_('Car Setup'), note: mine.length
+        ? N_("Rally can't be given a setup: load it in Car Setup › Save/Load Setup. Picking it here notes the stage bests you set with it (Mods › Setups).")
+        : N_("No Personal setups for this car yet: save one in Rally's Car Setup menu, and pick it here to note the stage bests you set with it."),
+      fields: mine.length ? [{ label: N_("Setup you'll drive"), type: 'select', options: [['', N_('Not noted')], ...mine.map(x => [x.name, x.name])], get: () => pickedSetup(s.car)?.name || '', set: v => { setupPick[s.car] = v; } }] : [] };
+      if (!weather) return [{ ...time, note: N_("Rally's save doesn't have its Weather & Time settings where the launcher expects them, so pick them in Free Practice's Weather & Time screen.") }, setup];
       const w = weather, start = startWeather(s), forecast = w.forecast === -1 ? -1 : rallyWeatherFor(locationOf(s), w.forecast);
       time.fields.push({ label: N_('Time acceleration'), icon: ICONS.speed, type: 'select', options: RALLY_TIME_SPEEDS.map((l, i) => [i, l]), get: () => w.speed, set: v => { w.speed = v; } });
-      return [time, {
+      return [setup, time, {
         title: N_('Weather Forecast'),
         note: start !== w.weather ? tr('{weather} isn\'t possible in {location}: Rally starts with {other} there.', { weather: tr(RALLY_WEATHERS[w.weather].label), location: rallyStage(s.layout).locationName, other: tr(RALLY_WEATHERS[start].label) }) : '',
         fields: [
@@ -2061,7 +2525,7 @@ async function openRallyQuickDrive() {
     sel: { car: pickCar, variant: liveryOf(pickCar), track: trackOf(pickStage)?.key || '', layout: pickStage },
     onClose: s => {
       rememberSession();
-      Object.assign(state.settings.rallyQD, { car: s.car, stage: s.layout, liveries: { ...(saved.liveries || {}), [s.car]: s.variant } });
+      Object.assign(state.settings.rallyQD, { car: s.car, stage: s.layout, liveries: { ...(saved.liveries || {}), [s.car]: s.variant }, setups: setupPick });
       saveSettings();
     },
     onLaunch: async s => {
@@ -2072,6 +2536,12 @@ async function openRallyQuickDrive() {
         // The weathers as Rally will have them on this stage (one the location doesn't have is swapped).
         const written = weather && { ...weather, weather: startWeather(s), forecast: weather.forecast === -1 ? -1 : rallyWeatherFor(locationOf(s), weather.forecast) };
         const { selected } = await writeRallySession(state.paths, { stage: s.layout, car: s.car, seconds: minutes * 60, livery: s.variant || s.car, weather: written });
+        // With a setup noted: the stage records as they are now, to see later which are new.
+        const pick = pickedSetup(s.car);
+        if (pick) {
+          const now = await rallyBests(state.paths).catch(() => new Map());
+          nextLaunch.rally = { car: s.car, setup: { name: pick.name, sig: setupSig(pick.values) }, before: Object.fromEntries([...now].map(([k, v]) => [k, v.ms])) };
+        }
         await openExternal(steamUrls.run(g.appid));
         const st = rallyStage(s.layout);
         const what = { stage: `${st.locationName}, ${st.name || st.stage}`, car: rallyCarName(s.car) };
@@ -2132,11 +2602,13 @@ async function openEvoQuickDrive({ car, track } = {}) {
   const knownBy = new Map(known.map(k => [k.carId, k]));
   const rank = c => { const k = knownBy.get(c.carId); return k?.seen ? known.indexOf(k) : Infinity; };
   const carList = cars.filter(c => c.carId).sort((a, b) => rank(a) - rank(b) || a.title.localeCompare(b.title));
+  const noId = carList.filter(c => !knownBy.has(c.carId));
+  if (noId.length) log(`evo cars without an id yet: ${noId.map(c => `${c.carId}${c.isMod ? ' (mod)' : ''}`).join(', ')}`);
   const current = known.find(k => k.current);
   const currentConfig = current?.configs.find(c => c.current);
   const currentItem = current && carList.find(c => c.carId === current.carId);
   const pkgOf = c => c?.isMod ? c.path : contentPkg;
-  const km = c => `${(c.length / 1000).toFixed(2)} km`;
+  const km = c => (c.length ? `${(c.length / 1000).toFixed(2)} km` : ''); // mod tracks don't say
 
   // Thumbnails/names of known liveries and the brand logos load in the background.
   let extras = { liveries: {}, brands: {}, liveryKey: () => '', brandSlug: () => '' };
@@ -2224,7 +2696,8 @@ async function openEvoQuickDrive({ car, track } = {}) {
     return {
       key: t.id, title: t.title, sub: t.subtitle, image: t.image,
       flag: `${t.isNew ? '<span class="flag tag-new">New</span>' : ''}<span class="flag kunos">${layouts.length} layout${layouts.length > 1 ? 's' : ''}</span>`,
-      layouts: layouts.map(l => ({ key: l.id, name: l.name, sub: km(l[container()]), outline: l.outline, preview: l.preview })),
+      // A mod layout without an AI line has Practice only (evotracks.js).
+      layouts: layouts.map(l => ({ key: l.id, name: l.name, sub: km(l[container()]) || (l.noAiLine ? tr('No AI line: practice only') : ''), outline: l.outline, preview: l.preview })),
     };
   }).filter(t => t.layouts.length);
 
@@ -2333,6 +2806,7 @@ async function openEvoQuickDrive({ car, track } = {}) {
       const t = official.find(x => x.id === s.track), layout = t?.layouts.find(l => l.id === s.layout);
       if (!t || !layout) { toast('Pick a track first.', true); return false; }
       try {
+        await evoTrackSync({ quiet: true });
         await launchEvo({
           steamPath: state.steamPath, installDir: state.paths.evo.install,
           session: ss, track: t.evoTrack, layout, carGuid: s.car ? s.variant : '',
@@ -2707,13 +3181,15 @@ async function importSources(sources) {
 const KIND_LABEL = { car: 'Car', track: 'Track', skin: 'Skin', extras: 'Extras', livery: 'Livery', 'car file': 'Car file', 'pp filter': 'PP filter' };
 
 async function openInstallReview(items, problems, sessions) {
-  const cleanup = () => sessions.forEach(discardImport);
+  // Install hands the staging to the install queue, which discards it when done.
+  let handed = false;
+  const cleanup = () => { if (!handed) sessions.forEach(discardImport); };
   const problemList = problems.length ? `<ul class="imp-problems">${problems.map(p => `<li>${esc(p)}</li>`).join('')}</ul>` : '';
   if (!items.length) {
     modal(`<div class="qd imp">
       <h2>Nothing to install</h2>
       ${problemList}
-      <div class="qd-sub">Supported: Assetto Corsa cars, tracks, skins, apps, CSP and PP filters · ACC liveries · EVO <code>.kspkg</code> · Rally <code>.pak</code> liveries,
+      <div class="qd-sub">Supported: Assetto Corsa cars, tracks, skins, apps, CSP and PP filters · ACC liveries · EVO <code>.kspkg</code> and track folders · Rally <code>.pak</code> liveries,
       as files or inside <code>.zip</code>, <code>.rar</code> and <code>.7z</code> archives.</div>
     </div>`, 'modal imp-modal', cleanup);
     return;
@@ -2745,7 +3221,7 @@ async function openInstallReview(items, problems, sessions) {
     <span data-tag="${idx}">${tag(i)}</span>
   </div>`;
 
-  const { el, close } = modal(`<div class="qd imp">
+  const { el } = modal(`<div class="qd imp">
     <header class="qd-head"><h2>Install mods</h2>
       <div class="qd-sub">Found ${items.length} item${items.length > 1 ? 's' : ''}. Each goes to its game's folder; updates are copied over the existing mod.</div>
     </header>
@@ -2784,36 +3260,1419 @@ async function openInstallReview(items, problems, sessions) {
     }
   });
 
-  el.querySelector('#imp-go').onclick = async () => {
+  el.querySelector('#imp-go').onclick = () => {
     const todo = selected();
     const unassigned = todo.find(i => i.carPick && !i.car);
     if (unassigned) { toast(`Choose the car for "${unassigned.title}"`, true); return; }
-    el.querySelectorAll('button, input, select').forEach(b => { b.disabled = true; });
-    el.dataset.busy = '1';
-    const note = el.querySelector('#imp-note');
-    const done = [], failed = [];
-    for (const i of todo) {
-      note.textContent = `Installing ${i.title}…`;
-      try { await installItem(i); done.push(i); }
-      catch (err) { log(`install ${i.title}: ${err?.stack || err?.message || JSON.stringify(err)}`); failed.push(`${i.title}: ${err?.message || 'failed'}`); }
+    handed = true;
+    queueInstalls(todo, sessions);
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Install queue. The review's Install hands its mods here, and they install one
+// after another in the background: the progress dialog can be hidden at any time
+// and the launcher used meanwhile. The title bar's pill shows how far it is and
+// opens the dialog again; mods dropped meanwhile wait in line. The staging (the
+// extracted archives, the rows' pictures) is discarded once the queue is done.
+// Closing the launcher meanwhile asks first (requestExit).
+
+const INST = { list: [], sessions: [], running: false, abort: false, dialog: null, timer: 0 };
+const sizeText = n => n >= 1073741824 ? `${(n / 1073741824).toFixed(1)} GB` : n >= 1048576 ? `${Math.round(n / 1048576)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`;
+const instPct = e => (e.total ? Math.floor(e.done / e.total * 100) : 0);
+
+function queueInstalls(items, sessions) {
+  INST.list.push(...items.map(item => ({ item, state: 'wait', done: 0, total: 0, started: 0, error: '' })));
+  INST.sessions.push(...sessions);
+  openInstallDialog();
+  installUI();
+  if (!INST.running) runInstalls();
+}
+
+async function runInstalls() {
+  INST.running = true;
+  for (let e; !INST.abort && (e = INST.list.find(x => x.state === 'wait'));) {
+    e.state = 'run'; e.started = Date.now();
+    installUI();
+    try {
+      await installItem(e.item, (done, total) => {
+        if (INST.abort) throw new Error('stopped');
+        e.done = done; e.total = total;
+        installUI(true);
+      });
+      e.state = 'done';
+    } catch (err) {
+      e.state = 'fail'; e.error = err?.message || 'failed';
+      if (!INST.abort) log(`install ${e.item.title}: ${err?.stack || err?.message || JSON.stringify(err)}`);
     }
-    delete el.dataset.busy;
-    close();
-    for (const g of new Set(done.map(i => i.game))) for (const k of Object.keys(state.cache)) if (k.startsWith(`${g}:`)) delete state.cache[k];
-    if (failed.length) toast(`Could not install ${failed.join('; ')}`, true);
-    else if (done.length && done.every(i => i.kind === 'pp filter')) toast(`Installed ${done.map(i => i.title).join(', ')}. Pick it in Settings → Assetto Corsa · Video.`);
-    else toast(`Installed ${done.length} mod${done.length > 1 ? 's' : ''}`);
-    const first = done.find(i => i.tab);
-    if (first) {
-      state.game = first.game; state.tab[first.game] = first.tab; state.search = ''; state.view = 'mods';
-      saveSettings(); renderSidebar(); render();
-    } else if (state.view === 'mods') render();
-    else if (state.view === 'settings') renderSettings();
+    for (const k of Object.keys(state.cache)) if (k.startsWith(`${e.item.game}:`)) delete state.cache[k];
+    installUI();
+  }
+  INST.running = false;
+  if (!INST.abort) installsDone();
+}
+
+function installsDone() {
+  const list = INST.list.splice(0), wasOpen = !!INST.dialog;
+  INST.dialog?.close();
+  INST.sessions.splice(0).forEach(discardImport);
+  installUI();
+  const done = list.filter(e => e.state === 'done').map(e => e.item);
+  const failed = list.filter(e => e.state === 'fail').map(e => `${e.item.title}: ${e.error}`);
+  if (failed.length) toast(`Could not install ${failed.join('; ')}`, true);
+  else if (done.length && done.every(i => i.kind === 'pp filter')) toast(`Installed ${done.map(i => i.title).join(', ')}. Pick it in Settings → Assetto Corsa · Video.`);
+  else toast(`Installed ${done.length} mod${done.length > 1 ? 's' : ''}`);
+  if (done.some(i => i.game === 'evo' && i.kind === 'track')) evoTrackSync({ force: true });
+  if (state.view === 'academy') { AY.data = {}; drawAcademy(); return; }
+  // The new mod's tab, if the dialog was watched to the end; otherwise the page
+  // being looked at stays, refreshed.
+  const first = done.find(i => i.tab);
+  if (wasOpen && first) {
+    state.game = first.game; state.tab[first.game] = first.tab; state.search = ''; state.view = 'mods';
+    saveSettings(); renderSidebar(); render();
+  } else if (state.view === 'mods') render();
+  else if (state.view === 'settings') renderSettings();
+}
+
+// soon: from a progress tick, drawn at most every 120 ms.
+function installUI(soon = false) {
+  if (soon) {
+    if (!INST.timer) INST.timer = setTimeout(() => { INST.timer = 0; installUI(); }, 120);
+    return;
+  }
+  clearTimeout(INST.timer); INST.timer = 0;
+  drawInstallPill();
+  drawInstallDialog();
+}
+
+// "240 MB of 530 MB · about 40 s left", from the item's pace so far.
+function installLine(e) {
+  if (e.state === 'wait') return 'Waiting for the mods before it';
+  if (e.state === 'done') return 'Installed';
+  if (e.state === 'fail') return e.error;
+  const pack = e.item.mode === 'evo-pack' ? 'Packing for EVO · ' : '';
+  if (!e.total) return `${pack || 'Copying · '}starting…`;
+  const t = (Date.now() - e.started) / 1000, f = e.done / e.total, rest = t / f - t;
+  const left = t < 3 || f < 0.03 || f >= 1 ? '' : rest < 60 ? ` · about ${Math.max(5, Math.round(rest / 5) * 5)} s left` : ` · about ${Math.round(rest / 60)} min left`;
+  return `${pack}${sizeText(e.done)} of ${sizeText(e.total)}${left}`;
+}
+
+const INST_TAG = { wait: ['wait', 'Waiting'], done: ['new', 'Installed'], fail: ['bad', 'Failed'] };
+
+function openInstallDialog() {
+  const { el, close } = modal(`<div class="qd imp">
+    <header class="qd-head"><h2>Installing mods</h2><div class="qd-sub" data-q-sub></div></header>
+    <div class="imp-list"></div>
+    <footer class="qd-foot">
+      <div class="qd-summary imp-hint">Hide this to keep using the launcher. The mods go on installing, and the bar at the top shows how far they are.</div>
+      <button class="btn subtle small" data-close>Hide</button>
+    </footer>
+  </div>`, 'modal imp-modal', () => { INST.dialog = null; });
+  INST.dialog = { el, close };
+  drawInstallDialog();
+}
+
+// Rows are added as mods join the queue and updated in place (their pictures
+// stay loaded; a moved mod's staging picture is gone, so the game's logo shows).
+function drawInstallDialog() {
+  const el = INST.dialog?.el;
+  if (!el?.isConnected) return;
+  const list = el.querySelector('.imp-list'), gameName = key => { const g = gameByKey(key); return `${g.title} ${g.sub || ''}`.trim(); };
+  INST.list.forEach((e, idx) => {
+    let row = list.querySelector(`[data-q="${idx}"]`);
+    if (!row) {
+      const i = e.item;
+      list.insertAdjacentHTML('beforeend', `<div class="imp-row imp-q" data-q="${idx}">
+        <div class="imp-thumb">${i.image ? imgTag(i.image, `/img/logos/${i.game}.png`) : `<img class="imp-logo" src="/img/logos/${i.game}.png" alt="">`}</div>
+        <div class="imp-info">
+          <b>${esc(i.title)}</b>
+          <small>${esc(gameName(i.game))} · ${KIND_LABEL[i.kind] || i.kind}${i.sub ? ` · ${esc(i.sub)}` : ''}</small>
+          <small class="imp-q-line"></small>
+          <div class="imp-bar"><i></i></div>
+        </div>
+        <span class="imp-tag"></span>
+      </div>`);
+      row = list.lastElementChild;
+    }
+    row.classList.remove('wait', 'run', 'done', 'fail');
+    row.classList.add(e.state);
+    row.querySelector('.imp-q-line').textContent = installLine(e);
+    row.querySelector('.imp-bar i').style.width = `${instPct(e)}%`;
+    const [cls, text] = INST_TAG[e.state] || ['run', e.total ? `${instPct(e)}%` : '…'];
+    const tag = row.querySelector('.imp-tag');
+    tag.className = `imp-tag ${cls}`;
+    tag.textContent = text;
+  });
+  const n = INST.list.length, finished = INST.list.filter(e => e.state === 'done' || e.state === 'fail').length;
+  el.querySelector('[data-q-sub]').textContent = n > 1 ? `${finished} of ${n} done. One mod installs at a time.` : 'This can take a while for a big mod.';
+}
+
+function drawInstallPill() {
+  const pill = $('#install-pill');
+  const cur = INST.running && INST.list.find(e => e.state === 'run');
+  pill.hidden = !cur;
+  if (!cur) return;
+  if (!pill.firstChild) pill.innerHTML = '<span class="ip-spin"></span><span class="ip-name"></span><b></b><i></i>';
+  const n = INST.list.length, at = INST.list.indexOf(cur) + 1;
+  pill.querySelector('.ip-name').textContent = `${n > 1 ? `${at} of ${n} · ` : ''}${cur.item.title}`;
+  pill.querySelector('b').textContent = cur.total ? `${instPct(cur)}%` : '…';
+  pill.querySelector('i').style.width = `${instPct(cur)}%`;
+  pill.title = `Installing ${cur.item.title}: ${installLine(cur)}. Click for the list.`;
+}
+
+// EVO's track list (evotracks.js) follows the mod tracks installed: after one is
+// installed, enabled, disabled or uninstalled, before EVO starts from here, and at
+// startup (a game update replaces content.kspkg, and with it the list). quiet: a
+// failure is only logged, as it's tried again next time. force: also after the
+// list was restored in Settings, which stops the automatic updates.
+async function evoTrackSync({ force = false, quiet = false } = {}) {
+  if (!state.paths?.evo?.install || !state.paths.evo.mods) return null;
+  try {
+    const r = await syncEvoTrackList(state.paths, { force });
+    if (r.changed) toast(r.listed.length ? `${r.listed.join(', ')} ${r.listed.length > 1 ? 'are' : 'is'} now in EVO's track list` : "EVO's track list is back to the original");
+    return r;
+  } catch (err) {
+    log(`evo track list: ${err?.stack || err?.message || err}`);
+    if (!quiet) toast(`Couldn't update EVO's track list: ${err?.message || err} It's tried again when EVO next starts from the launcher.`, true);
+    return null;
+  }
+}
+
+// Closing the launcher while mods install asks first. Closing anyway stops the
+// install at the next file and removes what the unfinished mod left behind
+// (installItem's leftovers: a new mod's files, a half-written EVO package).
+function requestExit() {
+  const cur = INST.running && INST.list.find(e => e.state === 'run');
+  if (!cur) return Neutralino.app.exit();
+  const after = INST.list.filter(e => e.state === 'wait').length;
+  const { el } = modal(`<div class="qd imp">
+    <h2>Still installing ${esc(cur.item.title)}</h2>
+    <div class="qd-sub">If the launcher closes now, this mod won't be installed${after ? ` and neither will the ${after === 1 ? 'one' : after} after it` : ''}. What it copied so far is removed.</div>
+    <footer class="qd-foot">
+      <div class="qd-summary"></div>
+      <button class="btn subtle small" data-close>Keep installing</button>
+      <button class="btn primary small" id="exit-anyway">Close anyway</button>
+    </footer>
+  </div>`, 'modal imp-modal slim');
+  el.querySelector('#exit-anyway').onclick = async e => {
+    el.dataset.busy = '1';
+    el.querySelectorAll('button').forEach(b => { b.disabled = true; });
+    e.currentTarget.textContent = 'Closing…';
+    INST.abort = true;
+    // A single big file can't be stopped half way: up to 30 s for it to end.
+    for (let i = 0; i < 600 && INST.running; i++) await new Promise(r => setTimeout(r, 50));
+    if (cur.state !== 'done') for (const p of cur.item.leftovers || []) await Neutralino.filesystem.remove(p).catch(() => {});
+    for (const s of INST.sessions) await discardImport(s);
+    Neutralino.app.exit();
   };
 }
 
 // ---------------------------------------------------------------------------
 // Community view
+
+// ---------------------------------------------------------------------------
+// Academy: a page per game (AC, EVO, Rally) of events with bronze, silver and
+// gold targets (academy.js). Assetto Corsa's "Original" part is Kunos's career
+// (levels of series, unlocked in Kunos's order) and special events; EVO and Rally
+// have the launcher's own levels (academy-data.js), each opened by medals from
+// the one before. An event's window sets the game up and starts it; when the
+// game closes, the launcher reads the result, saves the medal and shows it
+// (gameClosed). Only drives started here count.
+
+const ACADEMY_GAMES = [['ac', 'Assetto Corsa'], ['evo', 'EVO'], ['rally', 'Rally']];
+// --check-academy sees the levels and games this version doesn't show yet (academy-data.js).
+const ayEvery = () => (window.NL_ARGS || []).includes('--check-academy');
+const ayLater = game => game === 'rally' && !RALLY_RELEASED && !ayEvery();
+const AY = { game: '', part: 'original', series: '', special: 'all', missing: false, data: {} };
+const AY_KIND = { race: N_('Race'), weekend: N_('Race weekend'), qualify: N_('Qualifying'), hotlap: N_('Hotlap'), timeattack: N_('Time attack'), drift: N_('Drift'), drag: N_('Drag race'), practice: N_('Practice'), timetrial: N_('Time trial'), sprint: N_('Sprint'), stage: N_('Stage') };
+const AY_TIER = ['', N_('Bronze'), N_('Silver'), N_('Gold'), N_('Platinum')];
+const ayGameOf = key => String(key).split('/')[0];
+const ayGameName = game => ({ ac: 'Assetto Corsa', evo: 'EVO', rally: 'Rally' })[game] || game;
+
+Object.assign(SX_ICONS, {
+  lock: '<rect x="3.5" y="7.25" width="9" height="6.25" rx="1.25"/><path d="M5.5 7.25V5.5a2.5 2.5 0 0 1 5 0v1.75"/>',
+  back: '<path d="M10 3.5 5.5 8l4.5 4.5"/>',
+  check: '<path d="M3.5 8.5 6.5 11.5 12.5 4.75"/>',
+  play: '<path d="M5 3.25v9.5L12.5 8z" fill="currentColor" stroke="none"/>',
+  flag: '<path d="M3.75 14V2.75m0 .5h8l-1.75 2.75 1.75 2.75h-8"/>',
+  retry: '<path d="M3 8a5 5 0 1 0 1.5-3.55M3 2.75v2.5h2.5"/>',
+  star: '<path d="M8 2.25 9.75 5.9l4 .5-2.95 2.75.75 3.95L8 11.15 4.45 13.1l.75-3.95L2.25 6.4l4-.5z"/>',
+});
+
+// { all: every event, career/special (AC) or levels (EVO, Rally) }, loaded once per game.
+async function academyData(game, force = false) {
+  if (!force && AY.data[game]) return AY.data[game];
+  const g = gameByKey(game);
+  if (game === 'ac') {
+    const [career, special, cars, tracks] = await Promise.all([
+      acCareer(state.paths), acSpecialEvents(state.paths),
+      getItems(g, 'cars').catch(() => []), getItems(g, 'tracks').catch(() => []),
+    ]);
+    const byId = (list, id) => list.find(x => x.id.toLowerCase() === String(id || '').toLowerCase());
+    for (const ev of [...career.flatMap(s => s.events), ...special]) {
+      const c = byId(cars, ev.car), t = byId(tracks, ev.track);
+      const l = t && (ev.layout ? t.layouts.find(x => x.id.toLowerCase() === ev.layout.toLowerCase()) : t.layouts[0]);
+      ev.carName = c?.title || prettifyId(ev.car);
+      ev.carImage = c?.skins?.find(s => s.id.toLowerCase() === ev.skin.toLowerCase())?.image || c?.image || '';
+      ev.trackName = l?.name || t?.title || prettifyId(ev.track);
+      ev.outline = l?.outline || '';
+      ev.missing = !c ? 'car' : !t || !t.playable || !l ? 'track' : '';
+    }
+    const classes = acClasses({ cars, tracks });
+    AY.layouts = await storageGet('academyLayouts', {});
+    return (AY.data.ac = { career, special, classes, all: [...career.flatMap(s => s.events), ...special, ...classes.flatMap(c => c.events)] });
+  }
+  if (game === 'evo') {
+    // A car is started by one of its configuration IDs (evolaunch.js): the one driven last, else its first;
+    // a sprint's with the mechanical preset Kunos set it with.
+    const cacheDir = await evoCacheDir().catch(() => '');
+    const pkg = state.paths.evo.install ? `${state.paths.evo.install}/content.kspkg` : '';
+    const [cars, tracks, driven, presets] = await Promise.all([
+      getItems(g, 'cars').catch(() => []), getItems(g, 'tracks').catch(() => []),
+      knownCars(cacheDir).catch(() => []), pkg ? readCarPresets(pkg, cacheDir).catch(() => []) : [],
+    ]);
+    const known = await withAllConfigs(driven, presets).catch(() => driven);
+    const levels = evoAcademy({ cars, tracks, every: ayEvery() });
+    const all = levels.flatMap(levelEvents);
+    for (const ev of all) {
+      const configs = known.find(k => k.carId === ev.car)?.configs || [];
+      ev.guid = ((ev.mech && configs.find(c => c.mech === ev.mech)) || configs[0])?.guid || '';
+      if (!ev.missing && !ev.guid) ev.missing = 'setup';
+    }
+    return (AY.data.evo = { levels, all });
+  }
+  if (game === 'rally') {
+    const [cars, tracks] = await Promise.all([getItems(g, 'cars').catch(() => []), getItems(g, 'tracks').catch(() => [])]);
+    const car = id => cars.find(c => !c.isMod && c.carId?.toLowerCase() === id.toLowerCase());
+    const track = id => tracks.find(t => !t.isMod && t.layouts?.some(l => l.id === id));
+    const names = {
+      carName: id => car(id)?.title || rallyCarName(id), carImage: id => car(id)?.image || rallyCarImage(id),
+      stageName: id => { const st = rallyStage(id); return [st.name || st.stage, st.locationName].filter(Boolean).join(' · '); },
+      stageImage: id => track(id)?.image || rallyCover(rallyStage(id).location), stageMap: id => rallyStageMedia(id).map || '',
+    };
+    const levels = rallyAcademy({ aiTime: rallyAiTime, ...names });
+    const all = levels.flatMap(levelEvents);
+    for (const ev of all) if (!car(ev.car)) ev.missing = 'car';
+    return (AY.data.rally = { levels, all });
+  }
+  return null;
+}
+const academyEvent = (d, key) => d?.all.find(e => e.key === key);
+const aySeries = (d, key) => d?.career?.find(s => s.key === key);
+const ayClass = (d, ev) => ev?.group === 'modded' ? d?.classes?.find(c => c.id === ev.classId) : null;
+const ayLevelOf = (d, ev) => d?.levels?.findIndex(l => l.id === ev.level) ?? -1;
+
+// The number an event is marked by (championship rounds: finishing position).
+const ayType = ev => ev.goal?.type || 'position';
+// One dot per medal the event has (four with platinum).
+const medalDots = (tier, count = 3) => `<span class="ay-dots" aria-label="${esc(tier ? tr(AY_TIER[tier]) : tr('No medal'))}">${TIERS.slice(0, count).map((t, i) => `<i class="ay-dot ${t}${tier > i ? ' on' : ''}"></i>`).join('')}</span>`;
+// A goal's tier indices, best first.
+const tiersDown = goal => goal.tiers.map((_, i) => i).reverse();
+const medalDisc = (tier, cls = '') => `<i class="ay-medal ${TIERS[tier - 1] || 'none'} ${cls}"${tier ? ` title="${esc(tr(AY_TIER[tier]))}"` : ''}></i>`; // its name on hover
+const ayClock = min => `${String(Math.floor(((min % 1440) + 1440) % 1440 / 60)).padStart(2, '0')}:${String(((min % 60) + 60) % 60).padStart(2, '0')}`;
+const ayWeather = ev => ev.game === 'rally' ? tr(RALLY_WEATHERS[ev.weather]?.label || 'Clear') : ev.game === 'evo' ? tr('Clear') : prettifyId(String(ev.weather || '').replace(/^\d+_/, ''));
+
+function ayKindText(ev) {
+  const kind = tr(AY_KIND[ev.kind] || ev.kind);
+  if (ev.kind === 'race' || ev.kind === 'weekend') return `${kind} · ${trn(ev.laps, '1 lap', '{n} laps')}`;
+  if (ev.game === 'rally') return [kind, ev.night ? tr('Night') : '', ev.weather >= 5 ? tr(RALLY_WEATHERS[ev.weather]?.label) : ''].filter(Boolean).join(' · ');
+  return kind;
+}
+// The session in words, for the event window.
+function aySessionText(ev, series) {
+  const opp = series?.champ ? series.opponents.length : ev.opponents;
+  const grid = opp ? trn(opp, '1 opponent', '{n} opponents') : '';
+  const ai = ev.skill ? tr('AI {min}–{max}%', { min: ev.skill[0], max: ev.skill[1] }) : '';
+  if (ev.game === 'rally') return tr('Free Practice: one run, your stage time counts');
+  if (ev.kind === 'timetrial') return tr('Practice, {n} min: your best clean lap counts', { n: ev.minutes });
+  if (ev.kind === 'sprint') return tr('From the start arch on the lights: your time to the finish arch counts');
+  if (ev.group === 'modded') {
+    const ai = tr('AI {n}%', { n: ev.aiLevel });
+    if (ev.kind === 'qualify') return [tr('{n} min: your place on the grid counts', { n: ev.minutes }), grid, ai].join(' · ');
+    if (ev.kind === 'weekend') return [tr('qualifying {n} min', { n: ev.minutes }), tr('race {n} laps', { n: ev.laps }), grid, ai].join(' · ');
+    return [trn(ev.laps, '1 lap', '{n} laps'), grid, ai, tr('from the back')].join(' · ');
+  }
+  if (ev.kind === 'race') return [trn(ev.laps, '1 lap', '{n} laps'), grid, ai, ev.start ? tr('start {pos}', { pos: scoreText('position', ev.start) }) : ''].filter(Boolean).join(' · ');
+  if (ev.kind === 'weekend') {
+    if (ev.game === 'evo') return [tr('qualifying {n} min', { n: ev.qualifying }), tr('race {n} laps', { n: ev.laps }), grid, ai].join(' · ');
+    const p = ev.sessions.find(s => s.type === 1), q = ev.sessions.find(s => s.type === 2);
+    return [p ? tr('practice {n} min', { n: p.minutes }) : '', q ? tr('qualifying {n} min', { n: q.minutes }) : '', tr('race {n} laps', { n: ev.laps }), grid].filter(Boolean).join(' · ');
+  }
+  return {
+    hotlap: tr('Your best clean lap counts'),
+    timeattack: tr('Points for each checkpoint you reach in time'),
+    drift: tr('Points for your drifts'),
+    drag: tr('Best of several runs against one opponent'),
+  }[ev.kind] || '';
+}
+function ayConditions(ev) {
+  if (ev.game === 'ac') return `${ayClock(ev.time)} · ${ayWeather(ev)} · ${ev.ambient}°C ${tr('air')}${ev.road ? `, ${ev.road}°C ${tr('road')}` : ''}`;
+  return [ayClock(ev.time), ev.night ? tr('night') : '', ayWeather(ev)].filter(Boolean).join(' · ');
+}
+
+// ---- The page
+
+function renderAcademy() {
+  const ok = k => isInstalled(gameByKey(k));
+  AY.game = [AY.game, state.game, 'ac', 'evo', 'rally'].find(k => ACADEMY_GAMES.some(([x]) => x === k) && ok(k)) || 'ac';
+  main.innerHTML = `<div class="view scaled academy" data-game="${AY.game}">
+    <header class="ay-top">
+      <h1>${tr('Academy')}</h1>
+      <div class="qd-games">${ACADEMY_GAMES.map(([k, label]) => `<button class="qd-game${k === AY.game ? ' active' : ''}${ok(k) ? '' : ' off'}" data-ay-game="${k}"${ok(k) ? '' : ` title="${esc(tr("{game} isn't installed", { game: label }))}"`}>${esc(tr(label))}</button>`).join('')}</div>
+      <div class="ay-tally" id="ay-tally"></div>
+    </header>
+    <div id="ay-running"></div>
+    <div id="ay-page"><div class="loading">${tr('Loading the Academy…')}</div></div>
+  </div>`;
+  const view = main.querySelector('.view.academy');
+  view.addEventListener('click', e => {
+    const b = e.target.closest('[data-ay-game], [data-ay], [data-series], [data-ev], [data-ay-special], [data-ay-get], [data-ay-layout], [data-ay-layout-clear]');
+    if (!b) return;
+    if (b.dataset.ayGet) { openExternal(b.dataset.ayGet); return; }
+    if (b.dataset.ayLayout) { saveClassLayout(b.dataset.ayLayout); return; }
+    if (b.dataset.ayLayoutClear) { clearClassLayout(b.dataset.ayLayoutClear); return; }
+    if (b.dataset.ay === 'install') { pickModFiles(); return; }
+    if (b.dataset.ayGame) {
+      if (b.classList.contains('off') || b.dataset.ayGame === AY.game) return;
+      AY.game = b.dataset.ayGame; AY.series = '';
+      renderAcademy();
+    } else if (b.dataset.series) { AY.series = b.dataset.series; drawAcademy(true); }
+    else if (b.dataset.ev) openAcademyEvent(b.dataset.ev);
+    else if (b.dataset.aySpecial) { AY.special = b.dataset.aySpecial; drawAcademy(); }
+    else if (b.dataset.ay === 'back') { AY.series = ''; drawAcademy(true); }
+    else if (b.dataset.ay === 'part') { AY.part = b.dataset.part; drawAcademy(); }
+    else if (b.dataset.ay === 'missing') { AY.missing = !AY.missing; drawAcademy(); }
+    else if (b.dataset.ay === 'restart') restartSeries(b);
+  });
+  drawAcademy();
+}
+
+// Draws the current game's page into #ay-page (top: scroll back up, for a new page).
+async function drawAcademy(top = false) {
+  const game = AY.game;
+  if (!$('#ay-page')) return;
+  drawAcademyRunning();
+  if (ayLater(game)) {
+    $('#ay-tally').innerHTML = '';
+    $('#ay-page').innerHTML = `<div class="ay-empty">${esc(tr("Rally's Academy comes in a later version: its targets are being checked stage by stage."))}</div>`;
+    return;
+  }
+  let d;
+  try { d = await academyData(game); } catch (err) { log(`academy ${game}: ${err?.stack || err}`); }
+  const p = await academyProgress();
+  const page = $('#ay-page');
+  if (state.view !== 'academy' || AY.game !== game || !page) return;
+  if (!d?.all.length) {
+    page.innerHTML = `<div class="ay-empty">${game === 'ac' ? tr("Assetto Corsa's career and special events weren't found in its content folder.") : tr("The Academy couldn't read {game}'s cars and tracks. Check its folder in Settings.", { game: ayGameName(game) })}</div>`;
+    return;
+  }
+  $('#ay-tally').innerHTML = ayTallyHTML(d.all.filter(e => e.goal && !e.missing), p, game);
+  if (game === 'ac') {
+    const s = AY.series && aySeries(d, AY.series);
+    page.innerHTML = s ? aySeriesHTML(s, d, p) : acAcademyHTML(d, p);
+  } else page.innerHTML = ayLevelsHTML(game, d, p);
+  if (top) main.querySelector('.view.academy')?.scrollTo(0, 0);
+}
+
+// DR (the driver level) and SR (the safety rating), in the look of the cards over
+// the game (css/overlay.css): a slanted plate (the level in red, the grade in its
+// colour) beside a bar to the next step, which is named at the bar's end. `big`:
+// the result window's.
+const ayLevelPlate = (level, big = false) => `<span class="ay-plate lv${big ? ' big' : ''}">${level}</span>`;
+const ayGradePlate = (sr, big = false) => `<span class="ay-plate g-${srGrade(sr).toLowerCase()}${big ? ' big' : ''}">${srGrade(sr)}</span>`;
+const SR_NEXT = { E: 'D', D: 'C', C: 'B', B: 'A', A: 'S' };
+// The bar: filled to `at` (0 to 1); `from` (before this event): what it lost shows
+// red, what it gained brighter. `next`: the step at its end.
+function ayStepBar(at, next, from = at) {
+  const pc = n => `${(Math.max(0, Math.min(1, n)) * 100).toFixed(1)}%`, lo = Math.min(at, from), hi = Math.max(at, from);
+  return `<span class="ay-step"><span class="ay-step-bar"><i class="fill" style="width:${pc(lo)}"></i>${hi > lo ? `<i class="${at < from ? 'lost' : 'won'}" style="left:${pc(lo)};width:${pc(hi - Math.max(0, lo))}"></i>` : ''}</span>${next ? `<em>${esc(String(next))}</em>` : ''}</span>`;
+}
+// DR's bar: the points into this level, to the next one. from: the points before this event.
+const ayDrBar = (dl, from = dl.into) => ayStepBar(dl.into / dl.need, dl.level + 1, from / dl.need);
+// SR's bar: through this grade, to the next one (full at S). from: the rating before this event.
+function aySrBar(to, from = to) {
+  const g = srGrade(to), next = SR_NEXT[g], min = srGradeMin(g), span = next ? srGradeMin(next) - min : 1;
+  return ayStepBar(next ? (to - min) / span : 1, next, next ? (from - min) / span : 1);
+}
+const ayDrTitle = dl => tr('DR, your driver level: {level}. {into} of {need} points to level {next}. Bronze 1, silver 2, gold 3, platinum 5, in every game.', { level: dl.level, into: dl.into, need: dl.need, next: dl.level + 1 });
+function aySrTitle(sr) {
+  const next = SR_NEXT[srGrade(sr)];
+  return [tr('SR, your safety rating: {n} of 99, grade {g}.', { n: sr, g: srGrade(sr) }), next ? tr('{n} more to {g}.', { n: srGradeMin(next) - sr, g: next }) : '',
+    tr('In Academy races and weekends: impacts, wheels off the track, cuts and penalties take it down, clean laps raise it.')].filter(Boolean).join(' ');
+}
+
+function ayTallyHTML(events, p, game) {
+  const n = [0, 0, 0, 0, 0];
+  for (const e of events) n[eventTier(p, e.key)]++;
+  const shown = events.some(e => e.goal?.tiers.length > 3) ? [4, 3, 2, 1] : [3, 2, 1];
+  // DR: every game's medals. EVO's page: SR too.
+  const dl = driverLevel(p), sr = srOf(p);
+  return `<span class="ay-stat" title="${esc(ayDrTitle(dl))}">
+      ${ayLevelPlate(dl.level)}
+      <span class="ay-stat-text"><small>DR</small>${ayDrBar(dl)}</span>
+    </span>
+    ${game === 'evo' ? `<span class="ay-stat" title="${esc(aySrTitle(sr))}">
+      ${ayGradePlate(sr)}
+      <span class="ay-stat-text"><small>SR<em>${sr}</em></small>${aySrBar(sr)}</span>
+    </span>` : ''}
+    ${shown.map(t => `<span class="ay-count" title="${esc(tr(AY_TIER[t]))}">${medalDisc(t)}<b>${n[t]}</b></span>`).join('')}
+    <span class="ay-tally-of">${esc(tr('{n} of {total} events with a medal', { n: n[1] + n[2] + n[3] + n[4], total: events.length }))}</span>`;
+}
+
+// While an Academy event runs: what's being driven, and the game's Close button.
+function drawAcademyRunning() {
+  const el = $('#ay-running');
+  if (!el) return;
+  const game = ['ac', 'evo', 'rally'].find(k => launches[k]?.academy && isUp(k));
+  const a = game && launches[game].academy, ev = a ? academyEvent(AY.data[game], a.key) : null;
+  if (!ev) { el.innerHTML = ''; return; }
+  const targets = ev.goal && ev.goal.type !== 'ai' ? ev.goal.tiers.map((v, i) => `${tr(AY_TIER[i + 1])} ${goalValue(ev.goal.type, v)}`).reverse().join(' · ') : '';
+  const hint = {
+    ac: tr('Drive it, then close Assetto Corsa: the launcher reads your result and gives your medal.'),
+    evo: tr("In EVO, open Single Player: this event is set up, press Start. Drive it, then close EVO: the launcher reads your result."),
+    rally: tr('In Rally, open Free Practice: this stage, car, time and weather are set, press Start. Drive the stage, then close Rally: the launcher reads your time.'),
+  }[game];
+  el.innerHTML = `<section class="ay-running">
+    <div class="ay-running-img">${imgTag(ev.carImage, ev.image)}</div>
+    <div class="ay-running-text">
+      <small class="ay-live"><i></i>${tr('Event in progress')} · ${esc(ayGameName(game))}</small>
+      <b>${esc(ev.name)}</b>
+      <span>${esc([ev.carName, ev.trackName, a.ai ? tr('AI {n}%', { n: a.ai }) : '', targets].filter(Boolean).join(' · '))}</span>
+      <span class="ay-running-hint">${esc(hint)}</span>
+    </div>
+    <button class="btn small primary" data-launch-game="${game}">${tr('Close')}</button>
+  </section>`;
+  syncRunning(el);
+}
+
+// The next thing to drive: the event started last in this game (until it has
+// gold, then the next one of its series or level), else the first open one.
+function ayContinueHTML(game, d, p) {
+  let ev = academyEvent(d, p.lastBy?.[game] || (ayGameOf(p.last) === game ? p.last : ''));
+  const started = !!ev;
+  const open = e => !e.missing && (game === 'ac' ? !(e.series && seriesLocked(aySeries(d, e.series), d.career, p))
+    : !levelLocked(d.levels, ayLevelOf(d, e), p) && !(e.bonus && bonusLocked(d.levels[ayLevelOf(d, e)], p)));
+  if (game === 'ac' && AY.part === 'modded') {
+    const cls = ayClass(d, ev);
+    if (!cls) ev = null;
+    else if (eventTier(p, ev.key) === 3) ev = cls.events.find(e => !e.missing && !classEventLocked(cls, e, p) && eventTier(p, e.key) < 3) || null;
+    if (!ev) ev = d.classes.flatMap(c => c.events.filter(e => !e.missing && !classEventLocked(c, e, p))).find(e => eventTier(p, e.key) < 3);
+  } else if (game === 'ac') {
+    if (ev?.group === 'modded') ev = null;
+    const s = ev?.series && aySeries(d, ev.series);
+    if (s?.champ) { const r = nextRound(s, p); ev = r >= 0 ? s.events[r] : null; }
+    else if (ev && eventTier(p, ev.key) === 3) ev = s ? s.events.find(e => eventTier(p, e.key) < 3) : null;
+    if (!ev) ev = d.career.filter(x => !seriesLocked(x, d.career, p)).flatMap(x => (x.champ ? [x.events[nextRound(x, p)]].filter(Boolean) : x.events)).find(e => !e.missing && eventTier(p, e.key) < 3);
+  } else {
+    if (ev && eventTier(p, ev.key) >= 3) ev = levelEvents(d.levels[ayLevelOf(d, ev)]).find(e => open(e) && eventTier(p, e.key) < 3) || null;
+    if (!ev) ev = d.all.find(e => open(e) && eventTier(p, e.key) < 3);
+  }
+  if (!ev) return '';
+  const series = game === 'ac' && ev.series && aySeries(d, ev.series), level = game !== 'ac' && d.levels[ayLevelOf(d, ev)], cls = ayClass(d, ev);
+  const group = series ? series.name : level ? tr(level.name) : cls ? tr(cls.name) : '', list = (series || level || cls)?.events;
+  const st = p.events[ev.key];
+  // Where it is in its series or level: a step per event, in the colour of the medal won.
+  const steps = group ? `<span class="ay-steps">${list.map(e => `<i class="${e === ev ? 'now' : TIERS[eventTier(p, e.key) - 1] || ''}"></i>`).join('')}</span>` : '';
+  const where = ev.bonus ? tr('Bonus event') : group ? tr('Event {n} of {total}', { n: ev.index + 1, total: list.length }) : tr('Special event');
+  return `<button class="ay-continue" data-ev="${esc(ev.key)}">
+    <div class="ay-continue-bg">${imgTag(ev.image, ev.carImage)}</div>
+    <div class="ay-continue-body">
+      <small class="ay-continue-kicker"><em>${esc(started ? tr('Continue') : tr('Start here'))}</em>${group ? ` · ${esc(group)}` : ''}</small>
+      <b class="ay-continue-name">${esc(tr(ev.name))}</b>
+      <span class="ay-continue-meta">${esc([ev.carName, ev.trackName, ayKindText(ev)].join(' · '))}</span>
+      <span class="ay-continue-progress">${steps}<span>${esc(where)}${st?.best != null ? ` · ${esc(tr('your best {v}', { v: scoreText(ayType(ev), st.best) }))}` : ''}</span></span>
+    </div>
+    <span class="ay-continue-go btn small primary">▶ ${esc(started ? tr('Continue') : tr('Start'))}</span>
+  </button>`;
+}
+
+function ayEventCard(ev, p, { n = 0, locked = '', round = null } = {}) {
+  const st = p.events[ev.key], tier = st?.tier || 0;
+  const best = st?.best != null ? tr('Best {v}', { v: scoreText(ayType(ev), st.best) }) : '';
+  const note = ev.missing ? tr({ car: 'Needs the car', track: 'Needs the track', setup: 'Open the car in EVO once' }[ev.missing]) : locked || '';
+  const foot = round
+    ? `<span class="ay-round-res">${round.pos ? `${esc(scoreText('position', round.pos))} · +${round.points} ${tr('pts')}` : esc(tr('Not finished'))}</span>`
+    : ev.goal ? medalDots(tier, ev.goal.tiers.length) : '';
+  return `<button class="ay-ev${note ? ' locked' : ''}${round ? ' driven' : ''}" data-ev="${esc(ev.key)}">
+    <div class="ay-ev-img">${imgTag(ev.image, ev.carImage)}${n ? `<span class="ay-num">${n}</span>` : ''}<span class="ay-kind">${esc(ayKindText(ev))}</span></div>
+    <div class="ay-ev-body">
+      <b>${esc(tr(ev.name))}</b>
+      <small>${esc(`${ev.carName} · ${ev.trackName}`)}</small>
+      <div class="ay-ev-foot">${foot}<span class="ay-ev-note">${note ? `${sxIcon('lock')}${esc(note)}` : esc(round ? '' : best || tr('Not driven'))}</span></div>
+    </div>
+  </button>`;
+}
+
+// ---- Assetto Corsa: the home page
+
+function acAcademyHTML(d, p) {
+  const seg = `<div class="qd-seg ay-part">${[['original', tr('Original')], ['modded', tr('Modded')]].map(([id, label]) => `<button data-ay="part" data-part="${id}" class="${AY.part === id ? 'active' : ''}">${esc(label)}</button>`).join('')}</div>`;
+  if (AY.part === 'modded') {
+    const lead = tr("Classes made for the launcher with mods from their makers, on Kunos's own tracks. Install a class's cars, then drive its events in order: each one opens with a medal in the one before. Medals come from where you qualify and finish against the AI.");
+    return `<div class="ay-bar">${seg}<p class="ay-lead">${esc(lead)}</p></div>
+      ${ayContinueHTML('ac', d, p)}
+      ${d.classes.map(c => ayClassHTML(c, p)).join('')}`;
+  }
+  const lead = tr("Kunos's own career and special events, with their targets. Only drives started here count.");
+  return `<div class="ay-bar">${seg}<p class="ay-lead">${esc(lead)}</p></div>
+    ${ayContinueHTML('ac', d, p)}
+    ${AC_LEVELS.map(level => {
+      const list = d.career.filter(s => s.level === level.id);
+      if (!list.length) return '';
+      const done = list.filter(s => seriesState(s, p).done).length;
+      return `<section class="ay-level">
+        <div class="ay-level-head"><h3>${esc(tr(level.name))}</h3><small>${esc(tr('{n} of {total} series done', { n: done, total: list.length }))}</small></div>
+        <div class="ay-series-grid">${list.map(s => aySeriesCard(s, d, p)).join('')}</div>
+      </section>`;
+    }).join('')}
+    ${aySpecialHTML(d, p)}`;
+}
+
+function aySeriesCard(s, d, p) {
+  const locked = seriesLocked(s, d.career, p), st = seriesState(s, p);
+  const needs = locked ? s.requires.map(id => d.career.find(x => x.id === id)?.name || id) : [];
+  const foot = locked
+    ? `<span class="ay-needs">${sxIcon('lock')}${esc(tr('Finish {list}', { list: needs.join(s.requiresAny ? tr(' or ') : ', ') }))}</span>`
+    : s.champ
+      ? `<span class="ay-pts"><b>${st.points}</b> / ${s.goal.points || '—'} ${tr('pts')}</span><span>${esc(tr('Round {n} of {total}', { n: Math.min(st.rounds + 1, s.events.length), total: s.events.length }))}</span>`
+      : `<span class="ay-counts">${[3, 2, 1].map(t => `<span class="ay-count">${medalDisc(t)}${st.medals[t - 1]}</span>`).join('')}</span>`;
+  return `<button class="ay-series${locked ? ' locked' : ''}${st.done ? ' done' : ''}" data-series="${esc(s.key)}">
+    <div class="ay-series-img">${imgTag(s.banner, s.image)}<span class="ay-code">${esc(s.code)}</span>${st.done ? `<span class="ay-state">${sxIcon('check')}${tr('Done')}</span>` : ''}</div>
+    <div class="ay-series-body">
+      <b>${esc(s.name)}</b>
+      <small>${esc(s.champ ? trn(s.events.length, 'Championship · 1 round', 'Championship · {n} rounds') : trn(s.events.length, '1 event', '{n} events'))}</small>
+      <div class="ay-series-foot">${foot}</div>
+    </div>
+  </button>`;
+}
+
+function aySpecialHTML(d, p) {
+  const kinds = ['hotlap', 'race', 'timeattack', 'drift', 'drag'];
+  const have = d.special.filter(e => !e.missing), missing = d.special.length - have.length;
+  const shown = (AY.missing ? d.special : have).filter(e => AY.special === 'all' || e.kind === AY.special);
+  const done = have.filter(e => eventTier(p, e.key)).length;
+  return `<section class="ay-level ay-special">
+    <div class="ay-level-head"><h3>${tr('Special events')}</h3><small>${esc(tr('{n} of {total} with a medal', { n: done, total: have.length }))}</small>
+      <div class="qd-seg">${['all', ...kinds].map(k => `<button data-ay-special="${k}" class="${AY.special === k ? 'active' : ''}">${esc(k === 'all' ? tr('All') : tr(AY_KIND[k]))}</button>`).join('')}</div>
+    </div>
+    <div class="ay-ev-grid">${shown.map(e => ayEventCard(e, p)).join('') || `<div class="ay-none">${tr('None of this kind.')}</div>`}</div>
+    ${missing ? `<p class="ay-missing-note">${esc(trn(missing, '1 more needs a car or track you don\'t have (DLC).', '{n} more need cars or tracks you don\'t have (DLC).'))} <button class="ay-link" data-ay="missing">${AY.missing ? tr('Hide them') : tr('Show them')}</button></p>` : ''}
+  </section>`;
+}
+
+// ---- Assetto Corsa: Modded classes
+
+function ayClassHTML(c, p) {
+  const have = c.cars.filter(m => m.installed).length, medals = c.events.filter(e => eventTier(p, e.key)).length;
+  const layout = AY.layouts?.[c.id];
+  return `<section class="ay-level ay-class">
+    <div class="ay-level-head"><h3>${esc(tr(c.name))}</h3><small>${esc(tr(c.blurb))}</small>
+      <span class="ay-level-state">${have ? esc(tr('{n} of {total} with a medal', { n: medals, total: c.events.length })) : `${sxIcon('lock')}${esc(tr('Install one of its cars to start'))}`}</span></div>
+    <div class="ay-mods">
+      ${c.cars.map(m => `<div class="ay-mod${m.installed ? ' have' : ''}">
+        <span class="ay-mod-mark">${sxIcon(m.installed ? 'check' : 'import')}</span>
+        <div class="ay-mod-text"><b>${esc(m.installed ? m.title : m.name)}</b><small>${esc([m.author, m.free ? tr('free') : m.paid ? tr('paid') : '', m.installed ? tr('installed') : ''].filter(Boolean).join(' · '))}</small></div>
+        ${m.installed ? '' : `<button class="btn small subtle" data-ay-get="${esc(m.get)}" title="${esc(m.get)}">${tr('Get it')} ↗</button>`}
+      </div>`).join('')}
+    </div>
+    <div class="ay-mod-tools">
+      ${have < c.cars.length ? `<button class="btn small subtle" data-ay="install" title="${esc(tr('Pick the file you downloaded (.zip, .rar, .7z): the launcher installs it. Dropping it on the window works too.'))}">${sxIcon('import')}${tr('Install a downloaded mod…')}</button>` : ''}
+      <button class="btn small subtle" data-ay-layout="${c.id}" title="${esc(tr('Saves the AC apps you have open now and where they are. {cls} events start with them, and your own layout comes back when AC closes.', { cls: tr(c.name) }))}">${sxIcon('duplicate')}${layout ? tr('Replace its app layout') : tr('Save my app layout for {cls}', { cls: tr(c.name) })}</button>
+      ${layout ? `<span class="ay-layout-note">${sxIcon('check')}${esc(tr('{cls} events use their own app layout, saved {when}.', { cls: tr(c.name), when: timeAgo(layout.at / 1000) }))}</span><button class="ay-link" data-ay-layout-clear="${c.id}">${tr('Remove it')}</button>` : ''}
+    </div>
+    <div class="ay-ev-grid">${c.events.map((e, n) => ayEventCard(e, p, { n: n + 1, locked: !have ? tr('Needs a car') : classEventLocked(c, e, p) ? tr('After event {n}', { n }) : '' })).join('')}</div>
+  </section>`;
+}
+
+// A class's app layout: AC's acos.ini (Kunos, Python and Lua app windows) and
+// python.ini (which Python apps are on), saved in the launcher's storage.
+async function saveClassLayout(id) {
+  const cfg = state.paths.ac.cfg;
+  const acos = await readText(join(cfg, 'acos.ini')), python = await readText(join(cfg, 'python.ini'));
+  if (acos == null) { toast(tr("AC hasn't saved an app layout yet: drive once, place your apps, and try again."), true); return; }
+  AY.layouts = { ...(await storageGet('academyLayouts', {})), [id]: { acos, python, at: Date.now() } };
+  await storageSet('academyLayouts', AY.layouts);
+  toast(tr('Saved: these events start with the apps you have open now.'));
+  drawAcademy();
+}
+async function clearClassLayout(id) {
+  AY.layouts = await storageGet('academyLayouts', {});
+  delete AY.layouts[id];
+  await storageSet('academyLayouts', AY.layouts);
+  drawAcademy();
+}
+// Before a class event: the player's own layout is kept aside and the class's put in place.
+async function applyClassLayout(id) {
+  const lay = (await storageGet('academyLayouts', {}))[id];
+  if (!lay) return '';
+  const cfg = state.paths.ac.cfg;
+  if (!(await storageGet('academyLayoutRestore', null))) {
+    await storageSet('academyLayoutRestore', { acos: await readText(join(cfg, 'acos.ini')), python: await readText(join(cfg, 'python.ini')), at: Date.now() });
+  }
+  if (lay.acos != null) await writeText(join(cfg, 'acos.ini'), lay.acos);
+  if (lay.python != null) await writeText(join(cfg, 'python.ini'), lay.python);
+  log(`academy: app layout of ${id} in place`);
+  return id;
+}
+// After AC closes (or at startup, when the launcher was closed meanwhile): what AC
+// saved goes back to the class (apps moved during the event stay moved), then the
+// player's own layout comes back.
+async function restoreClassLayout(id = '') {
+  const own = await storageGet('academyLayoutRestore', null);
+  if (!own) return;
+  const cfg = state.paths.ac.cfg;
+  if (id) {
+    const layouts = await storageGet('academyLayouts', {});
+    if (layouts[id]) {
+      layouts[id] = { acos: (await readText(join(cfg, 'acos.ini'))) ?? layouts[id].acos, python: (await readText(join(cfg, 'python.ini'))) ?? layouts[id].python, at: layouts[id].at };
+      await storageSet('academyLayouts', layouts);
+      AY.layouts = layouts;
+    }
+  }
+  if (own.acos != null) await writeText(join(cfg, 'acos.ini'), own.acos);
+  if (own.python != null) await writeText(join(cfg, 'python.ini'), own.python);
+  await storageSet('academyLayoutRestore', null);
+  log('academy: own app layout back');
+}
+
+// ---- Assetto Corsa: a series
+
+function aySeriesHTML(s, d, p) {
+  const locked = seriesLocked(s, d.career, p), st = seriesState(s, p);
+  const level = AC_LEVELS.find(l => l.id === s.level);
+  const next = s.champ ? nextRound(s, p) : -1, rounds = p.rounds[s.key] || [];
+  const status = locked
+    ? `${sxIcon('lock')}${esc(tr('Locked: finish {list} first.', { list: s.requires.map(id => d.career.find(x => x.id === id)?.name || id).join(s.requiresAny ? tr(' or ') : ', ') }))}`
+    : st.done ? `${sxIcon('check')}${esc(tr('Done: the series it opens are unlocked.'))}`
+    : s.champ ? esc(tr('{points} points so far, {rank} in the standings.', { points: st.points, rank: scoreText('position', st.rank) })) : '';
+  const cards = s.events.map((e, i) => {
+    if (!s.champ) return ayEventCard(e, p, { n: i + 1, locked: locked ? tr('Series locked') : '' });
+    const lockedRound = locked ? tr('Series locked') : i > next && next >= 0 ? tr('After round {n}', { n: i }) : '';
+    return ayEventCard(e, p, { n: i + 1, locked: next === -1 || i < rounds.length ? '' : lockedRound, round: rounds[i] || null });
+  }).join('');
+  return `<div class="ay-sp">
+    <button class="ay-back" data-ay="back">${sxIcon('back')}${tr('Academy')}</button>
+    <header class="ay-sp-head">
+      <div class="ay-sp-img">${imgTag(s.banner, s.image)}</div>
+      <div class="ay-sp-text">
+        <small class="sx-kicker">${esc([tr(level?.name || ''), s.code].filter(Boolean).join(' · '))}</small>
+        <h2>${esc(s.name)}</h2>
+        ${s.description ? `<p>${esc(s.description)}</p>` : ''}
+        <div class="ay-goal">${sxIcon('trophy')}<span><b>${esc(tr('Goal'))}:</b> ${esc(seriesGoalText(s))}</span></div>
+        ${status ? `<div class="ay-sp-status${st.done ? ' done' : ''}">${status}</div>` : ''}
+      </div>
+    </header>
+    <div class="ay-sp-body${s.champ ? ' champ' : ''}">
+      <div class="ay-ev-grid">${cards}</div>
+      ${s.champ ? ayStandingsHTML(s, p) : ''}
+    </div>
+  </div>`;
+}
+
+function ayStandingsHTML(s, p) {
+  const rows = standings(s, p), rounds = (p.rounds[s.key] || []).length;
+  return `<aside class="ay-standings">
+    <h4>${tr('Standings')}<small>${esc(tr('after {n} of {total} rounds', { n: rounds, total: s.events.length }))}</small></h4>
+    <ol>${rows.map((r, i) => `<li class="${r.player ? 'you' : ''}"><span class="pos">${i + 1}</span><span class="name">${esc(r.player ? tr('You') : r.name)}</span><span class="pts">${r.points}</span></li>`).join('')}</ol>
+    <small class="ay-points-table">${esc(tr('Points: {list}', { list: s.points.join(', ') }))}</small>
+    ${rounds ? `<button class="btn small subtle" data-ay="restart">${sxIcon('retry')}<span>${tr('Restart championship')}</span></button>` : ''}
+  </aside>`;
+}
+
+async function restartSeries(b) {
+  const s = aySeries(AY.data.ac, AY.series);
+  if (!s) return;
+  if (!b.dataset.armed) {
+    b.dataset.armed = '1';
+    b.querySelector('span').textContent = tr('Click again: clears its rounds');
+    setTimeout(() => { if (b.isConnected && b.dataset.armed) { delete b.dataset.armed; b.querySelector('span').textContent = tr('Restart championship'); } }, 4000);
+    return;
+  }
+  await restartChampionship(s);
+  drawAcademy();
+}
+
+// ---- EVO and Rally: levels
+
+function ayLevelsHTML(game, d, p) {
+  const unlock = d.levels.find(l => l.unlock)?.unlock;
+  const lead = game === 'evo'
+    ? unlock ? tr("Time trials and races with EVO's current cars, and Kunos's own academy sprints. The AI gets stronger with each level, and a level opens with {n} medals from the one before.", { n: unlock })
+      : tr("Time trials and races with EVO's current cars, and Kunos's own academy sprints. More levels come in later versions.")
+    : tr("Stages from front-wheel drive classics to Rally2. Targets are Rally's own: its AI time for the car and stage, with the game's medal margins.");
+  return `<div class="ay-bar"><p class="ay-lead">${esc(lead)}</p></div>
+    ${ayContinueHTML(game, d, p)}
+    ${d.levels.map((level, i) => {
+      const locked = levelLocked(d.levels, i, p), medals = levelMedals(level, p), from = levelBefore(d.levels, i);
+      const need = locked ? ayLockText(level, from, p) : '';
+      return `<section class="ay-level${locked ? ' locked' : ''}">
+        <div class="ay-level-head"><h3>${esc(tr(level.name))}</h3><small>${esc(tr(level.blurb))}</small>
+          <span class="ay-level-state">${locked ? `${sxIcon('lock')}${esc(need)}` : esc(tr('{n} of {total} with a medal', { n: medals, total: level.events.length }))}</span></div>
+        <div class="ay-ev-grid">${level.events.map((e, n) => ayEventCard(e, p, { n: n + 1, locked: locked ? tr('Level locked') : '' })).join('')}</div>
+        ${level.bonus ? ayBonusHTML(level, p) : ''}
+      </section>`;
+    }).join('')}`;
+}
+
+// What a locked level still needs: medals in the one before, a safety rating grade.
+function ayLockText(level, from, p) {
+  const medals = from && levelMedals(from, p) < level.unlock, sr = srShort(level, p);
+  const srText = tr('safety rating {grade} (yours: {now})', { grade: level.srGrade, now: `${srGrade(srOf(p))} ${srOf(p)}` });
+  return medals && sr ? tr('Opens with {n} medals in {level} ({have} so far) and {sr}', { n: level.unlock, level: tr(from.name), have: levelMedals(from, p), sr: srText })
+    : medals ? tr('Opens with {n} medals in {level} ({have} so far)', { n: level.unlock, level: tr(from.name), have: levelMedals(from, p) })
+    : tr('Opens with {sr}', { sr: srText });
+}
+
+// A level's bonus event: a strip under its six, dimmed until all six have gold.
+function ayBonusHTML(level, p) {
+  const ev = level.bonus, locked = bonusLocked(level, p), st = p.events[ev.key];
+  const state = locked ? `${sxIcon('lock')}${esc(tr('Gold on all six to unlock · {n} of {total} so far', { n: levelGolds(level, p), total: level.events.length }))}`
+    : ev.missing ? esc(tr({ car: 'Needs the car', track: 'Needs the track', setup: 'Open the car in EVO once' }[ev.missing]))
+    : `${ev.goal ? medalDots(st?.tier || 0, ev.goal.tiers.length) : ''}<span>${esc(st?.best != null ? tr('Best {v}', { v: scoreText(ayType(ev), st.best) }) : tr('Not driven'))}</span>`;
+  return `<button class="ay-bonus${locked ? ' locked' : ''}" data-ev="${esc(ev.key)}">
+    <div class="ay-bonus-img">${imgTag(ev.image, ev.carImage)}</div>
+    <span class="ay-bonus-tag">${sxIcon('star')}${esc(tr('Bonus'))}</span>
+    <div class="ay-bonus-text"><b>${esc(tr(ev.name))}</b><small>${esc([ev.carName, ev.trackName, ayKindText(ev)].join(' · '))}</small></div>
+    <span class="ay-bonus-state">${state}</span>
+  </button>`;
+}
+
+// ---- An event's window
+
+async function openAcademyEvent(key) {
+  const game = ayGameOf(key);
+  if (ayLater(game)) return;
+  const d = await academyData(game), p = await academyProgress();
+  const ev = academyEvent(d, key);
+  if (!ev) return;
+  const series = game === 'ac' && ev.series ? aySeries(d, ev.series) : null, cls = ayClass(d, ev);
+  const li = game === 'ac' ? -1 : ayLevelOf(d, ev), level = li >= 0 ? d.levels[li] : null;
+  // Class events: the player drives any installed car of the class (the last one picked first).
+  const classCars = cls ? cls.cars.filter(m => m.installed) : [];
+  let carPick = cls ? (classCars.find(m => m.id === state.settings.academyCars?.[cls.id]) || classCars[0])?.id : '';
+  const pickedCar = () => classCars.find(m => m.id === carPick);
+  const round = series?.champ ? nextRound(series, p) : -1;
+  const st = p.events[ev.key], tier = st?.tier || 0, type = ayType(ev);
+  const driven = series?.champ ? (p.rounds[series.key] || [])[ev.index] : null;
+  const where = list => list.map(id => d.career.find(x => x.id === id)?.name || id).join(series?.requiresAny ? tr(' or ') : ', ');
+  // Why it can't be started, if it can't.
+  const blocker = !isInstalled(gameByKey(game)) ? tr("{game} isn't installed.", { game: `${gameByKey(game).title} ${gameByKey(game).sub || ''}`.trim() })
+    : ev.missing === 'car' && !cls ? tr(game === 'ac' ? "You don't have this car ({id})." : "This car isn't in your {game} ({id}).", { id: ev.car, game: ayGameName(game) })
+    : ev.missing === 'track' ? tr(game === 'ac' ? "You don't have this track ({id})." : "This track isn't in your {game} ({id}).", { id: [ev.track, ev.layout].filter(Boolean).join(' / '), game: ayGameName(game) })
+    : ev.missing === 'setup' ? tr("EVO hasn't set this car up yet: start EVO and open its car list once, then it can be pre-selected.")
+    : cls && !classCars.length ? tr('Install one of the {cls} cars first: the Academy page lists them with where to get them.', { cls: tr(cls.name) })
+    : cls && classEventLocked(cls, ev, p) ? tr('Win a medal in event {n} first: the events of a class open in order.', { n: ev.index })
+    : series && seriesLocked(series, d.career, p) ? tr('This series is locked: finish {list} first.', { list: where(series.requires) })
+    : level && levelLocked(d.levels, li, p) ? `${tr('This level is locked.')} ${ayLockText(level, levelBefore(d.levels, li), p)}.`
+    : ev.bonus && bonusLocked(level, p) ? tr('The bonus event opens with gold or better on all {total} events of {level}: you have {n}.', { total: level.events.length, level: tr(level.name), n: levelGolds(level, p) })
+    : series?.champ && round !== ev.index ? (driven ? tr('Round {n} is driven. Restart the championship to drive it again.', { n: ev.index + 1 }) : tr('Drive round {n} first: championship rounds go in order.', { n: round + 1 }))
+    : !ev.goal && !series?.champ ? tr("There's no reference time for this car and stage, so it can't give medals.")
+    : '';
+  // AI-level goals: the player picks the level (the next medal up by default).
+  let ai = ev.goal?.type === 'ai' ? ev.goal.tiers[Math.min(tier, 2)] : 0;
+  const kicker = series ? (series.champ ? tr('{series} · round {n} of {total}', { series: series.name, n: ev.index + 1, total: series.events.length }) : tr('{series} · event {n} of {total}', { series: series.name, n: ev.index + 1, total: series.events.length }))
+    : level && ev.bonus ? tr('{series} · bonus event', { series: tr(level.name) })
+    : level ? tr('{series} · event {n} of {total}', { series: tr(level.name), n: ev.index + 1, total: level.events.length })
+    : cls ? tr('{series} · event {n} of {total}', { series: tr(cls.name), n: ev.index + 1, total: cls.events.length })
+    : tr('Special event · {kind}', { kind: tr(AY_KIND[ev.kind]) });
+  const facts = [
+    [tr('Car'), cls ? pickedCar()?.title || tr('One of the class cars') : ev.carName],
+    [game === 'rally' ? tr('Stage') : tr('Track'), ev.trackName],
+    [game === 'rally' ? tr('Session') : tr(AY_KIND[ev.kind] || 'Session'), aySessionText(ev, series)],
+    [tr('Conditions'), ayConditions(ev)],
+  ];
+  const hint = blocker || {
+    ac: cls
+      ? tr('Assetto Corsa starts straight on track, with the AI in the other {cls} cars. Drive it, then close the game: the launcher reads your result. Your Quick Drive assists are used.', { cls: tr(cls.name) })
+      : tr('Assetto Corsa starts straight on track with this event. Drive it, then close the game: the launcher reads your result. Your Quick Drive assists are used.'),
+    evo: ev.kind === 'timetrial'
+      ? tr('EVO starts on its menu with this event set up: open Single Player and press Start. Drive it, then close EVO: the launcher reads your best lap. Only this car on this track counts.')
+      : ev.kind === 'sprint'
+        ? tr("EVO starts on its menu with this event set up: open Single Player and press Start. Go on green and through the finish arch, then close EVO: the launcher reads your time from EVO's log. EVO's clock keeps running after the arch; restart from the pause menu for another try, your best counts.")
+        : tr("EVO starts on its menu with this event set up: open Single Player and press Start. Drive it, then close EVO: the launcher reads your result. Only this car on this track counts, against this AI."),
+    rally: tr("Rally starts with Free Practice set to this stage, car, time and weather: open Free Practice and press Start. When you close Rally, a new stage record with this car, in this weather, is your result."),
+  }[game];
+  const targetsHTML = () => {
+    if (series?.champ) {
+      const rows = standings(series, p).slice(0, 6);
+      return `<div class="ay-targets champ"><h5>${tr('Championship')}<small>${esc(tr('Goal: {goal}', { goal: seriesGoalText(series) }))}</small></h5>
+        ${driven ? `<div class="ay-target"><span>${tr('Your result')}</span><b>${driven.pos ? `${esc(scoreText('position', driven.pos))} · +${driven.points} ${tr('pts')}` : esc(tr('Not finished'))}</b></div>` : ''}
+        <div class="ay-target"><span>${tr('Points for 1st to last')}</span><b>${esc(series.points.join(' · '))}</b></div>
+        <ol class="ay-mini-standings">${rows.map((r, i) => `<li class="${r.player ? 'you' : ''}"><span>${i + 1}</span><span>${esc(r.player ? tr('You') : r.name)}</span><b>${r.points}</b></li>`).join('')}</ol></div>`;
+    }
+    if (!ev.goal) return '';
+    const note = ev.goal.type === 'ai' ? tr('Win the race. Pick the AI level you race against:') : game === 'rally' && ev.ref ? tr("Rally's AI time here is {t}.", { t: lapTime(ev.ref) }) : '';
+    return `<div class="ay-targets"><h5>${tr('Targets')}${note ? `<small>${esc(note)}</small>` : ''}</h5>
+      ${tiersDown(ev.goal).map(i => {
+        const v = ev.goal.tiers[i], have = tier > i;
+        const pick = ev.goal.type === 'ai';
+        return `<${pick ? 'button' : 'div'} class="ay-target${pick && v === ai ? ' picked' : ''}${have ? ' have' : ''}"${pick ? ` data-ai="${v}"` : ''}>
+          ${medalDisc(i + 1)}<b>${esc(goalValue(ev.goal.type, v))}</b>${have ? `<small class="ay-have" title="${esc(tr('Won'))}">${sxIcon('check')}</small>` : ''}
+        </${pick ? 'button' : 'div'}>`;
+      }).join('')}
+    </div>`;
+  };
+  const { el, close } = modal(`
+    <header class="qd-head ay-ev-head">
+      <small class="sx-kicker">${esc(kicker)}</small>
+      <h2>${esc(tr(ev.name))}</h2>
+    </header>
+    <div class="ay-ev-cols">
+      <div class="ay-ev-left">
+        <div class="ay-ev-pic" id="ay-ev-pic">${imgTag(cls ? pickedCar()?.image || ev.image : ev.carImage, ev.image)}</div>
+        <div class="ay-ev-track">${ev.outline ? `<img class="overlay ay-outline${game === 'rally' ? ' color' : ''}" src="${esc(ev.outline)}" alt="" onerror="this.remove()">` : ''}<div><b>${esc(ev.trackName)}</b><small>${esc(ev.carName)}</small></div></div>
+        ${ev.description && ev.group !== 'special' ? `<p class="ay-ev-desc">${esc(tr(ev.description))}</p>` : ''}
+      </div>
+      <div class="ay-ev-right">
+        ${classCars.length > 1 ? `<div class="ay-carpick"><small>${tr('Your car')}</small><div class="qd-seg">${classCars.map(m => `<button data-ay-car="${esc(m.id)}" class="${m.id === carPick ? 'active' : ''}">${esc(m.title)}</button>`).join('')}</div></div>` : ''}
+        <div class="ay-facts">${facts.map(([k, v], i) => `<div class="ay-fact"${i === 0 ? ' id="ay-fact-car"' : ''}><small>${esc(k)}</small><span>${esc(v)}</span></div>`).join('')}</div>
+        <div id="ay-targets">${targetsHTML()}</div>
+        ${st?.best != null && !series?.champ ? `<div class="ay-best"><span>${tr('Your best')}</span>${medalDisc(tier)}<b>${esc(scoreText(type, st.best))}</b><small>${esc(trn(st.tries || 1, '1 try', '{n} tries'))}</small></div>` : ''}
+        <p class="ay-ev-hint${blocker ? ' warn' : ''}">${esc(hint)}</p>
+      </div>
+    </div>
+    <footer class="ay-ev-foot-bar">
+      <button class="btn small subtle" data-close>${tr('Back')}</button>
+      <button class="btn small primary" id="ay-start" data-launch-game="${game}" ${blocker ? 'disabled' : ''}>${sxIcon('play')}${series?.champ ? tr('Start round') : tr('Start event')}</button>
+    </footer>`, 'modal ay-modal');
+  el.addEventListener('click', e => {
+    const c = e.target.closest('[data-ay-car]');
+    if (c) {
+      carPick = c.dataset.ayCar;
+      el.querySelectorAll('[data-ay-car]').forEach(x => x.classList.toggle('active', x.dataset.ayCar === carPick));
+      el.querySelector('#ay-fact-car span').textContent = pickedCar()?.title || '';
+      el.querySelector('#ay-ev-pic').innerHTML = imgTag(pickedCar()?.image || ev.image, ev.image);
+      return;
+    }
+    const b = e.target.closest('[data-ai]');
+    if (!b) return;
+    ai = Number(b.dataset.ai);
+    el.querySelectorAll('[data-ai]').forEach(x => x.classList.toggle('picked', Number(x.dataset.ai) === ai));
+  });
+  syncRunning(el);
+  el.querySelector('#ay-start').onclick = async () => {
+    const go = el.querySelector('#ay-start');
+    if (game === 'evo') primeChime(); // the card's chime may sound only after a click here
+    go.disabled = true;
+    try {
+      if (cls) { state.settings.academyCars = { ...(state.settings.academyCars || {}), [cls.id]: carPick }; saveSettings(); }
+      const launch = await startAcademyEvent(ev, { ai, series, cls, car: pickedCar() });
+      if (!launch) { go.disabled = false; return; }
+      const pNow = await academyProgress();
+      nextLaunch[game] = { academy: { key: ev.key, ai, driver: driverLevel(pNow), sr: srOf(pNow), ...launch } };
+      markStarting(game);
+      if (game === 'evo') academyWatch(ev, launches[game]);
+      await setLastEvent(ev.key);
+      toast(tr('Starting {name}…', { name: tr(ev.name) }));
+    } catch (err) {
+      toast(err.message || tr('Could not start {game}', { game: ayGameName(game) }), true);
+      go.disabled = false;
+      return;
+    }
+    close();
+    if (state.view === 'academy') drawAcademy();
+    if (state.settings.minimizeOnLaunch) setTimeout(() => Neutralino.window.minimize(), 1500);
+  };
+}
+
+// Sets the game up for an event and starts it. Returns what the result needs to
+// know later (merged into the launch), or null when the player backed out.
+async function startAcademyEvent(ev, { ai = 0, series = null, cls = null, car = null } = {}) {
+  if (ev.game === 'ac' && cls) {
+    const skin = car.skins[0]?.id || '';
+    const csp = await readCsp(state.paths).catch(() => null);
+    const base = await readAcSession(state.paths, csp).catch(() => defaultAcSession());
+    const max = Math.max(1, Math.min(ev.pitboxes || 20, 63) - 1);
+    const grid = classGrid(cls, Math.min(ev.opponents, max), car.id, skin);
+    const layout = await applyClassLayout(cls.id);
+    try {
+      await quickDrive(state.paths, { car: car.id, skin, skins: car.skins.map(s => s.id), track: ev.track, layout: ev.layout, session: classSession(ev, base), maxOpponents: max, csp, grid });
+    } catch (err) { if (layout) await restoreClassLayout(); throw err; }
+    return { car: car.id, layout };
+  }
+  if (ev.game === 'ac') {
+    await startAcEvent(state.paths, ev, { ai, opponents: series?.champ ? series.opponents : null });
+    return {};
+  }
+  if (ev.game === 'evo') {
+    const session = evoSessionFor(ev, defaultEvoSession());
+    await evoTrackSync({ quiet: true });
+    await launchEvo({ steamPath: state.steamPath, installDir: state.paths.evo.install, session, track: ev.evoTrack, layout: ev.evoLayout, carGuid: ev.guid });
+    return {};
+  }
+  if (ev.game === 'rally') {
+    const g = gameByKey('rally');
+    if (!(await rallyPreflight(g))) return null;
+    const loc = rallyStage(ev.stage).location, weather = rallyWeatherFor(loc, ev.weather);
+    const save = await readRallySave(state.paths).catch(() => null);
+    const liveries = await rallySelectedLiveries(state.paths).catch(() => ({}));
+    const w = save?.weather && { ...save.weather, weather, forecast: weather, dynamic: false, speed: 0, grip: 4, wetness: weather >= 5 && weather <= 7 ? 70 : 0, snow: weather >= 8 ? 70 : 0 };
+    // The record with this car on this stage in this weather before the run: a better one afterwards is the result.
+    const wt = RALLY_WEATHER_IDS[weather];
+    const before = (await rallyRecords(state.paths).catch(() => [])).filter(r => r.stage === ev.stage && r.car.toLowerCase() === ev.car.toLowerCase() && r.weather === wt).reduce((m, r) => Math.min(m, r.ms), Infinity);
+    await writeRallySession(state.paths, { stage: ev.stage, car: ev.car, seconds: ev.time * 60, livery: liveries[ev.car] || ev.car, weather: w });
+    await openExternal(steamUrls.run(g.appid));
+    return { weather: wt, before: Number.isFinite(before) ? before : null };
+  }
+  return null;
+}
+
+// ---- After the game closes
+
+// A game closed after an Academy start: its result, the medal saved, and the window that says so.
+async function academyClosed(game, l) {
+  const d = await academyData(game), p = await academyProgress();
+  const ev = academyEvent(d, l.academy.key);
+  if (!ev) return;
+  const name = tr(ev.name);
+  // The driver level when the event started: results saved over the game may have raised it.
+  const driverFrom = l.academy.driver || driverLevel(p);
+  // The safety rating when an EVO race or weekend started (it changes while EVO races).
+  const srFrom = game === 'evo' && (ev.kind === 'race' || ev.kind === 'weekend') ? l.academy.sr ?? null : null;
+  const levelUpToast = () => {
+    const now = driverLevel(p);
+    if (now.level > driverFrom.level) toast(tr('Driver level {n}! Your medals took you up from level {was}.', { n: now.level, was: driverFrom.level }));
+    if (srFrom != null && srOf(p) !== srFrom) toast(tr('Safety rating {grade} {n} ({change})', { grade: srGrade(srOf(p)), n: srOf(p), change: srChange(srOf(p) - srFrom) }));
+  };
+  let r = null;
+  if (game === 'ac') {
+    r = await readAcResult(state.paths, ev, l.at - 5000);
+    if (!r || (!r.laps && !r.points && !r.wins && !r.pos)) r = null;
+  } else if (game === 'evo' && ev.kind === 'sprint') {
+    r = await readEvoSprint(join(state.paths.evo.profiles.replace(/\/[^/]+$/, ''), 'Logs'), ev, l.at - 5000);
+    // Runs already saved and shown over EVO (academyWatch) aren't saved again.
+    const live = l.academy.live || 0, rest = r.times.slice(live);
+    if (!rest.length) {
+      if (live) toast(trn(live, '{name}: 1 run saved, your best is {v}.', '{name}: {n} runs saved, your best is {v}.', { name, v: lapTime(p.events[ev.key]?.best) }));
+      else toast(r.mismatch && !r.files ? tr("{name}: EVO was driven with another {what}, so it doesn't count.", { name, what: r.mismatch === 'car' ? tr('car') : tr('track') }) : tr('No result from {name}: no run reached the finish arch, so nothing was saved.', { name }));
+      levelUpToast();
+      return;
+    }
+    r = { ...r, times: rest, ms: Math.min(...rest), runs: rest.length, laps: rest.length };
+  } else if (game === 'evo') {
+    // Results already saved and shown over EVO (academyWatch) aren't saved again.
+    const shown = l.academy.liveFiles || [];
+    r = await readEvoResult(join(state.paths.evo.profiles.replace(/\/[^/]+$/, ''), 'Results'), ev, l.at - 5000, new Set(shown));
+    if (!r.files) {
+      if (!shown.length) toast(r.mismatch ? tr("{name}: EVO was driven with another {what}, so it doesn't count.", { name, what: r.mismatch === 'car' ? tr('car') : tr('track') }) : tr('No result from {name}: nothing was driven, so nothing was saved.', { name }));
+      levelUpToast();
+      return;
+    }
+    // The AI made easier in EVO's menu: the run doesn't count.
+    if (ev.kind !== 'timetrial' && await evoAiEasier(ev)) {
+      toast(tr("{name}: the AI was changed in EVO's menu, so the race doesn't count.", { name }), true);
+      return;
+    }
+  } else if (game === 'rally') {
+    const rec = (await rallyRecords(state.paths).catch(() => []))
+      .filter(x => x.stage === ev.stage && x.car.toLowerCase() === ev.car.toLowerCase() && x.weather === l.academy.weather && (l.academy.before == null || x.ms < l.academy.before))
+      .sort((a, b) => a.ms - b.ms)[0];
+    if (!rec) {
+      toast(tr('{name}: no new stage record with this car in this weather, so nothing was saved. Only a time that beats your best there counts.', { name }));
+      return;
+    }
+    r = { ms: rec.ms, penalty: rec.penalty, laps: 1 };
+  }
+  log(`academy result ${ev.key}: ${JSON.stringify(r && { ...r, names: undefined })}`);
+  if (!r) { toast(tr('No result from {name}: nothing was driven, so nothing was saved.', { name })); return; }
+  const series = game === 'ac' && ev.series ? aySeries(d, ev.series) : null;
+  const openBefore = game === 'ac' ? new Set(d.career.filter(s => !seriesLocked(s, d.career, p)).map(s => s.key)) : new Set(d.levels.filter((x, i) => !levelLocked(d.levels, i, p)).map(x => x.key));
+  const bonusBefore = new Set((d.levels || []).filter(x => x.bonus && !bonusLocked(x, p)).map(x => x.key));
+  const doneBefore = series && seriesState(series, p).done;
+  const res = await recordResult(ev, r, { ai: l.academy.ai, series });
+  if (!res) return;
+  const unlocked = game === 'ac' ? d.career.filter(s => !openBefore.has(s.key) && !seriesLocked(s, d.career, p)).map(s => s.name)
+    : [...d.levels.filter((x, i) => !openBefore.has(x.key) && !levelLocked(d.levels, i, p)).map(x => tr(x.name)),
+      ...d.levels.filter(x => x.bonus && !bonusBefore.has(x.key) && !bonusLocked(x, p)).map(x => tr('Bonus event: {name}', { name: tr(x.bonus.name) }))];
+  const finished = series && !doneBefore && seriesState(series, p).done;
+  if (state.view === 'academy') drawAcademy();
+  showAcademyResult(ev, r, res, { series, unlocked, finished, ai: l.academy.ai, p, driver: { from: driverFrom, to: driverLevel(p) }, sr: srFrom != null ? { from: srFrom, to: srOf(p) } : null });
+}
+
+const srChange = n => (n > 0 ? `+${n}` : n < 0 ? `−${-n}` : '±0');
+
+// SR in the result window: its grade, the rating and how much the event changed it,
+// on its bar.
+function aySrHTML({ from, to }) {
+  const d = to - from, next = SR_NEXT[srGrade(to)];
+  return `<div class="ay-result-stat" title="${esc(aySrTitle(to))}">
+    ${ayGradePlate(to, true)}
+    <div>
+      <span class="ay-result-stat-head"><small>SR</small><b>${to}</b>${d ? `<em class="${d < 0 ? 'down' : 'up'}">${srChange(d)}</em>` : ''}</span>
+      ${aySrBar(to, from)}
+      <small>${esc([d < 0 ? tr('Impacts, cuts and penalties in this event') : d > 0 ? tr('Clean laps in this event') : tr('A clean drive keeps it, clean laps raise it'), next ? tr('{n} more to {g}', { n: srGradeMin(next) - to, g: next }) : ''].filter(Boolean).join(' · '))}</small>
+    </div>
+  </div>`;
+}
+
+// DR in the result window: the points this event brought, and a level gained
+// since the event started.
+function ayDriverHTML({ from, to }) {
+  const up = to.level > from.level, gained = to.points - from.points;
+  return `<div class="ay-result-stat${up ? ' up' : ''}" title="${esc(ayDrTitle(to))}">
+    ${ayLevelPlate(to.level, true)}
+    <div>
+      <span class="ay-result-stat-head"><small>DR</small>${up ? `<b>${esc(tr('Level up!'))}</b>` : ''}${gained > 0 ? `<em class="up">${esc(trn(gained, '+1 point', '+{n} points'))}</em>` : ''}</span>
+      ${ayDrBar(to, up ? 0 : from.into)}
+      <small>${esc(tr('{into} of {need} points to level {next}', { into: to.into, need: to.need, next: to.level + 1 }))}</small>
+    </div>
+  </div>`;
+}
+
+function showAcademyResult(ev, r, res, { series, unlocked = [], finished = false, ai = 0, p, driver = null, sr = null }) {
+  const type = res.type;
+  const champ = series?.champ;
+  const tier = champ ? 0 : res.gained;
+  const d = AY.data[ev.game], level = ev.level && d?.levels ? d.levels[ayLevelOf(d, ev)] : null;
+  const title = champ ? (r.pos ? tr('Finished {pos}', { pos: scoreText('position', r.pos) }) : tr('Not finished'))
+    : tier ? tr(AY_TIER[tier]) : tr('No medal this time');
+  const scoreLine = champ ? (r.pos ? tr('+{n} points', { n: res.points }) : tr('Retired before the flag: no points'))
+    : type === 'ai' ? (r.pos ? tr('Finished {pos} against AI {n}%', { pos: scoreText('position', r.pos), n: ai }) : tr('Not finished'))
+    : type === 'position' ? (r.pos ? tr('Finished {pos}', { pos: scoreText('position', r.pos) }) : r.dsq ? tr('Disqualified') : tr('Not finished'))
+    : res.score != null ? scoreText(type, res.score) : type === 'time' ? tr('No clean lap') : '';
+  const was = res.prevBest, now = res.score;
+  const sub = champ ? '' : [
+    now == null ? '' : was == null ? tr('First result') : betterScore(type, was, now) === now && now !== was ? tr('New personal best (was {v})', { v: scoreText(type, was) }) : tr('Your best is {v}', { v: scoreText(type, was) }),
+    r.penalty ? tr('{s} s of penalties included', { s: (r.penalty / 1000).toFixed(1) }) : '',
+  ].filter(Boolean).join(' · ');
+  const list = series ? series.events : level ? level.events : null;
+  // After a level's last event, its bonus once open.
+  const next = (list && list[ev.index + 1]) || (level?.bonus && !ev.bonus && !bonusLocked(level, p) && eventTier(p, level.bonus.key) < 3 ? level.bonus : null);
+  const standing = champ ? seriesState(series, p) : null;
+  const notes = [
+    finished ? `${sxIcon('trophy')}<span>${esc(tr('{series} is done.', { series: series.name }))}</span>` : '',
+    unlocked.length ? `${sxIcon('lock')}<span>${esc(tr('Unlocked: {list}', { list: unlocked.join(', ') }))}</span>` : '',
+  ].filter(Boolean);
+  const { el, close } = modal(`
+    <div class="ay-result">
+      <small class="sx-kicker">${esc([series?.name || (level && tr(level.name)), tr(ev.name)].filter(Boolean).join(' · '))}</small>
+      <div class="ay-result-medal ${champ ? 'champ' : TIERS[tier - 1] || 'none'}">${sxIcon(champ ? 'flag' : 'trophy')}</div>
+      <h2>${esc(title)}</h2>
+      ${scoreLine ? `<b class="ay-result-score">${esc(scoreLine)}</b>` : ''}
+      ${sub ? `<span class="ay-result-sub">${esc(sub)}</span>` : ''}
+      ${!champ && ev.goal ? `<div class="ay-result-tiers">${tiersDown(ev.goal).map(i => {
+        const got = res.gained > i, had = res.before > i;
+        return `<div class="${got ? 'got' : ''}">${medalDisc(i + 1)}<span>${esc(goalValue(ev.goal.type, ev.goal.tiers[i]))}</span><small>${got && !had ? tr('Earned now') : had ? tr('Already yours') : '—'}</small></div>`;
+      }).join('')}</div>` : ''}
+      ${champ ? `<div class="ay-result-tiers">
+        <div><span>${esc(tr('Championship points'))}</span><small>${standing.points} / ${series.goal.points || '—'}</small></div>
+        <div><span>${esc(tr('Standings'))}</span><small>${esc(tr('{pos} after {n} of {total} rounds', { pos: scoreText('position', standing.rank), n: standing.rounds, total: series.events.length }))}</small></div>
+      </div>` : ''}
+      ${driver ? ayDriverHTML(driver) : ''}
+      ${sr ? aySrHTML(sr) : ''}
+      ${notes.length ? `<div class="ay-result-notes">${notes.map(n => `<div>${n}</div>`).join('')}</div>` : ''}
+      <div class="ay-result-actions">
+        <button class="btn small subtle" data-close>${tr('Close')}</button>
+        ${champ ? '' : `<button class="btn small subtle" data-r="again">${sxIcon('retry')}${tr('Try again')}</button>`}
+        ${next ? `<button class="btn small primary" data-r="next">${champ ? tr('Next round') : tr('Next event')}</button>` : ''}
+      </div>
+    </div>`, 'modal ay-result-modal');
+  el.addEventListener('click', e => {
+    const b = e.target.closest('[data-r]');
+    if (!b) return;
+    close();
+    openAcademyEvent(b.dataset.r === 'next' ? next.key : ev.key);
+  });
+}
+
+// ---- EVO: each result over the game as it comes
+
+// While EVO runs an event started from the Academy, the launcher reads what EVO
+// adds to its newest log every WATCH_TICK ms. A sprint's run is there the moment
+// the car crosses the finish arch (sprintReader), and so are a race's finish
+// (raceReader) and a time trial's laps (lapReader); any session's result when EVO saves it, logged as
+// `SessionResults saved into "<results file>"` (a race some 11 s after the
+// player's finish, once the field is in; a practice when it ends). Each is shown
+// on a card over the game: a small window of its own process (overlay.html,
+// always on top, started hidden with the event) that reads what to show from
+// util.js overlayFile, with a sound from the launcher's window (chime.js). A
+// race's card comes at the finish line, a time trial's at each lap's line; the
+// result is saved from EVO's file, with a card then only if it came out different. When EVO closes, academyClosed
+// only saves what this didn't.
+const WATCH_TICK = 100, OVERLAY_BEAT = 5000;
+// The result banner (css/overlay.css) is 520 px wide and about 90 tall; it sits
+// OVERLAY_TOP of the way down the screen, under the game's own top HUD, and its
+// window reaches up to the screen's top edge, which it slides down from. The
+// safety rating's tile, on the right edge half way down, is 104 by about 200.
+const OVERLAY_TOP = 0.12;
+const OVERLAY_BASE = { title: 'Assetto Launcher', minWidth: 100, minHeight: 80, borderless: true, transparent: true, alwaysOnTop: true, skipTaskbar: true, hidden: true, resizable: false, exitProcessOnClose: true, enableInspector: false };
+const overlayTopPx = () => Math.round(screen.height * OVERLAY_TOP);
+const overlayWindow = () => ({ ...OVERLAY_BASE, width: Math.ceil(580 * devicePixelRatio), height: Math.ceil((overlayTopPx() + 150) * devicePixelRatio) });
+const overlaySrWindow = () => ({ ...OVERLAY_BASE, width: Math.ceil(170 * devicePixelRatio), height: Math.ceil(250 * devicePixelRatio) });
+let watch = null;
+
+// o: a card window's state, { overlay (its file), sid, n, beat }: the watch's own
+// (the result card), or its `sr.ov` (the safety rating's).
+async function overlaySend(o, msg) {
+  if (!o?.overlay) return;
+  o.n++; o.beat = Date.now();
+  await writeText(o.overlay, JSON.stringify({ ...msg, sid: o.sid, n: o.n, at: Date.now() })).catch(err => log(`overlay: ${err?.message || err}`));
+}
+
+// The card, and the sound with it.
+async function overlayShow(s, card) {
+  if (!s.overlay) return;
+  await overlaySend(s, { show: card, seconds: state.settings.academyCardSeconds || 8 });
+  if (state.settings.academyCardSound !== false) playChime().catch(() => {});
+}
+
+// A card window of its own process, told what to show through its file (side: '' or 'right').
+async function overlayOpen(o, side) {
+  try {
+    o.overlay = await overlayFile(side);
+    await overlaySend(o, { beat: true });
+    await Neutralino.window.create(side ? `/overlay.html?side=${side}` : `/overlay.html?top=${overlayTopPx()}`, side ? overlaySrWindow() : overlayWindow());
+  } catch (err) { log(`academy card ${side}: ${err?.message || err}`); o.overlay = ''; }
+}
+
+async function academyWatch(ev, l) {
+  watchStop();
+  const s = watch = { ev, l, reader: ev.kind === 'sprint' ? sprintReader(ev) : null, race: ev.kind === 'race' ? raceReader(ev) : null, laps: ev.kind === 'timetrial' ? lapReader(ev) : null, early: null, texts: new Set(), gfx: false, liveRuns: [], liveLaps: false, telStop: null, dir: join(state.paths.evo.profiles.replace(/\/[^/]+$/, ''), 'Logs'), file: '', pos: 0, rest: '', decoder: new TextDecoder(), look: 0, n: 0, beat: 0, overlay: '', clock: null, busy: false, sid: Date.now() };
+  l.academy.live = 0; l.academy.liveFiles = [];
+  const cards = state.settings.academyCard !== false;
+  if (cards) await overlayOpen(s, '');
+  // Races and weekends: the safety rating, from EVO's live data and the log.
+  if (ev.kind === 'race' || ev.kind === 'weekend') {
+    s.sr = { reader: srReader(), active: false, lost: false, cutAt: 0, offAt: 0, hitAt: 0, hitCost: 0, ov: { overlay: '', sid: s.sid, n: 0, beat: 0 } };
+    if (cards) await overlayOpen(s.sr.ov, 'right');
+  }
+  // EVO's live data: the safety rating's impacts and cuts, and laps the moment
+  // they're done (liveDataLap).
+  s.telStop = await startTelemetry(e => evoLive(s, e)).catch(err => { log(`evo telemetry: ${err?.message || err}`); return null; });
+  if (s.stopped) return;
+  // The clock runs in a worker: with the game in front, the web view slows this
+  // page's own timers (to once a minute after a few minutes), not a worker's.
+  s.clock = new Worker(URL.createObjectURL(new Blob([`setInterval(() => postMessage(0), ${WATCH_TICK});`], { type: 'text/javascript' })));
+  s.clock.onmessage = () => { if (!s.busy) watchTick(); };
+}
+
+function watchStop() {
+  const s = watch;
+  if (!s) return;
+  watch = null; s.stopped = true;
+  s.clock?.terminate();
+  s.telStop?.();
+  for (const o of [s, s.sr?.ov]) if (o?.overlay) writeText(o.overlay, JSON.stringify({ quit: true, sid: o.sid, n: o.n + 1, at: Date.now() })).catch(() => {});
+}
+
+// ---- The safety rating while EVO races (academy.js srReader, srLoss; evotelemetry.js)
+
+// The safety rating's tile (overlay-card.js): down, lit by how much (1: green, 2
+// or 3: amber, more: red), or up.
+const srCard = n => ({ sr: n > 0 ? { dir: 'up', level: 1 } : { dir: 'down', level: n >= -1 ? 1 : n >= -3 ? 2 : 3 } });
+const SR_CUT_GAP = 8000; // a cut and what EVO says of it (a penalty, the lap marked invalid) are one thing
+const SR_HIT_GAP = 2000; // impacts less than this apart are one incident (taps while rubbing, a car bouncing off)
+
+// What an impact costs on top of its incident so far: an incident costs its worst
+// impact, once. sr: { hitAt, hitCost }, now: ms.
+function srHitExtra(sr, e, now) {
+  const n = srLoss(e), same = now - sr.hitAt < SR_HIT_GAP;
+  sr.hitAt = now;
+  const extra = same ? Math.max(0, n - sr.hitCost) : n;
+  sr.hitCost = same ? Math.max(sr.hitCost, n) : n;
+  return extra;
+}
+
+// What EVO's live data says (evotelemetry.js): laps for the cards, the rest for
+// the safety rating.
+function evoLive(s, e) {
+  if (e.t === 'open') log('evo telemetry: reading EVO\'s live data');
+  else if (e.t === 'gfx') { s.gfx = !!e.ok; log(`evo telemetry: lap validity ${e.ok ? 'read' : `not read (${e.why})`}`); }
+  else if (e.t === 'valid') log(`evo telemetry: lap ${e.v ? 'valid' : 'invalid'}`);
+  else if (e.t === 'lap') liveDataLap(s, e).catch(err => log(`academy live lap: ${err?.message || err}`));
+  else if (s.sr) srTelemetry(s, e);
+}
+
+// From EVO's live data: an impact, wheels off the track (a cut if the lap was
+// marked invalid then), a lap marked invalid, while the rating counts.
+function srTelemetry(s, e) {
+  const sr = s.sr;
+  if (!sr.active || s.stopped) return;
+  if (e.t === 'hit') srLose(s, srHitExtra(sr, e, Date.now()), e.d < 8 ? tr('Light contact') : e.d < 18 ? tr('Contact') : tr('Heavy contact'), e);
+  else if (e.t === 'off' && !e.cut) { sr.offAt = Date.now(); srLose(s, srLoss(e), tr('Track limits'), e); }
+  else srCut(s, e);
+}
+
+// A corner cut, from the live data or (when that can't say) the log: once per
+// cut, less what going off the track there already took.
+function srCut(s, e) {
+  const sr = s.sr, now = Date.now();
+  if (now - sr.cutAt < SR_CUT_GAP) return;
+  sr.cutAt = now;
+  srLose(s, srLoss({ t: 'cut' }) - (now - sr.offAt < SR_CUT_GAP ? srLoss({ t: 'off' }) : 0), tr('Corner cut'), e);
+}
+
+// From the log: the green (it counts from then), the end, laps, penalties, cuts.
+async function srLog(s, e) {
+  const sr = s.sr;
+  if (e.t === 'green') { sr.active = true; sr.lost = false; }
+  else if (e.t === 'stop') sr.active = false;
+  else if (e.t === 'cut' && sr.active && !s.gfx) srCut(s, e);
+  else if (e.t === 'penalty' && e.jump) await srLose(s, srLoss(e), tr('Jump start'), e);
+  else if (e.t === 'penalty' && sr.active && Date.now() - sr.cutAt >= SR_CUT_GAP) await srLose(s, srLoss(e), tr('Penalty'), e);
+  else if (e.t === 'lap' && sr.active) {
+    if (!sr.lost) {
+      const now = await changeSR(1);
+      log(`academy sr +1 clean lap: ${now}`);
+      await overlaySend(sr.ov, { show: srCard(1), seconds: 3 });
+    }
+    sr.lost = false;
+  }
+}
+
+// A loss: saved, and its tile on the right (no sound).
+async function srLose(s, n, reason, e) {
+  if (n <= 0) return;
+  s.sr.lost = true;
+  const now = await changeSR(-n);
+  log(`academy sr -${n} ${reason} ${JSON.stringify(e)}: ${now}`);
+  await overlaySend(s.sr.ov, { show: srCard(-n), seconds: 3 });
+}
+
+// What the log has gained since the last read, read up to its real end (the size
+// Windows reports for a file another program is writing can lag behind).
+async function logAppend(s) {
+  const buf = await Neutralino.filesystem.readBinaryFile(s.file, { pos: s.pos }).catch(() => null);
+  if (!buf?.byteLength) return '';
+  s.pos += buf.byteLength;
+  return s.decoder.decode(buf, { stream: true });
+}
+
+async function watchTick() {
+  const s = watch;
+  if (!s || s.stopped) return;
+  s.busy = true;
+  try {
+    for (const o of [s, s.sr?.ov]) if (o?.overlay && Date.now() - o.beat > OVERLAY_BEAT) await overlaySend(o, { beat: true });
+    if (!s.file && Date.now() >= s.look) {
+      // This session's log: EVO's newest, written since the launch.
+      s.look = Date.now() + 1000;
+      const f = (await listDir(s.dir)).map(e => e.entry).filter(e => /^log-.*\.txt$/i.test(e)).sort().pop();
+      const st = f && await Neutralino.filesystem.getStats(join(s.dir, f)).catch(() => null);
+      if (st && st.modifiedAt >= s.l.at - 5000) { s.file = join(s.dir, f); log(`academy watch: reading ${f}`); }
+    }
+    if (s.file) {
+      const text = await logAppend(s);
+      if (text) {
+        const lines = (s.rest + text).split('\n');
+        s.rest = lines.pop();
+        if (s.sr) for (const e of s.sr.reader.feed(`${lines.join('\n')}\n`)) if (!s.stopped) await srLog(s, e);
+        if (s.reader) {
+          const jumps = s.reader.state.jumps;
+          for (const ms of s.reader.feed(`${lines.join('\n')}\n`)) {
+            const shown = s.liveRuns.findIndex(x => Math.abs(x - ms) <= 5);
+            if (shown >= 0) s.liveRuns.splice(shown, 1);
+            if (!s.stopped) await liveResult(s, { ms, runs: 1, laps: 1 }, shown < 0);
+          }
+          if (s.reader.state.jumps > jumps) await liveNote(s, tr('Jump start'), tr("The run doesn't count."));
+        } else {
+          if (s.race) for (const r of s.race.feed(`${lines.join('\n')}\n`)) if (!s.stopped) await liveFinish(s, r);
+          if (s.laps) for (const lap of s.laps.feed(`${lines.join('\n')}\n`)) if (!s.stopped && !s.liveLaps) await liveLap(s, lap);
+          for (const line of lines) {
+            const saved = /SessionResults saved into "(.+?\.sessionresults\.json)"/.exec(line);
+            if (saved && !s.stopped) await liveResultsFile(s, saved[1].replace(/\\\\/g, '\\'));
+          }
+        }
+      }
+    }
+  } catch (err) { log(`academy watch: ${err?.message || err}`); }
+  s.busy = false;
+}
+
+const liveNote = (s, title, sub) => overlayShow(s, { kicker: ayCardKicker(s.ev), title, tier: 'void', time: '', sub });
+const AI_EASIER = () => tr("The AI was made easier in EVO's menu.");
+
+// The player has just crossed the line in a race (raceReader): the card now, from
+// the log. The result is saved when EVO saves it (liveResultsFile).
+async function liveFinish(s, r) {
+  const ev = s.ev;
+  if (s.sr) s.sr.active = false; // the lap after the flag doesn't count for the safety rating
+  if (await evoAiEasier(ev)) { s.early = { easier: true }; return liveNote(s, tr("Doesn't count"), AI_EASIER()); }
+  const res = await recordResult(ev, r, { save: false });
+  s.early = r;
+  log(`academy live ${ev.key} finish: ${JSON.stringify(r)} medal ${res.gained}`);
+  await overlayShow(s, resultCard(ev, r, res));
+}
+
+// A lap from EVO's live data, the moment it's done (the log can be many seconds
+// behind when little happens on track): a sprint's run (the log's, when it comes,
+// saves it without a second card), a time trial's lap (the log's then go unused).
+async function liveDataLap(s, e) {
+  const ev = s.ev;
+  log(`academy live data lap: ${JSON.stringify(e)}`);
+  if (s.stopped || !(e.ms > 0)) return;
+  if (ev.kind === 'sprint') {
+    if (e.kmh < 20) return; // not the finish arch: the run starts from a standstill
+    s.liveRuns.push(e.ms);
+    const r = { ms: e.ms, runs: 1, laps: 1 }, res = await recordResult(ev, r, { save: false });
+    log(`academy live ${ev.key} run: ${lapTime(e.ms)} medal ${res.gained}`);
+    await overlayShow(s, resultCard(ev, r, res));
+  } else if (ev.kind === 'timetrial' && !e.pit) { // the out-lap: from the pits
+    s.liveLaps = true;
+    await liveLap(s, { ms: e.ms, n: e.n, cut: !e.valid });
+  }
+}
+
+// A time trial's lap (liveDataLap, or the log's lapReader): its card now, with the lap's medal. The
+// session's best lap (s.early) is saved when EVO saves the session's result
+// (liveResultsFile), at its end or when EVO closes.
+async function liveLap(s, lap) {
+  const ev = s.ev;
+  log(`academy live ${ev.key} lap ${lap.n}: ${lapTime(lap.ms)}${lap.cut ? ' (not counted)' : ''}`);
+  if (lap.cut) return overlayShow(s, { kicker: ayCardKicker(ev), title: tr('Not counted'), tier: 'void', time: lapTime(lap.ms) });
+  const r = { ms: lap.ms, laps: lap.n }, res = await recordResult(ev, r, { save: false });
+  if (!s.early?.ms || lap.ms < s.early.ms) s.early = { ms: lap.ms };
+  await overlayShow(s, resultCard(ev, r, res));
+}
+
+// A results file EVO has just saved: the event's result, or why it doesn't count.
+async function liveResultsFile(s, path) {
+  const ev = s.ev;
+  let text = '', j = null;
+  for (let i = 0; i < 5 && !j; i++) {
+    try { text = await readText(path); j = JSON.parse(text || 'null'); } catch { /* still being written */ }
+    if (!j) await new Promise(r => setTimeout(r, 200));
+  }
+  const one = evoResultFile(j, ev);
+  log(`academy live ${basename(path)}: ${one ? JSON.stringify(one) : j ? 'another session' : 'unreadable'}`);
+  if (!one) return; // another session: a weekend's practice or qualifying
+  s.l.academy.liveFiles.push(basename(path));
+  if (s.texts.has(text)) return; // a race saved again, the same, when its results screen is left
+  s.texts.add(text);
+  const early = s.early;
+  s.early = null;
+  if (one.mismatch) return liveNote(s, tr("Doesn't count"), one.mismatch === 'car' ? tr('It was driven with another car.') : tr('It was driven on another track.'));
+  if (ev.kind !== 'timetrial' && await evoAiEasier(ev)) return early?.easier ? undefined : liveNote(s, tr("Doesn't count"), AI_EASIER());
+  // Shown at the finish line (or the best lap at its line) already: saved without a
+  // card, unless it came out different.
+  const same = !!early && !early.easier && (ev.kind === 'timetrial' ? Math.abs(early.ms - one.ms) <= 5 : early.pos === one.pos && early.finished === one.finished);
+  await liveResult(s, { ...one, files: 1 }, !same);
+}
+
+async function liveResult(s, r, card = true) {
+  const ev = s.ev, res = await recordResult(ev, r, {});
+  if (!res) return;
+  const run = ++s.l.academy.live;
+  log(`academy live ${ev.key} #${run}: ${JSON.stringify(r)} medal ${res.gained}${card ? '' : ' (its card already shown)'}`);
+  if (card) await overlayShow(s, resultCard(ev, r, res));
+  if (state.view === 'academy') drawAcademy();
+}
+
+// The AI made easier in EVO's menu than the event set it: the race doesn't count.
+async function evoAiEasier(ev) {
+  const now = await readEvoSession().catch(() => null), grid = now && (ev.kind === 'race' ? now.race.grid : now.weekend.grid);
+  const want = Math.min(ev.opponents, Math.max(1, (ev.evoLayout?.race?.maxDrivers || 33) - 1));
+  return !!(grid && (grid.custom || grid.skillMin < ev.skill[0] || grid.opponents < want));
+}
+
+const ayCardKicker = ev => { const d = AY.data[ev.game], level = d?.levels?.[ayLevelOf(d, ev)]; return [level && tr(level.name), tr(ev.name)].filter(Boolean).join(' · '); };
+
+// The card's text (overlay.js): the medal, the time or place, the level and event.
+function resultCard(ev, r, res) {
+  const got = res.gained;
+  const value = res.type === 'time' ? (r.ms ? lapTime(r.ms) : tr('No clean lap')) : r.pos ? tr('Finished {pos}', { pos: scoreText('position', r.pos) }) : r.dsq ? tr('Disqualified') : tr('Not finished');
+  return { kicker: ayCardKicker(ev), title: got ? tr(AY_TIER[got]) : tr('No medal'), tier: TIERS[got - 1] || '', time: value };
+}
 
 function renderCommunity() {
   const g = gameByKey(state.game);
@@ -3058,10 +4917,30 @@ async function runCspInstall() {
   }
 }
 
+// Shown once there's a mod track (or the list was changed or restored).
+async function evoTracksSettingsHTML() {
+  if (!state.paths?.evo?.install) return '';
+  const s = await evoTrackListStatus(state.paths);
+  if (!s.listed.length && !s.waiting.length && !s.skipped.length && !s.off) return '';
+  const val = [
+    s.listed.length ? `In EVO's track list: ${s.listed.join(', ')}` : s.off ? 'EVO has its original track list (restored here)' : '',
+    s.waiting.length ? `Not added yet: ${s.waiting.join(', ')}` : '',
+    ...s.skipped.map(x => `Can't be added: ${x.file} (${x.why})`),
+  ].filter(Boolean).map(esc).join('<br>');
+  return `<div class="settings-group"><h3>Assetto Corsa EVO · Mod tracks</h3>
+    <p class="settings-note">EVO only lists the tracks in its own track list, inside its game file <code>content.kspkg</code>. The launcher adds your mod tracks to it when you install one and before EVO starts from here, and keeps a copy of what it changes. Restore puts the file back exactly as it was, as Steam's Verify integrity also does.</p>
+    <div class="setting"><label>Track list</label><div class="val">${val}</div>
+      <div class="btns">
+        <button class="btn small subtle" data-act="evo-tracks-add" ${s.waiting.length ? '' : 'disabled'}>Add to EVO</button>
+        <button class="btn small subtle" data-act="evo-tracks-restore" ${s.listed.length ? '' : 'disabled'}>Restore original</button>
+      </div></div></div>`;
+}
+
 async function renderSettings() {
-  const [cspGroup, videoGroup] = await Promise.all([
+  const [cspGroup, videoGroup, evoTracksGroup] = await Promise.all([
     cspSettingsHTML().catch(err => { log(`settings csp: ${err?.message || err}`); return ''; }),
     videoSettingsHTML().catch(err => { log(`settings video: ${err?.message || err}`); return ''; }),
+    evoTracksSettingsHTML().catch(err => { log(`settings evo tracks: ${err?.message || err}`); return ''; }),
   ]);
   const rows = await Promise.all(PATH_SETTINGS.map(async s => {
     const v = s.get(state.paths);
@@ -3110,13 +4989,18 @@ async function renderSettings() {
     <div class="settings-group"><h3>Game backgrounds</h3>
       <p class="settings-note">The picture behind each game on the Games tab. Yours is copied into the launcher, so you can move or delete the original.</p>
       ${bgRows.join('')}</div>
-    ${cspGroup}${videoGroup}
+    ${cspGroup}${videoGroup}${evoTracksGroup}
     <div class="settings-group"><h3>Game settings backups</h3>
       <p class="settings-note">Controls, graphics, audio, car setups and progress, never mods. The launcher also makes one automatically each week and keeps the last 4 automatic ones. <button class="link" data-act="open-backups">Open backups folder</button></p>
       ${backupRows.join('')}</div>
     <div class="settings-group"><h3>Behaviour</h3>
       <div class="setting"><label>Minimize when a game starts</label><div class="val"></div>
         <button class="toggle ${state.settings.minimizeOnLaunch ? 'on' : ''}" data-toggle="minimizeOnLaunch"></button></div>
+      <div class="setting"><label>Academy results over EVO</label><div class="val">A small card over the game with your medal and time or place: as you cross a sprint's finish arch, or when EVO saves a session's result</div>
+        <button class="toggle ${state.settings.academyCard !== false ? 'on' : ''}" data-toggle="academyCard"></button></div>
+      <div class="setting"><label>Card shown for</label><div class="val"></div><div class="btns"><div class="qd-seg">${[5, 8, 15].map(n => `<button data-card-secs="${n}" class="${(state.settings.academyCardSeconds || 8) === n ? 'active' : ''}">${n} s</button>`).join('')}</div></div></div>
+      <div class="setting"><label>Sound with the card</label><div class="val">A short notification sound</div>
+        <div class="btns"><button class="btn small subtle" data-act="chime-test">Play</button><button class="toggle ${state.settings.academyCardSound !== false ? 'on' : ''}" data-toggle="academyCardSound"></button></div></div>
     </div>
     <div class="settings-group"><h3>Data</h3>
       <div class="setting"><label>Steam</label><div class="val">${esc(state.steamPath)}</div><div class="btns"><button class="btn small subtle" data-act="rescan">Re-detect games</button></div></div>
@@ -3151,12 +5035,29 @@ async function renderSettings() {
       state.settings[t.dataset.toggle] = !state.settings[t.dataset.toggle];
       saveSettings();
       t.classList.toggle('on');
+    } else if (t.dataset.cardSecs) {
+      state.settings.academyCardSeconds = Number(t.dataset.cardSecs);
+      saveSettings();
+      t.parentElement.querySelectorAll('button').forEach(b => b.classList.toggle('active', b === t));
     } else if (t.dataset.bgPick) {
       await pickBackground(t.dataset.bgPick);
       renderSettings();
     } else if (t.dataset.bgReset) {
       await removeBackground(t.dataset.bgReset);
       renderSettings();
+    } else if (t.dataset.act === 'evo-tracks-add') {
+      t.disabled = true; t.textContent = 'Adding…';
+      await evoTrackSync({ force: true });
+      renderSettings();
+    } else if (t.dataset.act === 'evo-tracks-restore') {
+      t.disabled = true; t.textContent = 'Restoring…';
+      try {
+        await restoreEvoTrackList(state.paths);
+        toast("EVO's track list is back to the original. Mod tracks stay installed; Add to EVO lists them again.");
+      } catch (err) { toast(err?.message || 'Could not restore the track list', true); }
+      renderSettings();
+    } else if (t.dataset.act === 'chime-test') {
+      playChime().then(st => log(`chime: ${st}`));
     } else if (t.dataset.act === 'rescan') {
       await detect();
       toast('Games re-detected');
@@ -3343,7 +5244,7 @@ async function applyPaths() {
 // (renderSettings), so the page being left doesn't stretch while Settings loads.
 function syncChrome() {
   document.querySelectorAll('#nav button').forEach(b => b.classList.toggle('active', b.dataset.view === state.view));
-  $('#app').classList.toggle('qd-mode', state.view === 'quickdrive');
+  $('#app').classList.toggle('qd-mode', state.view === 'quickdrive' || state.view === 'academy');
   if (state.view !== 'settings') $('#app').classList.remove('settings-mode');
 }
 
@@ -3355,6 +5256,7 @@ function render() {
   state.qdWant = '';
   if (state.view === 'games') renderGames();
   else if (state.view === 'mods') renderMods();
+  else if (state.view === 'academy') renderAcademy();
   else if (state.view === 'community') renderCommunity();
   else if (state.view === 'settings') renderSettings();
 }
@@ -3529,7 +5431,8 @@ window.addEventListener('resize', fitToWindow);
 async function setupWindow() {
   $('#win-min').onclick = () => Neutralino.window.minimize();
   $('#win-max').onclick = async () => (await Neutralino.window.isMaximized()) ? Neutralino.window.unmaximize() : Neutralino.window.maximize();
-  $('#win-close').onclick = () => Neutralino.app.exit();
+  $('#win-close').onclick = requestExit;
+  $('#install-pill').onclick = openInstallDialog;
   $('#titlebar').ondblclick = e => { if (!e.target.closest('button')) $('#win-max').click(); };
   windowGrips();
   await dropResizeFrame();
@@ -3540,7 +5443,7 @@ async function setupWindow() {
   syncMaximized();
   window.addEventListener('resize', syncMaximized);
   try {
-    await Neutralino.window.setDraggableRegion('titlebar', { exclude: [$('#nav'), $('.win-controls')] });
+    await Neutralino.window.setDraggableRegion('titlebar', { exclude: [$('#nav'), $('.win-controls'), $('#install-pill')] });
   } catch (e) { log(`drag region failed ${JSON.stringify(e)}`); }
 }
 
@@ -3553,6 +5456,7 @@ Neutralino.events.on('ready', async () => {
     state.game = gameByKey(state.settings.lastGame) ? state.settings.lastGame : 'rally';
     renderSidebar();
     await detect();
+    if (!state.snapshotRun && !(await runningProcesses(['acs']).catch(() => new Set())).has('acs')) restoreClassLayout().catch(err => log(`academy layout: ${err?.message || err}`));
     await loadSiteImages();
     const rallyCache = await appCacheDir('rally').catch(() => '');
     await loadRallyData(rallyCache);
@@ -3566,7 +5470,7 @@ Neutralino.events.on('ready', async () => {
         // Rally's texts (rallydata.js): a newer file on GitHub replaces the shipped one.
         if (rallyCache) refreshRallyData(rallyCache).then(changed => {
           if (!changed) return;
-          delete state.cache['rally:cars']; delete state.cache['rally:tracks'];
+          delete state.cache['rally:cars']; delete state.cache['rally:tracks']; delete AY.data.rally;
           if (state.view === 'mods' && state.game === 'rally') render();
         }).catch(err => log(`rally data: ${err?.message}`));
       }
@@ -3577,8 +5481,13 @@ Neutralino.events.on('ready', async () => {
     else setTimeout(() => autoBackups(GAMES.filter(isInstalled).map(g => g.key), state.paths), 15000);
     // The display's modes take a PowerShell / xrandr call; asked early so Settings opens at once.
     if (state.paths?.ac.install) setTimeout(() => displayModes().catch(() => {}), 4000);
+    // Not in test runs: they must never write to the game.
+    if (!(window.NL_ARGS || []).some(a => /^--(import-test|snapshots|check-|preview-)/.test(a))) setTimeout(() => evoTrackSync({ quiet: true }), 8000);
     const importArg = (window.NL_ARGS || []).find(a => a.startsWith('--import-test='));
-    if (importArg) import('./dev-import-test.js').then(m => m.runImportTest(importArg.slice('--import-test='.length)));
+    if (importArg) import('./dev-import-test.js').then(m => m.runImportTest(importArg.slice('--import-test='.length), {
+      // The UI install test installs into its sandbox folders and saves no settings.
+      usePaths: paths => { state.paths = paths; state.cache = {}; state.snapshotRun = true; },
+    }));
   } catch (e) {
     log(`boot failed: ${e?.stack || JSON.stringify(e)}`);
     toast('Startup error — see neutralinojs.log', true);
@@ -3596,6 +5505,280 @@ async function runSnapshots(dir) {
     await snap(`${prefix}-session-race`);
     $('.qd-sheet [data-done]')?.click();
   };
+  // --check-academy: the Academy page, a series, an event's window; race.ini for a
+  // few kinds of event, written to <snapshots>/academy-sandbox/cfg instead of AC's;
+  // made-up race_out.json results read from there and saved under a test key (the
+  // player's own progress is left alone), with the windows that show them.
+  if ((window.NL_ARGS || []).includes('--check-academy')) {
+    useAcademyStore('academy-check');
+    await storageSet('academy-check', null);
+    // Rally: the player's stage records against the AI's time for that car and stage.
+    for (const [k, v] of await rallyBests(state.paths).catch(() => new Map())) {
+      const [stage, car] = k.split('|'), ai = rallyAiTime(stage, car);
+      log(`check-academy rally record ${stage} ${car}: ${lapTime(v.ms)} (penalty ${v.penalty}) ai ${ai ? lapTime(ai) : '-'} ratio ${ai ? (v.ms / ai).toFixed(3) : '-'}`);
+    }
+    const sb = `${norm(dir)}/academy-sandbox`;
+    await ensureDir(`${sb}/cfg`); await ensureDir(`${sb}/out`);
+    await writeText(`${sb}/cfg/race.ini`, '[CAR_0]\r\nDRIVER_NAME=Test Driver\r\nNATIONALITY=Italy\r\n\r\n[OPTIONS]\r\nUSE_MPH=1\r\n');
+    const sandbox = { ...state.paths, ac: { ...state.paths.ac, cfg: `${sb}/cfg` } };
+    state.view = 'academy'; AY.game = 'ac'; render(); await wait(8000);
+    await snap('academy-ac');
+    const d = await academyData('ac');
+    const kinds = {};
+    for (const e of d.all) kinds[`${e.group}:${e.kind}:${e.goal?.type || '-'}`] = (kinds[`${e.group}:${e.kind}:${e.goal?.type || '-'}`] || 0) + 1;
+    log(`check-academy: ${d.career.length} series, ${d.career.reduce((n, s) => n + s.events.length, 0)} career events, ${d.special.length} special (${d.special.filter(e => e.missing).length} missing); ${JSON.stringify(kinds)}`);
+    log(`check-academy missing tracks: ${d.special.filter(e => e.missing === 'track').map(e => `${e.key.split('/').pop()} ${e.track}/${e.layout}`).join(', ')}`);
+    for (const s of d.career) log(`check-academy series ${s.id} ${s.code} "${s.name}" ${s.level} champ ${s.champ} goal ${JSON.stringify(s.goal)} needs ${s.requires.join('+') || '-'} events ${s.events.length} missing ${s.events.filter(e => e.missing).map(e => `${e.car}@${e.track}`).join(',') || '-'} opp ${s.opponents.length}`);
+    const view = main.querySelector('.view.academy');
+    view.scrollTop = view.scrollHeight; await snap('academy-ac-special');
+    view.scrollTop = 0;
+
+    const series = id => d.career.find(s => s.id === id);
+    const special = test => d.special.find(e => !e.missing && test(e));
+    const picks = {
+      timeattack: series('series0').events[0],
+      race: series('series1').events[1],
+      champ: series('series9').events[0],
+      weekend: series('series13').events[0],
+      hotlap: special(e => e.kind === 'hotlap'),
+      ai: special(e => e.goal?.type === 'ai'),
+      drift: special(e => e.kind === 'drift'),
+      drag: special(e => e.kind === 'drag'),
+    };
+    const brief = ini => ini.split(/\r\n/).filter(l => /^\[(RACE|CAR_0|CAR_1|SESSION_\d|SPECIAL_EVENT|OPTIONS)\]|^(MODEL|SKIN|TRACK|CONFIG_TRACK|CARS|AI_LEVEL|DRIVER_NAME|NATIONALITY|TYPE|LAPS|STARTING_POSITION|GUID|USE_MPH|DURATION_MINUTES)=/.test(l)).join(' ');
+    for (const [name, ev] of Object.entries(picks)) {
+      if (!ev) { log(`check-academy ini ${name}: no event`); continue; }
+      const s = ev.series && aySeries(d, ev.series);
+      const ini = await writeAcEvent(sandbox, ev, { ai: name === 'ai' ? ev.goal.tiers[1] : 0, opponents: s?.champ ? s.opponents : null });
+      log(`check-academy ini ${name} (${ev.key} "${ev.name}", goal ${JSON.stringify(ev.goal)}): ${brief(ini)} | ${ini.split('\r\n').filter(l => /^\[CAR_\d+\]/.test(l)).length} cars`);
+    }
+
+    // Results: race_out.json as AC writes it, then the window that shows it.
+    const out = (type, extra = {}) => writeText(`${sb}/out/race_out.json`, JSON.stringify({ track: 'x', players: [{ name: 'Test', car: 'x' }], sessions: [{ event: 0, name: 'S', type, lapsCount: extra.lapsCount || 0, laps: extra.laps || [], lapstotal: extra.lapstotal || [], raceResult: extra.raceResult }], extras: extra.extras || [] }));
+    const result = async (name, ev, opts = {}) => {
+      const r = await readAcResult(sandbox, ev, 0);
+      const s = ev.series && aySeries(d, ev.series);
+      const res = await recordResult(ev, r, { ai: opts.ai || 0, series: s });
+      log(`check-academy result ${name}: read ${JSON.stringify({ ...r, names: undefined })} saved ${JSON.stringify(res)}`);
+      showAcademyResult(ev, r, res, { series: s, ai: opts.ai || 0, p: await academyProgress(), unlocked: opts.unlocked || [], finished: !!opts.finished });
+      await snap(`academy-result-${name}`);
+      $('#modal-root [data-close]')?.click();
+    };
+    const lap = (time, cuts = 0, car = 0) => ({ car, time, cuts });
+    await out(5, { extras: [{ name: 'timeattack', points: 2400 }] });
+    await result('timeattack', picks.timeattack, { unlocked: [series('series1')] });
+    await out(3, { lapsCount: 3, laps: [lap(98000), lap(96500), lap(97000)], lapstotal: [3, 3, 3], raceResult: [3, 0, 1, 2] });
+    await result('race-2nd', picks.race);
+    await out(3, { lapsCount: 3, laps: [lap(98000)], lapstotal: [1, 3], raceResult: [1, 0] });
+    await result('race-dnf', picks.race);
+    await out(4, { laps: [lap(85500, 2), lap(87100), lap(86400)] });
+    if (picks.hotlap) await result('hotlap', picks.hotlap);
+    await out(3, { lapsCount: 5, laps: [lap(90000)], lapstotal: [5, 5], raceResult: [0, 4, 2] });
+    if (picks.ai) await result('ai-win', picks.ai, { ai: picks.ai.goal.tiers[1] });
+    await out(3, { lapsCount: 6, laps: [lap(110000)], lapstotal: [6, 6], raceResult: [2, 5, 0, 1, 3, 4, 6, 7, 8, 9] });
+    await result('champ-round1', picks.champ);
+
+    // A championship after a round, a plain series, an event's window.
+    AY.series = picks.champ.series; drawAcademy(true); await wait(500); await snap('academy-champ');
+    AY.series = picks.race.series; drawAcademy(true); await wait(500); await snap('academy-series');
+    await openAcademyEvent(picks.race.key); await snap('academy-event');
+    $('#modal-root [data-close]')?.click();
+    if (picks.ai) { await openAcademyEvent(picks.ai.key); await snap('academy-event-ai'); $('#modal-root [data-close]')?.click(); }
+    await openAcademyEvent(series('series9').events[1].key); await snap('academy-event-round2');
+    $('#modal-root [data-close]')?.click();
+    // EVO: the levels against EVO's lists, the session written for each kind, results read from made-up files.
+    if (isInstalled(gameByKey('evo'))) {
+      AY.game = 'evo'; renderAcademy(); await wait(8000); await snap('academy-evo');
+      const de = await academyData('evo');
+      for (const e of de.all) log(`check-academy evo ${e.key} ${e.kind} ${e.car}@${e.track}/${e.layout}: ${e.carName} · ${e.trackName} missing ${e.missing || '-'} guid ${e.guid ? 'yes' : 'no'} goal ${JSON.stringify(e.goal)}`);
+      for (const kind of ['timetrial', 'race', 'weekend']) {
+        const e = de.all.find(x => x.kind === kind);
+        const s = evoSessionFor(e, defaultEvoSession());
+        log(`check-academy evo session ${kind} ${e.key}: ${JSON.stringify({ mode: s.mode, practice: s.mode === 'practice' ? s.practice : undefined, race: s.mode === 'race' ? s.race : undefined, weekend: s.mode === 'weekend' ? s.weekend : undefined, weather: s.weather })}`);
+      }
+      const rd = `${sb}/evo-results`;
+      await ensureDir(rd);
+      const tt = de.all.find(x => x.kind === 'timetrial'), race = de.all.find(x => x.kind === 'race');
+      const drv = (name, car, pos, laps, best) => ({ driver_name: name, driver_surname: 'X', car_name: car, position: pos, laps, best_lap: best, is_current_driver: false });
+      await writeText(`${rd}/261010-1000_SP_Practice.sessionresults.json`, JSON.stringify({ session: 'Practice', track: tt.trackTitle, layout: `${tt.layoutName} Time Attack`, drivers: [drv('Test', tt.carName, 0, 5, lapTime(tt.goal.tiers[1] - 300).padStart(9, '0'))] }));
+      await writeText(`${rd}/261010-1010_SP_Race.sessionresults.json`, JSON.stringify({ session: 'Race', track: race.trackTitle, layout: `${race.layoutName} Race`, drivers: [drv('•Ai', race.carName, 0, race.laps, '01:00.000'), drv('•Bi', race.carName, 1, race.laps, '01:00.000'), drv('Test', race.carName, 2, race.laps, '01:01.000')] }));
+      log(`check-academy evo result timetrial: ${JSON.stringify(await readEvoResult(rd, tt, 0))}`);
+      log(`check-academy evo result race: ${JSON.stringify(await readEvoResult(rd, race, 0))}`);
+      log(`check-academy evo result other car: ${JSON.stringify(await readEvoResult(rd, { ...race, carName: 'Other car' }, 0))}`);
+      const r = await readEvoResult(rd, race, 0);
+      const res = await recordResult(race, r, {});
+      showAcademyResult(race, r, res, { p: await academyProgress() }); await snap('academy-evo-result'); $('#modal-root [data-close]')?.click();
+      await openAcademyEvent(race.key); await snap('academy-evo-event'); $('#modal-root [data-close]')?.click();
+      await openAcademyEvent(tt.key); await snap('academy-evo-event-tt'); $('#modal-root [data-close]')?.click();
+      await openAcademyEvent(de.levels.find(l => l.unlock).events[0].key); await snap('academy-evo-event-locked'); $('#modal-root [data-close]')?.click();
+      // The bonus event: locked, then gold on all six of the first level opens it (the result
+      // window says so, with the driver level), and its strip under the level.
+      const rookie = de.levels[0], dl0 = driverLevel(await academyProgress());
+      await openAcademyEvent(rookie.bonus.key); await snap('academy-evo-bonus-locked'); $('#modal-root [data-close]')?.click();
+      const goldOf = e => e.goal.type === 'time' ? { ms: e.goal.tiers[2] - 100, laps: 3 } : { pos: 1, finished: true, laps: e.laps };
+      for (const e of rookie.events.slice(0, 5)) await recordResult(e, goldOf(e), {});
+      const last = rookie.events[5], pb = await academyProgress(), was = bonusLocked(rookie, pb);
+      const lres = await recordResult(last, goldOf(last), {});
+      log(`check-academy evo bonus: locked before ${was}, after ${bonusLocked(rookie, pb)}; driver ${JSON.stringify(dl0)} -> ${JSON.stringify(driverLevel(pb))}`);
+      const sr0 = srOf(pb); await changeSR(-4);
+      showAcademyResult(last, goldOf(last), lres, { p: pb, unlocked: [tr('Bonus event: {name}', { name: tr(rookie.bonus.name) })], driver: { from: dl0, to: driverLevel(pb) }, sr: { from: sr0, to: srOf(pb) } });
+      await wait(1500); await snap('academy-evo-bonus-result'); $('#modal-root [data-close]')?.click();
+      drawAcademy(); await wait(2500);
+      main.querySelector('.view.academy').scrollTop = 160; await snap('academy-evo-bonus');
+      // Sprints: the session, and the time read from a made-up EVO log (a run, a restart, a
+      // quicker run, then a lap on past the finish arch that doesn't count).
+      const sp = de.all.find(x => x.kind === 'sprint');
+      if (sp) {
+        const s = evoSessionFor(sp, defaultEvoSession());
+        log(`check-academy evo session sprint ${sp.key}: ${JSON.stringify({ mode: s.mode, arch: s.arch, race: s.race })} arches here ${JSON.stringify(sp.evoLayout?.arches?.map(a => a.container) || [])}`);
+        const ld = `${sb}/evo-logs`;
+        await ensureDir(ld);
+        const gold = sp.goal.tiers[2], at = ms => `[${new Date(Date.UTC(2026, 9, 10, 10) + ms).toISOString().replace('T', ' ').replace('Z', '')}] [gameplay] [info] `;
+        const lines = [`${at(0)}Game Started! GameModeType_INSTANT_RACE | ${sp.trackTitle} ${sp.arch} Race  1 laps @2014/8/15 7:0:0 | ${sp.car} | GameModeSelectionWeatherType_CLEAR | 0 opponents | AssistPresetListType_EXPERT`];
+        let t = 0;
+        for (const ms of [gold + 990, gold - 200]) {
+          t += 10000;
+          lines.push(`${at(t)}changing session phase 4 -> 50`, `${at(t + 9)}Split completed for car c0ffee: (45458 ms, splitindex 0) lap:0`, `${at(t + ms + 12)}Split completed for car c0ffee: (${ms} ms, splitindex 0) lap:0`);
+          t += ms + 30000;
+          lines.push(`${at(t)}[CLIENT] onGameModeStep session_phase_changed: Session -> Waiting_For_Players`);
+        }
+        lines.splice(-1, 0, `${at(t - 5000)}Split completed for car c0ffee: (${gold * 3} ms, splitindex 0) lap:0`);
+        await writeText(`${ld}/log-261010-100000.txt`, lines.join('\r\n'));
+        log(`check-academy evo sprint log: ${JSON.stringify(await readEvoSprint(ld, sp, 0))} (want ${gold - 200} from 2 runs)`);
+        log(`check-academy evo sprint other car: ${JSON.stringify(await readEvoSprint(ld, { ...sp, car: 'ks_other_car' }, 0))}`);
+        // As EVO writes it: the same log fed in uneven pieces.
+        const whole = lines.join('\r\n'), reader = sprintReader(sp), live = [];
+        for (let i = 0, k = 1; i < whole.length; i += k, k = k * 3 % 97 + 1) live.push(...reader.feed(whole.slice(i, i + k)));
+        log(`check-academy evo sprint live: ${JSON.stringify(live)} (want ${JSON.stringify([gold + 990, gold - 200])})`);
+        const sr = await readEvoSprint(ld, sp, 0), sres = await recordResult(sp, sr, {});
+        showAcademyResult(sp, sr, sres, { p: await academyProgress() }); await snap('academy-evo-sprint-result'); $('#modal-root [data-close]')?.click();
+        // The card over the game: its own window, started as for a sprint, with a picture of it.
+        const ov = { overlay: '', sid: Date.now(), n: 0, beat: 0 }, pic = `${norm(dir)}/academy-evo-overlay.png`;
+        await overlayOpen(ov, '');
+        await wait(4000);
+        await overlaySend(ov, { show: resultCard(sp, { ms: gold - 200 }, { gained: 3, type: 'time' }), seconds: 3, snap: pic });
+        await wait(3000);
+        log(`check-academy overlay picture: ${await exists(pic)}`);
+        await overlaySend(ov, { quit: true });
+        // The safety rating's tile: its own window, on the right.
+        const ovr = { overlay: '', sid: Date.now(), n: 0, beat: 0 }, picR = `${norm(dir)}/academy-evo-overlay-sr.png`;
+        await overlayOpen(ovr, 'right');
+        await wait(4000);
+        await overlaySend(ovr, { show: srCard(-3), seconds: 3, snap: picR });
+        await wait(3000);
+        log(`check-academy sr card picture: ${await exists(picR)}`);
+        await overlaySend(ovr, { quit: true });
+        // A race while EVO is open: the finish read from a made-up log as EVO writes
+        // it (the player 3rd of 3), its card; then the result as EVO saves it (saved,
+        // no second card), and the same file again when its results screen is left.
+        const lr = { ev: race, l: { academy: { live: 0, liveFiles: [] } }, race: raceReader(race), early: null, texts: new Set(), overlay: '', n: 0, beat: 0 };
+        const rl = [`${at(0)}[VehicleSystem][c0ffee] SpawnVehicle(Player)`, `${at(1)}Game Started! GameModeType_INSTANT_RACE | ${race.trackTitle} ${race.layoutName} Race  ${race.laps} laps @2014/8/15 18:0:0 | ${race.car} | GameModeSelectionWeatherType_CLEAR | 2 opponents`, `${at(2)}changing session phase 4 -> 50`];
+        for (let lap = 1; lap <= race.laps; lap++) for (const car of ['a1', 'b2', 'c0ffee']) rl.push(`${at(lap * 70000)}New lap carId ${car}: 01:${String(10 + lap).padStart(2, '0')}.250`);
+        const fin = lr.race.feed(`${rl.join('\r\n')}\r\n`);
+        for (const x of fin) await liveFinish(lr, x);
+        const raceFile = await readText(`${rd}/261010-1010_SP_Race.sessionresults.json`);
+        await writeText(`${rd}/261010-1011_SP_Race.sessionresults.json`, raceFile);
+        await liveResultsFile(lr, `${rd}/261010-1010_SP_Race.sessionresults.json`);
+        await liveResultsFile(lr, `${rd}/261010-1011_SP_Race.sessionresults.json`);
+        log(`check-academy evo live race: finish ${JSON.stringify(fin)} (want pos 3) then ${JSON.stringify(lr.l.academy)} (want live 1, 2 files) card ${JSON.stringify(resultCard(race, r, res))}`);
+        // A time trial while EVO is open: three laps from a made-up log (the second
+        // with a penalty shown, so not counted), a card each; then the session's
+        // file with the third as its best (saved, no second card).
+        const lt = { ev: tt, l: { academy: { live: 0, liveFiles: [] } }, laps: lapReader(tt), early: null, texts: new Set(), overlay: '', n: 0, beat: 0 };
+        const evoLap = ms => `${String(Math.floor(ms / 60000)).padStart(2, '0')}:${((ms % 60000) / 1000).toFixed(3).padStart(6, '0')}`;
+        const tl = [`${at(0)}[VehicleSystem][c0ffee] SpawnVehicle(Player)`, `${at(1)}Game Started! GameModeType_PRACTICE | ${tt.trackTitle} ${tt.layoutName} Time Attack Practice  900 seconds @2014/8/15 10:30:0 | ${tt.car} | GameModeSelectionWeatherType_CLEAR | 0 opponents`,
+          `${at(120000)}New lap carId c0ffee: ${evoLap(tt.goal.tiers[1] + 2000)}`, `${at(180000)}UINotification UINotificationType_SessionPenalty `, `${at(180001)}true {PENALTY_ADDED_KEY} #0`, `${at(220000)}New lap carId c0ffee: ${evoLap(tt.goal.tiers[0] - 3000)}`, `${at(320000)}New lap carId c0ffee: ${evoLap(tt.goal.tiers[1] - 300)}`];
+        const laps = lt.laps.feed(`${tl.join('\r\n')}\r\n`);
+        for (const x of laps) await liveLap(lt, x);
+        const lapBest = lt.early?.ms;
+        await liveResultsFile(lt, `${rd}/261010-1000_SP_Practice.sessionresults.json`);
+        log(`check-academy evo live laps: ${JSON.stringify(laps)} (want 3, the 2nd cut) best ${lapTime(lapBest)} then ${JSON.stringify(lt.l.academy)} (want live 1, 1 file)`);
+        // Reading a log as EVO writes it: what's new each time, a character split between reads kept whole.
+        const lg = `${sb}/evo-logs/log-append.txt`, la = { file: lg, pos: 0, decoder: new TextDecoder() };
+        await writeText(lg, 'line one\n');
+        const a1 = await logAppend(la);
+        await writeText(lg, 'line one\nPérez é');
+        const a2 = await logAppend(la), a3 = await logAppend(la);
+        log(`check-academy log append: ${JSON.stringify([a1, a2, a3])} (want ["line one\\n","Pérez é",""])`);
+        // A sprint run after a jump start (EVO's start check at the arch) doesn't count.
+        const jr = sprintReader(sp), jl = [`${at(0)}Game Started! GameModeType_INSTANT_RACE | ${sp.trackTitle} ${sp.arch} Race  1 laps @2014/8/15 7:0:0 | ${sp.car} | x |`,
+          `${at(10000)}changing session phase 4 -> 50`, `${at(10010)}DetectorWrongPositionOnStart::onStart - CurrentTranslation: 1 ,2 ,3 (Penalty: true)`, `${at(10015)}Split completed for car c0ffee: (100 ms, splitindex 0) lap:0`,
+          `${at(10000 + gold)}Split completed for car c0ffee: (${gold} ms, splitindex 0) lap:0`];
+        log(`check-academy sprint jump: runs ${JSON.stringify(jr.feed(`${jl.join('\n')}\n`))} jumps ${jr.state.jumps} (want [] 1)`);
+        // The safety rating's log reader: green, a clean lap, a penalty (a jump start), laps, the end.
+        const sl = [`${at(0)}[VehicleSystem][c0ffee] SpawnVehicle(Player)`, `${at(1)}changing session phase 4 -> 50`, `${at(2)}DetectorWrongPositionOnStart::onStart - x (Penalty: true)`, `${at(3)}true {PENALTY_ADDED_KEY} #0`,
+          `${at(60000)}New lap carId c0ffee: 01:00.000`, `${at(60100)}New lap carId a1: 01:00.100`, `${at(90000)}false {PENALTY_CLEARED_KEY} #0`, `${at(120000)}New lap carId c0ffee: 01:00.000`, `${at(130000)}changing session phase 71 -> 72`];
+        log(`check-academy sr log: ${JSON.stringify(srReader().feed(`${sl.join('\n')}\n`))} grades ${[0, 19, 20, 50, 60, 80, 99].map(n => srGrade(n)).join('')} (want EEDCBAS)`);
+        // EVO's live data, through the launcher's helper: a stand-in page (never EVO's)
+        // written by another process: a light hit, a heavy one, wheels off, wheels off
+        // with the lap marked invalid (a cut), the lap marked invalid with the wheels on.
+        const tev = [], stopT = await startTelemetry(e => tev.push(e), 'Local\\acevo_launcher_check', 'Local\\acevo_launcher_check_gfx');
+        await Neutralino.os.spawnProcess(powershellEncodedCommand(`$m = [IO.MemoryMappedFiles.MemoryMappedFile]::CreateNew('Local\\acevo_launcher_check', 4096); $v = $m.CreateViewAccessor(0, 4096);
+          $gm = [IO.MemoryMappedFiles.MemoryMappedFile]::CreateNew('Local\\acevo_launcher_check_gfx', 8192); $g = $gm.CreateViewAccessor(0, 8192);
+          $g.Write(4, [int]2); $car = [Text.Encoding]::ASCII.GetBytes('ks_check_car'); $g.WriteArray(3086, $car, 0, $car.Length); $g.Write(3121, [byte]1); Start-Sleep -Milliseconds 2500;
+          $v.Write(224, [float]0.6); $v.Write(240, [float]0.6); Start-Sleep -Milliseconds 900; $v.Write(224, [float]6); $v.Write(240, [float]6); Start-Sleep -Milliseconds 900;
+          $v.Write(244, [int]4); Start-Sleep -Milliseconds 700; $v.Write(244, [int]0); Start-Sleep -Milliseconds 2000;
+          $v.Write(244, [int]4); Start-Sleep -Milliseconds 500; $g.Write(3121, [byte]0); Start-Sleep -Milliseconds 300; $v.Write(244, [int]0); Start-Sleep -Milliseconds 2000;
+          $g.Write(3121, [byte]1); Start-Sleep -Milliseconds 300; $g.Write(3121, [byte]0); Start-Sleep -Milliseconds 600;
+          $v.Write(28, [float]150); $g.Write(2396, [int]34040); $g.Write(2384, [int]1); Start-Sleep -Milliseconds 700; $g.Write(2384, [int]0); $g.Write(3121, [byte]1); Start-Sleep -Milliseconds 700;
+          $g.Write(2384, [int]1); Start-Sleep -Milliseconds 100; $g.Write(2396, [int]33000); Start-Sleep -Milliseconds 700; $v.Dispose(); $m.Dispose(); $g.Dispose(); $gm.Dispose()`));
+        await wait(17000); stopT();
+        log(`check-academy telemetry: ${JSON.stringify(tev)} (want open, gfx ok ks_check_car, hit 1.2, hit 10.8, off 4 no cut, off 4 cut, cut, lap 1 34040 invalid at 150, lap 1 33000 valid; losses ${tev.map(srLoss).filter(Boolean).join(' ')} want 1 3 1 2 2)`);
+        // Impacts close together are one incident: three taps 0.6 s apart, a hard hit 1 s later, then a tap 3 s on.
+        const inc = { hitAt: 0, hitCost: 0 }, hits = [[3, 10000], [3, 10600], [4, 11200], [25, 12200], [3, 15200]].map(([d, at]) => srHitExtra(inc, { t: 'hit', d }, at));
+        log(`check-academy sr incidents: ${hits.join(' ')} (want 1 0 0 4 1)`);
+        // EVO's race settings as they are now (read-only) against Hot hatch scrap: does it look made easier?
+        const hh = de.all.find(x => x.def?.id === 'e4' && x.level === 'rookie'), now = await readEvoSession().catch(err => ({ error: err?.message }));
+        log(`check-academy evo session now: race ${JSON.stringify(now?.race?.grid || now)} maxDrivers ${hh?.evoLayout?.race?.maxDrivers} want ${Math.min(hh.opponents, Math.max(1, (hh.evoLayout?.race?.maxDrivers || 33) - 1))} skill ${JSON.stringify(hh.skill)} easier ${await evoAiEasier(hh)}`);
+        const au = await (await fetch('/sounds/academy-card.mp3')).arrayBuffer();
+        log(`check-academy sound: ${au.byteLength} bytes, ${(await new OfflineAudioContext(2, 48000, 48000).decodeAudioData(au)).duration.toFixed(2)} s`);
+        log(`check-academy chime: ${await playChime()}`);
+        state.view = 'settings'; render(); await wait(1500);
+        main.querySelector('.view').scrollTop = 99999; await snap('academy-settings-overlay');
+        state.view = 'academy'; render(); await wait(1500);
+        await openAcademyEvent(sp.key); await snap('academy-evo-event-sprint'); $('#modal-root [data-close]')?.click();
+        AY.game = 'evo'; renderAcademy(); await wait(3000);
+        main.querySelector('.view.academy').scrollTop = 620; await snap('academy-evo-sprints');
+      }
+    }
+    // Rally: the levels with their reference times.
+    if (isInstalled(gameByKey('rally'))) {
+      AY.game = 'rally'; renderAcademy(); await wait(6000); await snap('academy-rally');
+      const dr = await academyData('rally');
+      for (const e of dr.all) log(`check-academy rally ${e.key} ${e.car}@${e.stage} ${ayClock(e.time)} w${e.weather}: ${e.carName} · ${e.trackName} ref ${e.ref ? lapTime(e.ref) : '-'} targets ${e.goal ? e.goal.tiers.map(lapTime).join('/') : '-'} missing ${e.missing || '-'}`);
+      await openAcademyEvent(dr.all[0].key); await snap('academy-rally-event'); $('#modal-root [data-close]')?.click();
+      await openAcademyEvent(dr.all.find(e => e.night).key); await snap('academy-rally-event-night'); $('#modal-root [data-close]')?.click();
+      const e = dr.all[0], r = { ms: e.goal.tiers[2] - 500, penalty: 2000, laps: 1 };
+      const res = await recordResult(e, r, {});
+      showAcademyResult(e, r, res, { p: await academyProgress(), unlocked: [tr(dr.levels[1].name)] }); await snap('academy-rally-result'); $('#modal-root [data-close]')?.click();
+    }
+    // AC Modded: the classes against the cars installed, a class event written to the sandbox (not started).
+    AY.game = 'ac'; AY.part = 'modded'; AY.series = ''; render(); await wait(4000); await snap('academy-modded');
+    main.querySelector('.view.academy').scrollTop = 700; await snap('academy-modded-2');
+    for (const c of d.classes) log(`check-academy class ${c.id}: ${c.cars.map(m => `${m.id}${m.installed ? `(${m.skins.length} liveries)` : ' missing'}`).join(', ')}; events ${c.events.map(e => `${e.kind}@${e.track}/${e.layout || '-'}${e.missing ? ` missing ${e.missing}` : ''} pits ${e.pitboxes}`).join(' | ')}`);
+    const f2 = d.classes.find(c => c.id === 'f2'), fev = f2?.events.find(e => e.kind === 'weekend');
+    if (fev && f2.cars[0].installed) {
+      const car = f2.cars[0], skin = car.skins[0].id, max = Math.max(1, Math.min(fev.pitboxes || 20, 63) - 1);
+      const grid = classGrid(f2, Math.min(fev.opponents, max), car.id, skin);
+      const session = classSession(fev, defaultAcSession());
+      log(`check-academy class grid ${f2.id}: ${grid.length} cars, ${new Set(grid.map(g => g.skin)).size} liveries, mine ${skin} in it ${grid.some(g => g.skin === skin)}; session ${JSON.stringify({ mode: session.mode, weekend: session.weekend, ai: session.ai, time: session.time })}`);
+      await quickDrive(sandbox, { car: car.id, skin, skins: car.skins.map(x => x.id), track: fev.track, layout: fev.layout, session, maxOpponents: max, csp: null, grid, start: false });
+      log(`check-academy class ini: ${brief(await readText(`${sb}/cfg/race.ini`))}`);
+      await openAcademyEvent(fev.key); await snap('academy-modded-event'); $('#modal-root [data-close]')?.click();
+      await out(2, { laps: [lap(101000), lap(99500, 0, 1), lap(98000, 1, 0), lap(99800, 0, 2), lap(100500, 0, 0), lap(99000, 0, 3)] });
+      log(`check-academy class qualify result: ${JSON.stringify(await readAcResult(sandbox, { ...f2.events[0] }, 0))}`);
+    }
+    const tcr = d.classes.find(c => c.id === 'tcr');
+    if (tcr) { await openAcademyEvent(tcr.events[0].key); await snap('academy-modded-event-missing'); $('#modal-root [data-close]')?.click(); }
+    AY.part = 'original'; render(); await wait(2000);
+    // Running: the banner while AC is (pretend) up with an Academy event.
+    launches.ac = { at: Date.now(), academy: { key: picks.race.key, ai: 0 } }; starting.set('ac', Date.now());
+    AY.series = ''; drawAcademy(true); await wait(500); await snap('academy-running');
+    starting.delete('ac'); delete launches.ac;
+    await storageSet('academy-check', null);
+    await Neutralino.app.exit();
+    return;
+  }
   // --check-livery=<dir>: Rally car detection on copies laid out as <dir>\<CorrectCar>\<livery>\ (read only).
   const liveryArg = (window.NL_ARGS || []).find(a => a.startsWith('--check-livery='));
   if (liveryArg) {
@@ -3772,6 +5955,132 @@ async function runSnapshots(dir) {
     $('#win-max').click(); await wait(1500);
     log(`check11 restored ${await Neutralino.window.isMaximized()} ${innerWidth}x${innerHeight}`);
     await setWindowSize(1540, 795);
+    await Neutralino.app.exit();
+    return;
+  }
+  // --check-setups: the Setups tab of AC, ACC and Rally on COPIES in <snapshots>/setups
+  // (Rally: the real Personal setups file copied; AC and ACC: sample setups), then
+  // every change (duplicate, compare, rename, delete, export and import) on those copies.
+  if ((window.NL_ARGS || []).includes('--check-setups')) {
+    const root = `${norm(dir)}/setups`;
+    for (const d of ['rally', 'ac/acrm_mitsubishi_evo6_gsr/pk_akina', 'acc/mclaren_720s_gt3_evo/monza']) await ensureDir(`${root}/${d}`);
+    await Neutralino.filesystem.copy(state.paths.rally.setups, `${root}/rally/CarSetupsDataSaveSlot.sav`, { overwrite: true });
+    const acLast = (await readText(`${state.paths.ac.setups}/acrm_mitsubishi_evo6_gsr/generic/last.ini`)) || '[CAR]\nMODEL=acrm_mitsubishi_evo6_gsr\n[PRESSURE_LF]\nVALUE=31\n';
+    await writeText(`${root}/ac/acrm_mitsubishi_evo6_gsr/pk_akina/Akina dry.ini`, acLast);
+    await writeText(`${root}/ac/acrm_mitsubishi_evo6_gsr/pk_akina/Akina wet.ini`, acLast.replace(/(\[PRESSURE_\w+\]\r?\nVALUE=)\d+/g, '$127').replace(/(\[CAMBER_LF\]\r?\nVALUE=)-?\d+/, '$1-20'));
+    await writeText(`${root}/acc/mclaren_720s_gt3_evo/monza/Quali.json`, JSON.stringify({ carName: 'mclaren_720s_gt3_evo', basicSetup: { tyres: { tyreCompound: 0, tyrePressure: [55, 55, 52, 52] }, alignment: { camber: [8, 8, 6, 6], toe: [40, 40, 44, 44], casterLF: 10, casterRF: 10, steerRatio: 3 }, electronics: { tC1: 4, tC2: 4, abs: 3, eCUMap: 1, fuelMix: 0, telemetryLaps: 0 }, strategy: { fuel: 40, nPitStops: 0, tyreSet: 0, frontBrakePadCompound: 1, rearBrakePadCompound: 1, pitStrategy: [], fuelPerLap: 3.1 } }, advancedSetup: { mechanicalBalance: { aRBFront: 6, aRBRear: 3, wheelRate: [2, 2, 3, 3], bumpStopRateUp: [4, 4, 4, 4], bumpStopRateDn: [4, 4, 4, 4], bumpStopWindow: [10, 10, 12, 12], brakeTorque: 20, brakeBias: 32 }, dampers: { bumpSlow: [10, 10, 8, 8], bumpFast: [12, 12, 10, 10], reboundSlow: [11, 11, 9, 9], reboundFast: [14, 14, 12, 12] }, aeroBalance: { rideHeight: [5, 0, 0, 12], rodLength: [0, 0, 0, 0], splitter: 0, rearWing: 6, brakeDuct: [3, 3] }, drivetrain: { preload: 9 } }, trackBCName: 'monza' }));
+    state.paths.rally.setups = `${root}/rally/CarSetupsDataSaveSlot.sav`;
+    state.paths.ac.setups = `${root}/ac`;
+    state.paths.acc.setups = `${root}/acc`;
+    const names = () => [...document.querySelectorAll('#setups-list .sx-item-name')].map(b => b.textContent).join(' | ');
+    // Opens the first setup, then Compare › the second one.
+    const pickTwo = async () => {
+      for (const sel of ['#setups-list [data-open="0"]', '[data-s="compare-menu"]', '[data-cmp="1"]']) { $(sel)?.click(); await wait(300); }
+    };
+    const compared = () => `${$('.sx-cmp-sum')?.textContent.replace(/\s+/g, ' ').trim()} | ${[...document.querySelectorAll('.sx-cmp-row.diff')].map(r => r.textContent.replace(/\s+/g, ' ').trim()).join(' ; ')}`;
+    for (const key of ['ac', 'acc', 'rally']) {
+      state.game = key; state.tab[key] = 'setups'; renderSidebar(); state.view = 'mods'; render(); await wait(4000);
+      log(`setups ${key}: ${[...document.querySelectorAll('#grid-wrap .card')].map(c => `${c.querySelector('.card-title')?.textContent} / ${c.querySelector('.card-sub')?.textContent} / ${c.querySelector('.card-author')?.textContent}`).join(' ; ')}`);
+      await snap(`setups-${key}`);
+      $('#grid-wrap .card')?.click(); await wait(800);
+      log(`setups ${key} window: ${names()} | groups ${[...document.querySelectorAll('.sx-tabs button')].map(h => h.textContent).join(', ')}`);
+      await snap(`setups-${key}-window`);
+      // Each group's tab (Rally: all; the others: the second one).
+      const tabs = [...document.querySelectorAll('.sx-tabs [data-tab]')].map(b => b.dataset.tab);
+      for (const t of key === 'rally' ? tabs.slice(1) : tabs.slice(1, 2)) {
+        $(`.sx-tabs [data-tab="${t}"]`)?.click(); await wait(300);
+        log(`setups ${key} ${t}: ${$('.sx-panel')?.textContent.replace(/\s+/g, ' ').trim().slice(0, 160)}`);
+        await snap(`setups-${key}-tab-${t}`);
+      }
+      $('.sx-tabs [data-tab]')?.click(); await wait(200);
+      if (key === 'ac') {
+        await pickTwo();
+        log(`setups ac compare: ${compared()}`);
+        await snap('setups-ac-compare');
+        $('[data-diff="0"]')?.click(); await wait(300);
+        await snap('setups-ac-compare-all');
+      }
+      $('#modal-root [data-close]')?.click(); await wait(300);
+    }
+    // Rally: every change, on the copy.
+    const click = async sel => { $(sel)?.click(); await wait(1500); };
+    $('#grid-wrap .card')?.click(); await wait(800);
+    await click('[data-s="duplicate"]');
+    log(`rally after duplicate: ${names()}`);
+    await pickTwo();
+    log(`rally compare: ${compared()}`);
+    $('#setups-list [data-open="1"]')?.click(); await wait(300);
+    await click('[data-s="rename"]');
+    $('#setup-rename').value = 'Grava ñ Fast';
+    await click('[data-s="rename-save"]');
+    log(`rally after rename: ${names()}`);
+    await snap('setups-rally-renamed');
+    const item = state.cache['rally:setups'].find(i => i.setups.some(s => s.name === 'Grava ñ Fast'));
+    const s = item.setups.find(x => x.name === 'Grava ñ Fast');
+    await exportSetup(s, `${root}/shared.rallysetup.json`);
+    const back = await readSetupFile(`${root}/shared.rallysetup.json`);
+    log(`rally export: ${back.car} ${back.name} ${back.values.length} values`);
+    const saved = await importSetup({ ...back, car: 'LanciaStratosHF' }, state.paths, '', back.name);
+    log(`rally import into Stratos as: ${saved}`);
+    $('#modal-root [data-close]')?.click(); await wait(300);
+    render(); await wait(3000);
+    $('#grid-wrap .card')?.click(); await wait(800);
+    const del = [...document.querySelectorAll('#setups-list [data-open]')].find(b => /Fast \(|copy/i.test(b.textContent)) || $('#setups-list [data-open="1"]');
+    del?.click(); await wait(300);
+    await click('[data-s="delete"]'); await click('[data-s="delete"]');
+    log(`rally after delete: ${names()} | file ${state.paths.rally.setups}`);
+    await snap('setups-rally-deleted');
+    $('#modal-root [data-close]')?.click(); await wait(300);
+    // Times per setup: an AC session (race_out.json and last.ini in the test folder)
+    // and Rally's stage records (read only) as if each game had just closed. The
+    // launcher's run log is put back as it was afterwards.
+    const runsBefore = await storageGet('setupRuns', []);
+    try {
+      state.paths.ac.cfg = `${root}/acdocs/cfg`;
+      await ensureDir(`${root}/acdocs/out`); await ensureDir(`${root}/ac/acrm_mitsubishi_evo6_gsr/generic`);
+      await writeText(`${root}/ac/acrm_mitsubishi_evo6_gsr/generic/last.ini`, acLast);
+      await writeText(`${root}/acdocs/out/race_out.json`, JSON.stringify({ track: 'pk_akina-akina_2way', players: [{ name: 'Test', car: 'acrm_mitsubishi_evo6_gsr' }], sessions: [{ name: 'Practice', laps: [{ lap: 0, car: 0, time: 158234, cuts: 0 }, { lap: 1, car: 0, time: 151002, cuts: 2 }, { lap: 2, car: 0, time: 154876, cuts: 0 }] }] }));
+      await gameClosed('ac', { at: Date.now() - 60000 });
+      const fabia = (await getItems(gameByKey('rally'), 'setups', true)).find(i => /fabia/i.test(i.carId));
+      if (fabia) await gameClosed('rally', { car: fabia.carId, setup: { name: fabia.setups[0].name, sig: setupSig(fabia.setups[0].values) }, before: {} });
+      log(`setup runs: ${(await storageGet('setupRuns', [])).slice(runsBefore.length).map(r => `${r.game} ${r.track} ${r.ms} ${r.name}`).join(' ; ')}`);
+      state.game = 'ac'; state.tab.ac = 'setups'; renderSidebar(); state.view = 'mods'; render(); await wait(3000);
+      $('#grid-wrap .card')?.click(); await wait(1500);
+      log(`ac times: ${$('.sx-times')?.textContent.replace(/\s+/g, ' ').trim()}`);
+      await snap('setups-ac-times');
+      $('#modal-root [data-close]')?.click(); await wait(300);
+      state.game = 'rally'; state.tab.rally = 'setups'; renderSidebar(); render(); await wait(3000);
+      [...document.querySelectorAll('#grid-wrap .card')].find(c => /Fabia/.test(c.textContent))?.click(); await wait(1500);
+      log(`rally times: ${$('.sx-times')?.textContent.replace(/\s+/g, ' ').trim()}`);
+      await snap('setups-rally-times');
+      $('#modal-root [data-close]')?.click(); await wait(300);
+      // Rally Quick Drive's session settings: the Car Setup choice.
+      state.settings.rallyQD = { ...(state.settings.rallyQD || {}), car: fabia?.carId };
+      state.view = 'quickdrive'; render(); await wait(6000);
+      $('#main .qd-session-btn')?.click(); await wait(800);
+      log(`rally qd setup: ${$('.qd-sheet-sec')?.textContent.replace(/\s+/g, ' ').trim().slice(0, 200)}`);
+      await snap('setups-rally-qd');
+    } finally { await storageSet('setupRuns', runsBefore); }
+    await Neutralino.app.exit();
+    return;
+  }
+  // --check-outlines: every game's Tracks tab (All content), scrolled through, with
+  // each outline's drawn size in the log. Reads only.
+  if ((window.NL_ARGS || []).includes('--check-outlines')) {
+    state.settings.acFilter = 'all';
+    for (const key of ['ac', 'evo', 'rally']) {
+      if (!gameByKey(key)) continue;
+      state.game = key; state.tab[key] = 'tracks'; renderSidebar(); state.view = 'mods'; render(); await wait(7000);
+      const imgs = [...document.querySelectorAll('#grid-wrap img.overlay')];
+      log(`outlines ${key}: ${document.querySelectorAll('#grid-wrap .card').length} cards, ${imgs.length} outlines: ${imgs.slice(0, 40).map(i => `${i.closest('.card')?.querySelector('h3, .title, b')?.textContent?.trim().slice(0, 18)} ${i.naturalWidth}x${i.naturalHeight}->${Math.round(i.getBoundingClientRect().width)}x${Math.round(i.getBoundingClientRect().height)}`).join(' | ')}`);
+      let box = $('#grid-wrap');
+      while (box && box.scrollHeight <= box.clientHeight + 4) box = box.parentElement;
+      for (let n = 0; n < 3; n++) {
+        await snap(`outlines-${key}-${n}`);
+        if (!box || box.scrollTop + box.clientHeight >= box.scrollHeight) break;
+        box.scrollTop += box.clientHeight; await wait(1500);
+      }
+    }
     await Neutralino.app.exit();
     return;
   }
@@ -4144,6 +6453,6 @@ async function runSnapshots(dir) {
   await Neutralino.app.exit();
 }
 
-Neutralino.events.on('windowClose', () => Neutralino.app.exit());
+Neutralino.events.on('windowClose', requestExit);
 window.addEventListener('error', e => log(`ui error: ${e.message} @ ${e.filename}:${e.lineno}`));
 window.addEventListener('unhandledrejection', e => log(`ui rejection: ${e.reason?.stack || JSON.stringify(e.reason)}`));

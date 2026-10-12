@@ -1,14 +1,16 @@
 // Dev aid: `--import-test=<config.json>` runs archives through the installer into
 // sandbox folders, exercises the drop path, snapshots the UI, writes a report, exits.
-// config: { paths, archives: [path], evoCache, dropFiles: [{ path, name }], uiDrop, snapDir, out }
+// config: { paths, archives: [path], evoCache, dropFiles: [{ path, name }], uiDrop,
+//           uiInstall: { files: [path], exitAt }, snapDir, out }
 import { prepareImport, installItem, discardImport, setItemCar, resolveDropped } from './installer.js';
-import { writeText, log, basename } from './util.js';
+import { writeText, log, basename, storageGet, storageSet } from './util.js';
 import { SCANNERS, uninstallPaths, uninstallItem } from './games.js';
+import { frameCar, readModInfo, readCarPresets, readEvoExtras, pruneCache } from './kspkg.js';
 
 const wait = ms => new Promise(r => setTimeout(r, ms));
 const fileFrom = async (path, name) => new File([await Neutralino.filesystem.readBinaryFile(path)], name || basename(path));
 
-export async function runImportTest(configPath) {
+export async function runImportTest(configPath, hooks = {}) {
   const cfg = JSON.parse(await Neutralino.filesystem.readFile(configPath));
   const report = { archives: [], drops: [] };
   for (const a of cfg.archives) {
@@ -109,6 +111,149 @@ export async function runImportTest(configPath) {
     report.ui = { reviewRows: document.querySelectorAll('.imp-row').length };
     document.querySelector('#modal-root [data-close]')?.click();
     await wait(500);
+  }
+
+  // Installs through the UI into the sandbox (cfg.paths, through hooks.usePaths):
+  // drops uiInstall.files one after another (the later ones while the first still
+  // installs), snapshots the progress dialog and the title bar's pill, then waits
+  // for the end; or, with exitAt (a percent), closes the launcher half way.
+  if (cfg.uiInstall) {
+    const u = cfg.uiInstall, snap = name => Neutralino.window.snapshot(`${cfg.snapDir}/${name}.png`);
+    hooks.usePaths(cfg.paths);
+    const pill = () => { const p = document.querySelector('#install-pill'); return p.hidden ? '' : p.textContent; };
+    const pct = () => parseInt(document.querySelector('#install-pill:not([hidden]) b')?.textContent, 10) || 0;
+    const rows = () => [...document.querySelectorAll('.imp-q')].map(r => `${r.querySelector('b').textContent}: ${r.querySelector('.imp-tag').textContent} | ${r.querySelector('.imp-q-line').textContent}`);
+    report.install = { steps: [] };
+    const step = async name => {
+      report.install.steps.push({ name, t: Date.now(), pill: pill(), rows: rows(), toast: document.querySelector('#toast.show')?.textContent || '' });
+      await snap(name);
+    };
+    const drop = async path => {
+      const dt = new DataTransfer();
+      dt.items.add(await fileFrom(path));
+      window.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
+      for (let i = 0; i < 400 && !document.querySelector('#imp-go'); i++) await wait(250);
+      await wait(500);
+      document.querySelector('#imp-go')?.click();
+      await wait(800);
+    };
+    await drop(u.files[0]);
+    await wait(2500); await step('dialog-start');
+    document.querySelector('#modal-root [data-close]')?.click();
+    await wait(600); await step('hidden');
+    for (const f of u.files.slice(1)) { await drop(f); await wait(1000); await step('queued'); }
+    const until = async p => { for (let i = 0; i < 3000 && pill() && pct() < p; i++) await wait(100); };
+    if (u.exitAt != null) {
+      await until(u.exitAt);
+      document.querySelector('#win-close').click();
+      await wait(600); await step('exit-ask');
+      await writeText(cfg.out, JSON.stringify(report, null, 1));
+      document.querySelector('#exit-anyway').click();
+      return; // the launcher closes itself
+    }
+    document.querySelector('#modal-root [data-close]')?.click();
+    await until(45); await wait(300); await step('pill-mid');
+    document.querySelector('#install-pill').click();
+    await wait(800); await step('dialog-mid');
+    for (let i = 0; i < 3000 && pill(); i++) await wait(100);
+    await wait(300); await step('done');
+  }
+
+  // EVO mod tracks in Quick Drive: the track scan's items, then EVO's Quick Drive.
+  if (cfg.evoQd) {
+    hooks.usePaths(cfg.paths);
+    const items = await SCANNERS.evo.tracks(cfg.paths);
+    report.evoQd = { tracks: items.map(i => ({ title: i.title, sub: i.subtitle, isMod: i.isMod, evoTrack: i.evoTrack, layouts: (i.layouts || []).map(l => ({ id: l.id, name: l.name, practice: l.practice, race: l.race, outline: l.outline, preview: !!l.preview })) })) };
+    document.querySelector('#game-list [data-game="evo"]')?.click();
+    await wait(500);
+    document.querySelector('#nav-qd')?.click();
+    for (let i = 0; i < 80 && !document.querySelector('#modal-root .qd'); i++) await wait(250);
+    await wait(2500);
+    await Neutralino.window.snapshot(`${cfg.snapDir}/evo-qd.png`);
+    report.evoQd.dialog = (document.querySelector('#modal-root')?.innerText || '').slice(0, 1500);
+  }
+
+  // EVO's track list (evotracks.js) on a stand-in content.kspkg (cfg.paths.evo.install):
+  // add the mod tracks, sync again (nothing to do), restore, stay off, add again.
+  // evoTracks.saveAt: a copy of the package as it is after the first add.
+  if (cfg.evoTracks) {
+    const m = await import('./evotracks.js'), r = report.evoTracks = {}, file = `${cfg.paths.evo.install}/content.kspkg`;
+    const free = { isRunning: async () => false }; // the stand-in package isn't EVO's
+    const step = async (name, fn) => { const t0 = Date.now(); try { r[name] = await fn(); } catch (e) { r[name] = { error: e?.message || String(e) }; } r[`${name}Ms`] = Date.now() - t0; };
+    await step('status0', () => m.evoTrackListStatus(cfg.paths));
+    await step('add', () => m.syncEvoTrackList(cfg.paths, { ...free, force: true }));
+    await Neutralino.filesystem.copy(file, cfg.evoTracks.saveAt, { overwrite: true });
+    await step('status1', () => m.evoTrackListStatus(cfg.paths));
+    await step('again', () => m.syncEvoTrackList(cfg.paths, free));
+    await step('restore', () => m.restoreEvoTrackList(cfg.paths, free));
+    await step('status2', () => m.evoTrackListStatus(cfg.paths));
+    await step('whileOff', () => m.syncEvoTrackList(cfg.paths, free));
+    await step('forced', () => m.syncEvoTrackList(cfg.paths, { ...free, force: true }));
+    if (cfg.snapDir) {
+      hooks.usePaths(cfg.paths);
+      document.querySelector('#nav [data-view="settings"]').click();
+      for (let i = 0; i < 40 && !document.querySelector('[data-act="evo-tracks-restore"]'); i++) await wait(250);
+      document.querySelector('[data-act="evo-tracks-restore"]')?.closest('.settings-group')?.scrollIntoView();
+      await wait(600);
+      await Neutralino.window.snapshot(`${cfg.snapDir}/settings-evo-tracks.png`);
+    }
+    await step('restore2', () => m.restoreEvoTrackList(cfg.paths, free));
+    const all = await storageGet('evoTrackList', {});
+    r.stateLeft = all[file] || null;
+    delete all[file];
+    await storageSet('evoTrackList', all);
+  }
+
+  // Mod car pictures: frameCar { files: [jpg], outDir } frames each picture as the
+  // launcher does, timed; modInfo { files: [kspkg], cacheDir } reads packages as the
+  // Mods page does; extras { pkg, cacheDir, count } makes Quick Drive's livery
+  // pictures of a mod package; prune { dir, live: [key] } cleans a folder of files.
+  if (cfg.frameCar) {
+    report.frameCar = [];
+    for (const f of cfg.frameCar.files) {
+      const img = await createImageBitmap(new Blob([await Neutralino.filesystem.readBinaryFile(f)]));
+      const c = document.createElement('canvas');
+      c.width = img.width; c.height = img.height;
+      c.getContext('2d').drawImage(img, 0, 0);
+      const t0 = performance.now(), changed = frameCar(c), ms = performance.now() - t0;
+      const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.88));
+      await Neutralino.filesystem.writeBinaryFile(`${cfg.frameCar.outDir}/${basename(f)}`, await blob.arrayBuffer());
+      report.frameCar.push({ file: basename(f), size: `${img.width}x${img.height}`, changed, ms: Math.round(ms * 10) / 10 });
+    }
+  }
+  if (cfg.modInfo) {
+    report.modInfo = [];
+    for (const pass of ['first', 'cached']) {
+      for (const f of cfg.modInfo.files) {
+        const t0 = Date.now();
+        try { const i = await readModInfo(f, cfg.modInfo.cacheDir); report.modInfo.push({ pass, file: basename(f), ms: Date.now() - t0, kind: i?.kind, framing: i?.framing, thumbs: i?.thumbs.map(t => t.file) }); }
+        catch (e) { report.modInfo.push({ pass, file: basename(f), error: e?.message || String(e) }); }
+      }
+    }
+  }
+  if (cfg.extras) {
+    const { pkg, cacheDir, count = 3 } = cfg.extras, name = p => basename(p.replace(/\\/g, '/')).replace(/\.\w+$/, '');
+    const liveries = (await readCarPresets(pkg, cacheDir)).flatMap(p => p.visuals.map(v => ({ carId: p.carId, mech: name(p.mech), visual: name(v), pkgPath: pkg }))).slice(0, count);
+    const run = async opts => { const t0 = Date.now(); const x = await readEvoExtras({ liveries, contentPkg: 'content.kspkg', ...opts }, cacheDir); return { ms: Date.now() - t0, liveries: x.liveries }; };
+    report.extras = { cachedOnly: await run({ cachedOnly: true }), first: await run({}), again: await run({}), index: JSON.parse(await Neutralino.filesystem.readFile(`${cacheDir}/extras/index.json`)) };
+  }
+  // The Academy as players see it (what this version shows, academy-data.js):
+  // each game's page, its level names, and a snapshot.
+  if (cfg.academyPages) {
+    const until = async sel => { for (let i = 0; i < 80 && !document.querySelector(sel); i++) await wait(250); return document.querySelector(sel); };
+    const r = report.academyPages = {};
+    (await until('#nav-academy')).click();
+    for (const game of ['ac', 'evo', 'rally']) {
+      (await until(`[data-ay-game="${game}"]`)).click();
+      await wait(game === 'evo' ? 8000 : 3000);
+      r[game] = { levels: [...document.querySelectorAll('.ay-level-head h3')].map(h => h.textContent), empty: document.querySelector('.ay-empty')?.textContent || '' };
+      await Neutralino.window.snapshot(`${cfg.snapDir}/academy-page-${game}.png`);
+    }
+  }
+
+  if (cfg.prune) {
+    await pruneCache(cfg.prune.dir, new Set(cfg.prune.live));
+    report.prune = (await Neutralino.filesystem.readDirectory(cfg.prune.dir)).filter(e => e.type === 'FILE').map(e => e.entry).sort();
   }
 
   await writeText(cfg.out, JSON.stringify(report, null, 1));

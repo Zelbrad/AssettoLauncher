@@ -13,7 +13,7 @@ import { weatherTypeOf, isWetWeather, PROTON_DLL_OVERRIDE } from './csp.js';
 
 const lineSplit = text => text.split(/\r?\n/);
 
-const TEMPLATE = `[RACE]
+export const TEMPLATE = `[RACE]
 MODEL=
 MODEL_CONFIG=
 SKIN=
@@ -92,6 +92,7 @@ VERSION=2
 // Session settings
 
 export const AC_MODES = { practice: 'Practice', hotlap: 'Hotlap', race: 'Race', weekend: 'Race Weekend' };
+// The Academy also starts a qualifying session on its own (mode 'qualify', session.qualify.minutes).
 
 // cfg\templates\tracks.ini, in file order (DYNAMIC_TRACK/PRESET is the index).
 export const AC_GRIP = [
@@ -272,18 +273,36 @@ async function opponentEntries(paths, { car, skin, skins }, ai) {
   return entries;
 }
 
+// A grid of other cars: [{ car, skin }], named like opponentEntries names them.
+async function gridEntries(paths, grid, ai) {
+  const names = shuffle(await driverNames(paths.ac.install));
+  const entries = [];
+  for (const [i, g] of grid.entries()) {
+    let name = '', nation = '';
+    try {
+      const j = JSON.parse(await readText(join(paths.ac.content, 'cars', g.car, 'skins', g.skin, 'ui_skin.json')) || 'null');
+      name = String(j?.drivername || '').trim(); nation = String(j?.country || '').trim().slice(0, 3).toUpperCase();
+    } catch { /* no skin info */ }
+    if (!name || entries.some(e => e.name === name)) [name, nation] = (names[i % names.length] || 'Driver,').split(',');
+    entries.push({ car: g.car, skin: g.skin, name, nation, level: Math.round(100 - Math.random() * ai.variation), aggression: ai.aggression });
+  }
+  return entries;
+}
+
 // ---------------------------------------------------------------------------
 // Launch
 
 // selection: { car, skin, skins (all skin ids of the car), track, layout, session, maxOpponents }
 // csp: readCsp() (WeatherFX, 24 hours, specific date); null without CSP.
-export async function quickDrive(paths, { car, skin, skins = [], track, layout, session = defaultAcSession(), maxOpponents = 0, csp = null }) {
+// grid: the opponents' cars [{ car, skin }] (else the player's car with its other skins).
+// start: false only writes the files (the Academy's check mode).
+export async function quickDrive(paths, { car, skin, skins = [], track, layout, session = defaultAcSession(), maxOpponents = 0, csp = null, grid = null, start = true }) {
   const acDir = paths.ac.install;
   if (!acDir) throw new Error('Assetto Corsa install folder not found.');
   const acs = join(acDir, 'acs.exe');
-  if (!(await exists(acs))) throw new Error(`acs.exe not found in ${acDir}`);
+  if (start && !(await exists(acs))) throw new Error(`acs.exe not found in ${acDir}`);
 
-  const racing = session.mode === 'race' || session.mode === 'weekend';
+  const racing = session.mode === 'race' || session.mode === 'weekend' || session.mode === 'qualify';
   const count = racing ? Math.max(1, Math.min(session.ai.count, maxOpponents || session.ai.count)) : 0;
   if (count && !(await hasAiLine(paths, track, layout))) {
     throw new Error("This track layout has no AI line (ai/fast_lane.ai), so it can't have opponents. Pick Practice or Hotlap, or another track.");
@@ -306,12 +325,14 @@ export async function quickDrive(paths, { car, skin, skins = [], track, layout, 
   ini = setIni(ini, 'CAR_0', 'MODEL', '-');
   ini = setIni(ini, 'CAR_0', 'SKIN', skin || '');
 
-  // Sessions (AC's launcher: _defineSession).
-  ini = removeSections(ini, /^SESSION_\d+$/i);
+  // Sessions (AC's launcher: _defineSession). A special event's id (from AC's own
+  // launcher or the Academy) would make AC run this as that event: it goes too.
+  ini = removeSections(ini, /^(SESSION_\d+|SPECIAL_EVENT)$/i);
   const sessions = [];
   const add = (name, type, { laps, minutes = 0, spawn, position } = {}) => sessions.push({ name, type, laps, minutes, spawn, position });
   if (session.mode === 'practice') add('Practice', 1, { minutes: session.practice.minutes, spawn: 'PIT' });
   if (session.mode === 'hotlap') add('Hotlap', 4, { spawn: 'HOTLAP_START' });
+  if (session.mode === 'qualify') add('Qualifying', 2, { minutes: session.qualify?.minutes || 10, spawn: 'PIT' });
   if (session.mode === 'race') {
     const p = session.race.startPos === -1 ? 1 + Math.floor(Math.random() * (count + 1)) : session.race.startPos === 0 ? count + 1 : Math.min(session.race.startPos, count + 1);
     add('Quick Race', 3, { laps: session.race.laps, spawn: 'START', position: p });
@@ -338,10 +359,10 @@ export async function quickDrive(paths, { car, skin, skins = [], track, layout, 
   ini = setIni(ini, 'RACE', 'CARS', count + 1);
   if (count) {
     ini = setIni(ini, 'RACE', 'AI_LEVEL', session.ai.strength);
-    const opponents = await opponentEntries(paths, { car, skin, skins }, { ...session.ai, count });
+    const opponents = grid?.length ? await gridEntries(paths, grid.slice(0, count), session.ai) : await opponentEntries(paths, { car, skin, skins }, { ...session.ai, count });
     opponents.forEach((o, i) => {
       const sec = `CAR_${i + 1}`;
-      for (const [k, v] of [['MODEL', car], ['MODEL_CONFIG', ''], ['SKIN', o.skin], ['SETUP', ''], ['AI_LEVEL', o.level], ['AI_AGGRESSION', o.aggression],
+      for (const [k, v] of [['MODEL', o.car || car], ['MODEL_CONFIG', ''], ['SKIN', o.skin], ['SETUP', ''], ['AI_LEVEL', o.level], ['AI_AGGRESSION', o.aggression],
         ['DRIVER_NAME', o.name], ['NATIONALITY', ''], ['NATION_CODE', o.nation], ['BALLAST', 0], ['RESTRICTOR', 0]]) ini = setIni(ini, sec, k, v);
     });
   }
@@ -395,8 +416,14 @@ export async function quickDrive(paths, { car, skin, skins = [], track, layout, 
   await writeAssists(paths, session.assists);
 
   log(`quick drive ${session.mode} ${car}/${skin} @ ${track}/${layout} ai ${count} weather ${csp?.wfx ? session.cspWeather : weather.id}`);
-  // Linux: acs.exe runs in AC's Proton prefix, like Steam would start it. CSP is
-  // AC's dwrite.dll, which Wine only loads with an override.
+  if (start) await startAcs(paths);
+}
+
+// Start acs.exe on the race.ini already written. Linux: it runs in AC's Proton
+// prefix, like Steam would start it. CSP is AC's dwrite.dll, which Wine only
+// loads with an override.
+export async function startAcs(paths) {
+  const acDir = paths.ac.install, acs = join(acDir, 'acs.exe');
   if (IS_LINUX) {
     const dllOverrides = (await exists(join(acDir, 'dwrite.dll'))) ? PROTON_DLL_OVERRIDE : '';
     await runWithProton({ exe: acs, cwd: acDir, appid: 244210, installDir: acDir, steamPath: paths.steam, dllOverrides });
@@ -404,7 +431,7 @@ export async function quickDrive(paths, { car, skin, skins = [], track, layout, 
 }
 
 // cfg\assists.ini, as AC's launcher and Content Manager write it before a drive.
-async function writeAssists(paths, a) {
+export async function writeAssists(paths, a) {
   if (!a) return;
   const path = join(paths.ac.cfg, 'assists.ini');
   let text = await readText(path);

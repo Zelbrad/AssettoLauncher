@@ -1,7 +1,8 @@
-// Dev tool: downloads the ACC and Rally car/stage/track pictures and the Rally
+// Dev tool: downloads the ACC car/track pictures and the Rally stage pictures and
 // stage maps from the official site into resources/img/site/<game>/<kind>-<key>.jpg
 // (480 px wide; maps .png, 160 px) and writes resources/img/site/manifest.json
-// { rally: { cars, stages, maps }, acc: { cars, tracks } } (key -> file).
+// { rally: { stages, maps }, acc: { cars, tracks } } (key -> file). Rally's cars use
+// the game's own pictures (tools/rally-data.py).
 // Run: node tools/site-images.mjs [game/kind ...]   e.g. rally/maps  (needs PowerShell)
 // With kinds given, only those are fetched again; the rest of the manifest is kept.
 import fs from 'fs';
@@ -15,7 +16,7 @@ const out = path.join(root, 'resources/img/site');
 const UA = { 'User-Agent': 'Mozilla/5.0 AssettoLauncher (image build)' };
 const src = fs.readFileSync(path.join(root, 'resources/js/games.js'), 'utf8');
 const table = name => Object.fromEntries([...src.slice(src.indexOf(`export const ${name}`)).split('};')[0].matchAll(/(?:^|[{,])\s*(?:(\d+)|(\w+)): (?:'([^']+)'|\{ name: '([^']+)')/gm)].map(m => [m[1] ?? m[2], m[3] ?? m[4]]));
-const ACC_CARS = table('ACC_CARS'), RALLY_CARS = table('RALLY_CARS');
+const ACC_CARS = table('ACC_CARS');
 const only = process.argv.slice(2);
 const wanted = (game, kind) => !only.length || only.includes(`${game}/${kind}`);
 
@@ -57,16 +58,12 @@ async function download(url, file, kind) {
 }
 
 const old = (() => { try { return JSON.parse(fs.readFileSync(path.join(out, 'manifest.json'), 'utf8')); } catch { return {}; } })();
-const manifest = { rally: { cars: {}, stages: {}, maps: {} }, acc: { cars: {}, tracks: {} } };
+const manifest = { rally: { stages: {}, maps: {} }, acc: { cars: {}, tracks: {} } };
 for (const [game, kinds] of Object.entries(manifest)) for (const kind of Object.keys(kinds)) if (!wanted(game, kind)) kinds[kind] = old[game]?.[kind] || {};
 const pages = {};
 for (const [k, u] of Object.entries(SITE_PAGES)) pages[k] = await (await fetch(u, { headers: UA })).text();
 
 const jobs = [];
-for (const c of siteCars(pages.rally)) {
-  const key = bestMatch(c.name, Object.entries(RALLY_CARS).map(([k, name]) => ({ key: k, name: `${name} ${k}` })));
-  if (key) jobs.push(['rally', 'cars', key, c.img, c.name]); else console.log('rally car ?', c.name);
-}
 for (const s of rallyStagePhotos(pages.rally)) { const g = stageGroupOf(s.name); if (g) jobs.push(['rally', 'stages', g, s.img, s.name]); }
 for (const [g, img] of Object.entries(RALLY_STAGE_PHOTOS)) jobs.push(['rally', 'stages', g, img, g]);
 for (const s of siteMaps(pages.rally)) { const g = stageGroupOf(s.name); if (g) jobs.push(['rally', 'maps', g, s.img, s.name]); }
