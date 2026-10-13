@@ -118,8 +118,11 @@ while ($true) {
 // read (others for --check-academy, never EVO's while it runs).
 export async function startTelemetry(onEvent, name = 'Local\\acevo_pmf_physics', gfxName = 'Local\\acevo_pmf_graphics') {
   const file = join(norm(await Neutralino.os.getPath('temp')), 'assetto-launcher-evotelemetry.ps1');
-  await writeText(file, script(name, gfxName, window.NL_PID));
-  const p = await Neutralino.os.spawnProcess(powershellEncodedCommand(`$ProgressPreference = 'SilentlyContinue'; Invoke-Expression ([IO.File]::ReadAllText(${psQuote(file)}))`));
+  const text = script(name, gfxName, window.NL_PID);
+  await writeText(file, text);
+  // The command checks the file is what was written before running it.
+  const sha = [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)))].map(b => b.toString(16).padStart(2, '0')).join('');
+  const p = await Neutralino.os.spawnProcess(powershellEncodedCommand(`$ProgressPreference = 'SilentlyContinue'; $b = [IO.File]::ReadAllBytes(${psQuote(file)}); $h = [BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash($b)).Replace('-', ''); if ($h -ne '${sha}') { [Console]::Error.WriteLine('the helper script changed on disk: not run'); exit 1 }; Invoke-Expression ([Text.Encoding]::UTF8.GetString($b))`));
   let rest = '';
   const on = e => {
     if (e.detail.id !== p.id) return;

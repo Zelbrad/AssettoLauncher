@@ -182,9 +182,19 @@ export async function run(cmd, opts) {
   catch (e) { log(`exec failed: ${cmd} ${JSON.stringify(e)}`); return { exitCode: -1, stdOut: '', stdErr: String(e?.message || e) }; }
 }
 
+// Web and Steam links only.
 export async function openExternal(target) {
+  if (!/^(https?|steam):\/\/[^\s"'`<>\\]+$/i.test(String(target || ''))) { log(`open refused ${target}`); return; }
   try { await Neutralino.os.open(target); } catch (e) { log(`open failed ${target}: ${JSON.stringify(e)}`); }
 }
+
+// A file of the user's own (a screenshot), in the program Windows/Linux opens it with.
+export async function openFile(path) {
+  try { await Neutralino.os.open(path); } catch (e) { log(`open failed ${path}: ${JSON.stringify(e)}`); }
+}
+
+// A plain https address.
+export const safeUrl = u => /^https:\/\/[A-Za-z0-9._~:/?#@!&*+,;=%-]+$/.test(String(u || ''));
 
 // Backslashes don't survive execCommand reliably (stripped or doubled depending
 // on the command shape), so anything that takes a filesystem path goes through

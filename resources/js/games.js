@@ -147,6 +147,8 @@ export async function scanAcCars(paths) {
       fallbackImage: fileUrl(join(dir, 'ui/badge.png')),
       badge: fileUrl(join(dir, 'ui/badge.png')),
       tags: (ui.tags || []).map(t => String(t).replace(/^#/, '')).slice(0, 8),
+      // Every tag, for the Mods page's tag filter (the detail page shows the first 8).
+      allTags: (Array.isArray(ui.tags) ? ui.tags : []).map(t => String(t).replace(/^#/, '').trim()).filter(Boolean),
       description: cleanText(ui.description),
       specs: ui.specs || null,
       year: ui.year || '', brand: cleanText(ui.brand) || '',

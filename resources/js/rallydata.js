@@ -8,7 +8,7 @@
 import { lang } from './i18n.js';
 import { join, readText, writeText, run, log, CURL } from './util.js';
 
-const REMOTE = 'https://raw.githubusercontent.com/Zelbrad/AssettoLauncher/main/resources/data/rally-game.json';
+const REMOTE = 'https://raw.githubusercontent.com/tawndelli/AssettoLauncher/main/resources/data/rally-game.json';
 const RAW = REMOTE.slice(0, REMOTE.indexOf('/resources/') + '/resources/'.length);
 let data = { updated: '', groups: {}, stages: {}, cars: {} };
 const valid = d => d && typeof d.updated === 'string' && d.groups && d.stages && d.cars;
@@ -50,6 +50,10 @@ export const rallyStageName = id => pick(data.stages[id]);
 export const rallyGroupName = group => pick(data.groups[group]?.name);
 export const rallyGroupText = group => pick(data.groups[group]?.description);
 export const rallyCarText = id => ({ description: pick(carEntry(id)?.description), livery: pick(carEntry(id)?.livery) });
+// The car's figures as Rally's car selection lists them, or null (an older data file):
+// { year, cc, hp, nm, kg, engine, position, induction, drive: 'FWD'|'RWD'|'AWD', gears,
+//   steering (the steering wheel's degrees lock to lock), powerRpm, torqueRpm }.
+export const rallyCarSpecs = id => carEntry(id)?.specs || null;
 // The car's picture from the game (its car-select one, transparent): the launcher's
 // copy, or GitHub's for a car a newer data file lists before this launcher ships it;
 // '' when the game has none.

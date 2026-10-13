@@ -1,7 +1,7 @@
 import { GAMES, gameByKey, resolvePaths, SCANNERS, setEnabled, contentFolder, evoCacheDir, uninstallPaths, uninstallItem, rallyIncompatible, ACC_CARS, RALLY_CARS, rallyCarName, rallyCarIds, appCacheDir, rallyGameStages, markFresh } from './games.js';
 import { ACC_TRACKS, ACC_MODES, ACC_WEATHER, ACC_TIME_SPEEDS, accSeasonName, accOwnedDlcs, accModelOwned, accTrackOwned, accSeasonOwned, accModelClass, readAccSession, accCustomCars, writeAccSession, ensureModelCar } from './acclaunch.js';
 import { readRallySave, rallyStage, writeRallySession, rallyBests, rallyRecords, RALLY_WEATHER_IDS, RALLY_KNOWN_STAGES, rallyCover, rallySelectedLiveries, RALLY_WEATHERS, RALLY_TIME_SPEEDS, RALLY_FORECAST_PROBABILITY, RALLY_PERSISTENCE, RALLY_GRIP, rallyLocationWeathers, rallyWeatherFor } from './rallylaunch.js';
-import { loadRallyData, refreshRallyData, rallyGroupText, rallyGroupName, rallyCarText, rallyCarPicture, rallyStageMedia, rallyAiTime } from './rallydata.js';
+import { loadRallyData, refreshRallyData, rallyGroupText, rallyGroupName, rallyCarText, rallyCarSpecs, rallyCarPicture, rallyStageMedia, rallyAiTime } from './rallydata.js';
 import { TIERS, AC_LEVELS, academyProgress, eventTier, acCareer, acSpecialEvents, seriesState, seriesGoalText, seriesLocked, nextRound, standings, goalValue, scoreText, betterScore, startAcEvent, writeAcEvent, readAcResult, recordResult, setLastEvent, restartChampionship, useAcademyStore, evoAcademy, rallyAcademy, levelMedals, levelLocked, levelBefore, levelGolds, bonusLocked, levelEvents, driverLevel, srOf, srGrade, srGradeMin, srLoss, changeSR, srShort, srReader, evoSessionFor, readEvoResult, evoResultFile, readEvoSprint, sprintReader, raceReader, lapReader, acClasses, classEventLocked, classSession, classGrid } from './academy.js';
 import { RALLY_RELEASED } from './academy-data.js';
 import { setupGroups, compareGroups, positionLabel, setupTrackName, renameSetup, duplicateSetup, deleteSetup, exportSetup, exportName, readSetupFile, importSetup, setupSig, allSetupRuns, runsOf, addSetupRun, readAcRun, ACC_SETUP_CARS } from './setups.js';
@@ -9,6 +9,7 @@ import { SITE_PAGES, siteMaps, rallyStagePhotos, imageSizes, stageGroupOf, words
 import { acBests, acBestKey, evoBests, evoBestKey, lapTime } from './bests.js';
 import { checkMods } from './health.js';
 import { acUpdates, cupDetails } from './updates.js';
+import { loadAcCarData, mechTags, MECH_TAGS } from './acdata.js';
 import { listBackups, createBackup, restoreBackup, deleteBackup, autoBackups, backupsRoot } from './backups.js';
 import { findSteamPath, findInstalledApps, getNews, cachedNews, refreshNews, getStoreDetails, newsPageUrl, steamUrls, appBuilds } from './steam.js';
 import { quickDrive, readAcSession, defaultAcSession, acWeathers, roadTemperature, presetForType, AC_MODES, AC_GRIP, AC_ASSIST_PRESETS } from './quickdrive.js';
@@ -22,7 +23,7 @@ import { IMPORT_RE, resolveDropped, prepareImport, installItem, setItemCar, carC
 import { syncEvoTrackList, restoreEvoTrackList, evoTrackListStatus } from './evotracks.js';
 import { readEvoExtras, readCarPresets, isLazyImage, lazyImage } from './kspkg.js';
 import { latestRelease, isNewer, isInstalledCopy, installUpdate } from './appupdate.js';
-import { esc, timeAgo, openExternal, openFolder, powershellEncodedCommand, storageGet, storageSet, norm, log, exists, basename, prettifyId, fileUrl, mountDir, listDir, join, run, runningProcesses, stopProcess, readText, writeText, ensureDir, overlayFile, CURL, NULL_DEV, IS_LINUX } from './util.js';
+import { esc, timeAgo, openExternal, openFile, safeUrl, openFolder, powershellEncodedCommand, storageGet, storageSet, norm, log, exists, basename, prettifyId, fileUrl, mountDir, listDir, join, run, runningProcesses, stopProcess, readText, writeText, ensureDir, overlayFile, CURL, NULL_DEV, IS_LINUX } from './util.js';
 import { tr, trn, N_, loadLanguage, systemLanguage, LANGUAGES, lang } from './i18n.js';
 
 Neutralino.init();
@@ -39,6 +40,7 @@ const state = {
   cache: {},           // `${game}:${tab}` -> items
   tab: {},             // game -> active mods tab
   brand: {},           // game -> brand picked on the Mods car page ('' = all)
+  tags: {},            // game -> tags picked on the Mods car page (lower case; all must match)
   search: '',
   news: {},            // appid -> items
 };
@@ -66,7 +68,7 @@ function toast(msg, error = false) {
 }
 
 // Card/thumbnail images fall back through data-fallback, then to a placeholder.
-window.__imgFail = img => {
+const imgFail = img => {
   // An EVO picture not decoded yet: decode it now (cards only load near the
   // view), keep the card blank meanwhile, then show it.
   const src = img.getAttribute('src') || '';
@@ -76,7 +78,7 @@ window.__imgFail = img => {
     lazyImage(src, true, img).then(ok => {
       if (!img.isConnected) return;
       img.style.visibility = '';
-      if (ok) { img.removeAttribute('src'); img.src = src; } else window.__imgFail(img);
+      if (ok) { img.removeAttribute('src'); img.src = src; } else imgFail(img);
     });
     return;
   }
@@ -91,12 +93,62 @@ window.__imgFail = img => {
   }
 };
 
+// What an image does when it doesn't load is in its data-err, not an inline
+// onerror: the page's Content-Security-Policy (index.html) runs no inline code.
+//   fail: imgFail above; remove: try data-err-src once, then go; text: data-err-text instead.
+// 'error' doesn't bubble, so it's caught on the way down.
+document.addEventListener('error', e => {
+  const img = e.target;
+  if (!(img instanceof HTMLImageElement) || !img.dataset.err) return;
+  if (img.dataset.err === 'fail') imgFail(img);
+  else if (img.dataset.err === 'text') img.replaceWith(Object.assign(document.createElement('span'), { textContent: img.dataset.errText || '' }));
+  else if (img.dataset.errSrc) { const next = img.dataset.errSrc; img.dataset.errSrc = ''; img.src = next; }
+  else img.remove();
+}, true);
+document.addEventListener('securitypolicyviolation', e => log(`csp: ${e.violatedDirective} blocked ${e.blockedURI || 'inline code'}`));
+
 function imgTag(src, fallback, cls = 'main') {
   if (!src && !fallback) return '';
   const first = src || fallback;
   const fb = src ? (fallback || '') : '';
-  return `<img class="${cls}${!src ? ' contain' : ''}" src="${esc(first)}" data-fallback="${esc(fb)}" loading="lazy" onerror="__imgFail(this)" alt="">`;
+  return `<img class="${cls}${!src ? ' contain' : ''}" src="${esc(first)}" data-fallback="${esc(fb)}" loading="lazy" data-err="fail" alt="">`;
 }
+
+// A picture shown much smaller than it is (a 1022 px car preview on a 240 px card)
+// comes out jagged: the web view halves it at most and resizes the rest plainly.
+// The launcher's own pictures (the web's can't be read back) are redrawn at the
+// size shown, halving step by step, and swapped in; kept per picture and size.
+const sharpened = new Map(); // `${src}|${width}` -> blob URL
+function sharpen(img) {
+  const src = img.currentSrc || img.src;
+  if (!src.startsWith(`${location.origin}/`) || /\.svg(\?|$)/i.test(src) || img.classList.contains('overlay')) return;
+  const box = img.getBoundingClientRect(), dpr = window.devicePixelRatio || 1, nw = img.naturalWidth, nh = img.naturalHeight;
+  if (!nw || !nh || !box.width || !box.height) return;
+  const k = (getComputedStyle(img).objectFit === 'cover' ? Math.max : Math.min)(box.width * dpr / nw, box.height * dpr / nh);
+  if (k > 0.6) return; // near its own size: fine as it is
+  const tw = Math.min(nw, Math.ceil(nw * k / 16) * 16), th = Math.max(1, Math.round(nh * tw / nw));
+  const key = `${src}|${tw}`, swap = url => { if (img.isConnected && (img.currentSrc || img.src) === src) img.src = url; };
+  if (sharpened.has(key)) { swap(sharpened.get(key)); return; }
+  try {
+    let from = img, w = nw, h = nh;
+    const draw = (cw, ch) => {
+      const c = document.createElement('canvas');
+      c.width = cw; c.height = ch;
+      const g = c.getContext('2d');
+      g.imageSmoothingQuality = 'high';
+      g.drawImage(from, 0, 0, cw, ch);
+      return c;
+    };
+    while (w / 2 >= tw) { w = Math.ceil(w / 2); h = Math.ceil(h / 2); from = draw(w, h); }
+    draw(tw, th).toBlob(blob => {
+      if (!blob) return;
+      const url = URL.createObjectURL(blob);
+      sharpened.set(key, url);
+      swap(url);
+    }, 'image/webp', 0.92);
+  } catch { /* can't be read back: shown as it is */ }
+}
+document.addEventListener('load', e => { if (e.target instanceof HTMLImageElement) sharpen(e.target); }, true);
 
 // Track outlines on cards and detail pages (AC's outline.png, EVO's, Rally's maps)
 // come with any amount of empty space around the drawing. Each one is cropped to
@@ -833,6 +885,13 @@ async function decorateRally(items, tab) {
       i.image = rallyCarImage(i.carId);
       const text = rallyCarText(i.carId);
       i.description = text.description;
+      // The game's own figures (rallydata.js): the card's line, the detail page and the tags.
+      const f = rallyCarSpecs(i.carId);
+      if (f) {
+        i.figures = f;
+        i.specs = { bhp: `${f.hp} bhp`, torque: `${f.nm} Nm`, weight: `${f.kg} kg` };
+        i.mech = { drive: f.drive, angle: 0, lock: f.steering / 2, rotation: f.steering };
+      }
       i.rally = {
         livery: text.livery,
         liveries: liveries.filter(l => (l.meta?.car || l.carId) === i.carId).length,
@@ -888,6 +947,22 @@ function emptyState(g, tab) {
   return '';
 }
 
+// An AC car's figures for its card: power and torque (ui_car.json), driven wheels
+// and steering angle (its data, acdata.js). "420bhp" reads "420 bhp".
+const figure = v => (/\d/.test(String(v ?? '')) ? String(v).trim().replace(/(\d)\s*([a-z])/i, '$1 $2') : '');
+function carFigures(item) {
+  const s = item.specs || {}, m = item.mech;
+  return [figure(s.bhp), figure(s.torque), item.game === 'rally' ? figure(s.weight) : '', m?.drive, m?.angle ? `${m.angle}°` : ''].filter(Boolean);
+}
+// Rally's names for engines and gearboxes, as text: "Inline4" -> "Inline 4",
+// "Sequential6_7_Lever" -> "6/7-speed sequential".
+const rallyEngine = f => [`${f.cc} cc`, String(f.engine).replace(/(\D)(\d)/, '$1 $2'), { Front: tr('front'), Middle: tr('mid'), Rear: tr('rear') }[f.position], f.induction === 'Turbo' ? tr('turbo') : tr('naturally aspirated')].filter(Boolean).join(', ');
+function rallyGearbox(name) {
+  const m = /^(Manual|Sequential)(\d+)(?:_(\d+))?(?:_(\w+))?$/.exec(name || '');
+  if (!m) return name || '';
+  return `${m[2]}${m[3] ? `/${m[3]}` : ''}-speed ${m[1] === 'Manual' ? tr('manual') : tr('sequential')}${/paddle/i.test(m[4] || '') ? ` (${tr('paddle')})` : ''}`;
+}
+
 function cardHTML(item, idx) {
   const content = item.kind === 'car' || item.kind === 'track';
   const flag = !item.enabled ? `<span class="flag off">${tr('Disabled')}</span>`
@@ -902,14 +977,15 @@ function cardHTML(item, idx) {
     <div class="thumb ${item.kind === 'replay' ? 'icon' : ''}">
       ${num}
       ${imgTag(item.image, item.fallbackImage)}
-      ${item.overlay ? `<img class="overlay${item.game === 'rally' ? ' white' : ''}" src="${esc(item.overlay)}" loading="lazy" onerror="this.remove()" alt="">` : ''}
-      ${item.badge && item.image ? `<img class="badge" src="${esc(item.badge)}" loading="lazy" onerror="this.remove()" alt="">` : ''}
+      ${item.overlay ? `<img class="overlay${item.game === 'rally' ? ' white' : ''}" src="${esc(item.overlay)}" loading="lazy" data-err="remove" alt="">` : ''}
+      ${item.badge && item.image ? `<img class="badge" src="${esc(item.badge)}" loading="lazy" data-err="remove" alt="">` : ''}
       ${item.flag ? `<img class="flag-badge" src="${esc(item.flag)}" alt="">` : ''}
       ${fresh}${flag}
     </div>
     <div class="card-body">
       <div class="card-title">${esc(item.title)}</div>
       <div class="card-sub">${esc(item.subtitle || ' ')}</div>
+      ${item.kind === 'car' && (item.game === 'ac' || (item.game === 'rally' && item.figures)) ? `<div class="card-specs" title="${esc(item.game === 'rally' ? tr('Power · torque · weight · driven wheels') : tr('Power · torque · driven wheels · steering angle'))}">${esc(carFigures(item).join(' · ')) || '&nbsp;'}</div>` : ''}
       ${item.author ? `<div class="card-author">${esc(item.author)}${item.version ? ` · v${esc(item.version)}` : ''}</div>` : ''}
     </div>
   </button>`;
@@ -919,7 +995,7 @@ function filterItems(g, items) {
   let out = items;
   if (hasOfficialContent(g) && state.settings.acFilter === 'mods') out = out.filter(i => i.isMod);
   const q = state.search.trim().toLowerCase();
-  if (q) out = out.filter(i => [i.title, i.subtitle, i.author, i.id, ...(i.tags || [])].join(' ').toLowerCase().includes(q));
+  if (q) out = out.filter(i => [i.title, i.subtitle, i.author, i.id, ...(i.allTags || i.tags || [])].join(' ').toLowerCase().includes(q));
   return out;
 }
 
@@ -947,6 +1023,7 @@ async function renderMods(force = false) {
     </div>
     <div class="mods-meta"><span id="count"></span><span class="path">${esc(folder)}</span></div>
     <div id="update-note"></div>
+    <div id="tag-bar"></div>
     <div id="grid-wrap"><div class="loading">${tr('Scanning…')}</div></div>
   </div>`;
 
@@ -986,6 +1063,10 @@ async function renderMods(force = false) {
   if (g.key === 'ac' && (tab === 'cars' || tab === 'tracks')) {
     acUpdates(items).then(n => { if (n && state.view === 'mods' && state.game === g.key && currentTab(g) === tab) drawGrid(); }).catch(err => log(`updates: ${err?.message}`));
   }
+  // AC cars' drivetrain and steering, from their data (acdata.js): read once per car, then kept.
+  if (g.key === 'ac' && tab === 'cars') {
+    loadAcCarData(items).then(n => { if (n && state.view === 'mods' && state.game === g.key && currentTab(g) === tab) drawGrid(); }).catch(err => log(`car data: ${err?.message}`));
+  }
 
   // Car pages get a brand rail, like Quick Drive's: AC uses each brand's car
   // badge, EVO its brand logos (cached by Quick Drive's extras; loaded in the background).
@@ -1019,13 +1100,42 @@ async function renderMods(force = false) {
     return `<nav class="qd-brands mods-brands" id="mods-brands"><button class="qd-brand all ${on ? '' : 'active'}" data-brand="" title="${esc(tr('All brands'))}">${tr('All')}</button>${names.map(n => {
       const logo = logos.get(n);
       return `<button class="qd-brand ${n === on ? 'active' : ''}" data-brand="${esc(n)}" title="${esc(n)}">${logo
-        ? `<img src="${esc(logo)}" alt="" onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:'${esc(initials(n))}'}))">`
+        ? `<img src="${esc(logo)}" alt="" data-err="text" data-err-text="${esc(initials(n))}">`
         : `<span>${initials(n)}</span>`}</button>`;
     }).join('')}</nav>`;
   };
 
+  // Cars can be narrowed down by their tags (AC's ui_car.json "tags": drift, gt3,
+  // manual…; Rally's classes): a row of the most used ones, each with how many of
+  // the cars listed have it. Picking several keeps the cars that have them all.
+  const TAGS_SHOWN = 18;
+  let tagsOpen = false;
+  // With the tags the car's own data gives it (acdata.js): fwd / rwd / awd and its steering angle's band.
+  const tagsOf = i => [...(i.allTags || i.tags || []).map(t => String(t).trim().toLowerCase()).filter(Boolean), ...mechTags(i)];
+  const hasTags = tab === 'cars' && (g.key === 'ac' || g.key === 'rally');
+  const byTags = list => {
+    if (!hasTags) { $('#tag-bar').innerHTML = ''; return list; }
+    const known = new Set(list.flatMap(tagsOf));
+    // A tag none of the cars listed has any more (search, Mods filter) is dropped.
+    const picked = state.tags[g.key] = (state.tags[g.key] || []).filter(t => known.has(t));
+    const out = picked.length ? list.filter(i => { const own = new Set(tagsOf(i)); return picked.every(t => own.has(t)); }) : list;
+    const count = new Map();
+    for (const i of out) for (const t of new Set(tagsOf(i))) count.set(t, (count.get(t) || 0) + 1);
+    // The drivetrain and steering tags come first, in their own order, and are always shown.
+    const pinned = MECH_TAGS.filter(t => count.has(t) && !picked.includes(t)).map(t => [t, count.get(t)]);
+    const all = [...count].filter(([t]) => !picked.includes(t) && !MECH_TAGS.includes(t)).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    const shown = [...pinned, ...(tagsOpen ? all : all.slice(0, TAGS_SHOWN))];
+    $('#tag-bar').classList.toggle('open', tagsOpen);
+    $('#tag-bar').innerHTML = count.size < 2 && !picked.length ? '' : `<span class="tag-label">${tr('Tags')}</span>`
+      + picked.map(t => `<button class="tag-chip active" data-tag="${esc(t)}" title="${esc(tr('Remove this tag'))}">${esc(t)} ✕</button>`).join('')
+      + shown.map(([t, n]) => `<button class="tag-chip" data-tag="${esc(t)}">${esc(t)}<small>${n}</small></button>`).join('')
+      + (all.length > TAGS_SHOWN ? `<button class="tag-chip more" data-tags-more>${tagsOpen ? esc(tr('Fewer')) : esc(tr('{n} more', { n: all.length - TAGS_SHOWN }))}</button>` : '')
+      + (picked.length > 1 ? `<button class="tag-chip more" data-tags-clear>${esc(tr('Clear'))}</button>` : '');
+    return out;
+  };
+
   const drawGrid = () => {
-    const base = filterItems(g, items);
+    const base = byTags(filterItems(g, items));
     const rail = brandRail(base);
     // A brand that is no longer listed (search, Mods filter) falls back to All.
     if (!rail || !base.some(i => i.brand === state.brand[g.key])) state.brand[g.key] = '';
@@ -1054,6 +1164,16 @@ async function renderMods(force = false) {
   drawGrid();
 
   $('#search').oninput = e => { state.search = e.target.value; drawGrid(); };
+  $('#tag-bar').onclick = e => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    const picked = state.tags[g.key] ||= [];
+    if (b.dataset.tagsMore != null) tagsOpen = !tagsOpen;
+    else if (b.dataset.tagsClear != null) picked.length = 0;
+    else if (picked.includes(b.dataset.tag)) picked.splice(picked.indexOf(b.dataset.tag), 1);
+    else picked.push(b.dataset.tag);
+    drawGrid();
+  };
   $('#grid-wrap').onclick = async e => {
     const act = e.target.closest('[data-act]')?.dataset.act;
     if (act === 'install') return openExternal(steamUrls.install(g.appid));
@@ -1399,6 +1519,12 @@ function specsHTML(item) {
   if (item.game === 'rally' && !item.isMod && (item.kind === 'car' || item.kind === 'track')) {
     if (item.kind === 'car') {
       add('Brand', item.brand); add('Class', item.tags?.[0]);
+      const f = item.figures;
+      if (f) {
+        add('Year', String(f.year)); add('Power', `${f.hp} bhp${f.powerRpm ? ` @ ${f.powerRpm} rpm` : ''}`); add('Torque', `${f.nm} Nm${f.torqueRpm ? ` @ ${f.torqueRpm} rpm` : ''}`);
+        add('Weight', `${f.kg} kg`); add('Engine', rallyEngine(f)); add('Drivetrain', f.drive); add('Gearbox', rallyGearbox(f.gears));
+        add('Steering wheel', f.steering ? `${f.steering}°` : '');
+      }
       add('Default livery', item.rally?.livery); add('Your liveries', String(item.rally?.liveries || 0));
     } else {
       add('Location', item.locationName); add('Country', countryName(item.country)); add('Stages', String(item.layouts.length));
@@ -1407,7 +1533,11 @@ function specsHTML(item) {
   }
   if (item.kind === 'car') {
     add('Power', s.bhp); add('Torque', s.torque); add('Weight', s.weight); add('Top speed', s.topspeed);
-    add('0-100', s.acceleration); add('P/W ratio', s.pwratio); add('Year', item.year); add('Country', item.country);
+    add('0-100', s.acceleration); add('P/W ratio', s.pwratio);
+    // From the car's data (acdata.js): the front wheels' most, and the steering wheel's turn lock to lock.
+    const m = item.mech;
+    add('Drivetrain', m?.drive); add('Steering angle', m?.angle ? `${m.angle}°` : ''); add('Steering wheel', m?.lock ? `${Math.round(m.lock * 2)}°` : '');
+    add('Year', item.year); add('Country', item.country);
     add('Skins', String(item.skins?.length || 0));
   } else if (item.kind === 'track') {
     // EVO mod packages don't list layouts.
@@ -1458,10 +1588,10 @@ function openDetail(g, item, onChange) {
     <div class="detail-hero ${item.kind === 'replay' ? 'icon' : ''}">
       ${item.number != null ? `<div class="thumb" style="position:absolute;inset:0"><div class="placeholder" style="font-size:140px">#${esc(item.number)}</div></div>` : ''}
       ${imgTag(heroSrc, item.fallbackImage)}
-      ${item.overlay ? `<img class="overlay${item.game === 'rally' ? ' white' : ''}" src="${esc(item.overlay)}" onerror="this.remove()" alt="">` : ''}
+      ${item.overlay ? `<img class="overlay${item.game === 'rally' ? ' white' : ''}" src="${esc(item.overlay)}" data-err="remove" alt="">` : ''}
     </div>
     <div class="detail-body">
-      ${item.kind === 'car' && item.badge ? `<img class="detail-logo" src="${esc(item.badge)}" onerror="this.remove()" alt="">` : ''}
+      ${item.kind === 'car' && item.badge ? `<img class="detail-logo" src="${esc(item.badge)}" data-err="remove" alt="">` : ''}
       <h2>${esc(item.title)}</h2>
       <div class="detail-sub">${esc(item.subtitle || '')}</div>
       <div class="detail-actions">${actions.join('')}</div>
@@ -1502,7 +1632,7 @@ function openDetail(g, item, onChange) {
     const a = e.target.closest('[data-a]')?.dataset.a;
     if (a === 'folder') openFolder(item.path.replace(/\/[^/]+\.(kspkg)(\.disabled)?$/i, ''));
     if (a === 'url') openExternal(item.url);
-    if (a === 'open') openExternal(item.meta.file);
+    if (a === 'open') openFile(item.meta.file);
     if (a === 'update') openExternal(item.update.get);
     if (a === 'toggle') {
       try {
@@ -1673,7 +1803,7 @@ function quickDriveModal(o) {
       names.map(n => {
         const logo = o.brandLogo(n);
         return `<button class="qd-brand ${n === brand ? 'active' : ''}" data-brand="${esc(n)}" title="${esc(n)}">${logo
-          ? `<img src="${esc(logo)}" alt="" onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:'${esc(initials(n))}'}))">`
+          ? `<img src="${esc(logo)}" alt="" data-err="text" data-err-text="${esc(initials(n))}">`
           : `<span>${initials(n)}</span>`}</button>`;
       }).join('');
   };
@@ -1730,9 +1860,16 @@ function quickDriveModal(o) {
     if (strip) strip.scrollLeft = keepX;
     // l.outlineColor: a picture in its own colours (Rally's stage maps, red part driven), not
     // an outline to draw white; l.outlineFallback: tried when l.outline doesn't load.
-    el.querySelector('#qd-layouts').innerHTML = t ? `<span class="qd-layouts-name">${esc(t.title)}</span>` + t.layouts
+    // Layouts that say their group (Rally's stages: l.group, l.groupName) come a group
+    // to a line, under its name, in the order they're listed.
+    const grouped = t?.layouts.some(l => l.group) ? [...new Set(t.layouts.map(l => l.group))] : null;
+    const chips = list => list
       .map(l => `<button class="qd-layout ${l.key === sel.layout ? 'active' : ''}" data-layout="${esc(l.key)}">
-        ${l.outline ? `<img ${l.outlineColor ? 'class="color" ' : ''}src="${esc(l.outline)}" alt="" onerror="${l.outlineFallback ? `this.onerror=()=>this.remove();this.src='${esc(l.outlineFallback)}'` : 'this.remove()'}">` : ''}<span>${esc(l.name)}${l.sub ? `<small>${esc(l.sub)}</small>` : ''}</span></button>`).join('') : '';
+        ${l.outline ? `<img ${l.outlineColor ? 'class="color" ' : ''}src="${esc(l.outline)}" alt="" data-err="remove" data-err-src="${esc(l.outlineFallback || '')}">` : ''}<span>${esc(l.name)}${l.sub ? `<small>${esc(l.sub)}</small>` : ''}</span></button>`).join('');
+    el.querySelector('#qd-layouts').classList.toggle('grouped', !!grouped);
+    el.querySelector('#qd-layouts').innerHTML = !t ? ''
+      : grouped ? grouped.map(k => { const list = t.layouts.filter(l => l.group === k); return `<div class="qd-layout-group"><span class="qd-layouts-name">${esc(list[0].groupName || t.title)}</span><div class="qd-layout-chips">${chips(list)}</div></div>`; }).join('')
+      : `<span class="qd-layouts-name">${esc(t.title)}</span>` + chips(t.layouts);
     const note = drawSession();
     const pb = o.best?.(sel);
     el.querySelector('#qd-summary').innerHTML = `
@@ -2074,7 +2211,9 @@ const rallyCarImage = rallyCarPicture;
 // last look (If-Modified-Since: the site then answers 304 with no body); a
 // changed page is ~70 KB compressed.
 async function siteSync() {
-  const since = state.settings.siteModified ? `-H "If-Modified-Since: ${state.settings.siteModified}"` : '';
+  // An HTTP date ("Mon, 12 Oct 2026 08:00:00 GMT").
+  const httpDate = s => /^[A-Za-z0-9 ,:+-]{1,40}$/.test(String(s || ''));
+  const since = httpDate(state.settings.siteModified) ? `-H "If-Modified-Since: ${state.settings.siteModified}"` : '';
   const res = await run(`${CURL} -s -i -L --compressed --max-time 20 -A "Mozilla/5.0" ${since} "${SITE_PAGES.rally}"`);
   if (res.exitCode !== 0) return;
   const split = res.stdOut.lastIndexOf('\r\n\r\n', res.stdOut.indexOf('<'));
@@ -2103,13 +2242,13 @@ async function siteSync() {
   ].filter(j => !known(j.kind, j.key, j.name));
   for (const j of jobs) {
     const file = `rally-${j.kind}-${(j.key || j.name).replace(/[^A-Za-z0-9]+/g, '_')}.${j.kind === 'maps' ? 'png' : 'jpg'}`;
-    for (const url of j.kind === 'maps' ? [j.img] : imageSizes(j.img)) {
+    for (const url of (j.kind === 'maps' ? [j.img] : imageSizes(j.img)).filter(safeUrl)) {
       const r = await run(`${CURL} -s -L -f --max-time 30 -o "${join(dir, file)}" "${url}"`);
       if (r.exitCode === 0) { extra.push({ game: 'rally', kind: j.kind, key: j.key, name: j.name, file }); log(`site sync: ${j.name}`); break; }
     }
   }
   state.settings.siteSyncAt = Date.now();
-  if (modified) state.settings.siteModified = modified;
+  if (httpDate(modified)) state.settings.siteModified = modified;
   saveSettings();
   await loadSiteImages();
 }
@@ -2430,7 +2569,12 @@ async function openRallyQuickDrive() {
     // The game's own map of this stage (white, the part driven in red) where the data
     // has one, else the site's outline of the whole stage.
     const media = rallyStageMedia(id);
+    // Its stage ("Vallée de Munster") and place in it, as Rally lists them: by stage
+    // number, the full stage before the shorter ones, forward before reverse.
+    const part = /(Full|Cut|Short)?(\d*)(Forward|Reverse)$/.exec(id) || [];
     loc.layouts.push({
+      group: st.group, groupName: st.stage,
+      order: [Number(/S(\d+)/.exec(st.group)?.[1] ?? 99), st.group, ['Full', 'Cut', 'Short'].indexOf(part[1] || 'Full'), Number(part[2]) || 0, part[3] === 'Reverse' ? 1 : 0],
       key: id, name: st.name || [st.stage, tr(st.length)].filter(Boolean).join(' · '), sub: (st.name ? sub : sub.slice(2)).filter(Boolean).join(' · '), preview: stageImage,
       outline: media.chip || media.map || map, outlineColor: !!media.map, outlineFallback: media.chipRemote || media.mapRemote,
     });
@@ -2442,7 +2586,7 @@ async function openRallyQuickDrive() {
     if (t.layouts.some(l => newStages.has(l.key))) t.flag += tagNew(!!(t.image && t.flagUrl));
     t.image ||= t.flagUrl;
     t.sub = `${t.sub ? `${t.sub} · ` : ''}${trn(t.layouts.length, '1 stage', '{n} stages')}`;
-    t.layouts.sort((a, b) => a.name.localeCompare(b.name) || a.sub.localeCompare(b.sub));
+    t.layouts.sort((a, b) => a.order.map((x, n) => (typeof x === 'string' ? x.localeCompare(b.order[n]) : x - b.order[n])).find(Boolean) || a.name.localeCompare(b.name));
   }
   const trackOf = stage => tracks.find(t => t.layouts.some(l => l.key === stage));
 
@@ -4120,7 +4264,7 @@ async function openAcademyEvent(key) {
     <div class="ay-ev-cols">
       <div class="ay-ev-left">
         <div class="ay-ev-pic" id="ay-ev-pic">${imgTag(cls ? pickedCar()?.image || ev.image : ev.carImage, ev.image)}</div>
-        <div class="ay-ev-track">${ev.outline ? `<img class="overlay ay-outline${game === 'rally' ? ' color' : ''}" src="${esc(ev.outline)}" alt="" onerror="this.remove()">` : ''}<div><b>${esc(ev.trackName)}</b><small>${esc(ev.carName)}</small></div></div>
+        <div class="ay-ev-track">${ev.outline ? `<img class="overlay ay-outline${game === 'rally' ? ' color' : ''}" src="${esc(ev.outline)}" alt="" data-err="remove">` : ''}<div><b>${esc(ev.trackName)}</b><small>${esc(ev.carName)}</small></div></div>
         ${ev.description && ev.group !== 'special' ? `<p class="ay-ev-desc">${esc(tr(ev.description))}</p>` : ''}
       </div>
       <div class="ay-ev-right">
@@ -4721,7 +4865,7 @@ const PATH_SETTINGS = [
   { game: 'rally', key: 'rally_install', label: 'Rally game folder', get: p => p.rally.install },
 ];
 
-const REPO_URL = 'https://github.com/Zelbrad/AssettoLauncher';
+const REPO_URL = 'https://github.com/tawndelli/AssettoLauncher';
 const KOFI_URL = 'https://ko-fi.com/gperpas';
 
 // ---------------------------------------------------------------------------
@@ -5443,7 +5587,7 @@ async function setupWindow() {
   syncMaximized();
   window.addEventListener('resize', syncMaximized);
   try {
-    await Neutralino.window.setDraggableRegion('titlebar', { exclude: [$('#nav'), $('.win-controls'), $('#install-pill')] });
+    await Neutralino.window.setDraggableRegion('titlebar', { exclude: [...document.querySelectorAll('#nav button, .win-controls button'), $('#install-pill')] });
   } catch (e) { log(`drag region failed ${JSON.stringify(e)}`); }
 }
 

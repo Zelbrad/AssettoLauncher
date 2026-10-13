@@ -3,8 +3,9 @@
 # launcher have:
 #   stages  in-game stage names ("La Bollène-Vésubie - Turini")
 #   groups  stage group names and descriptions ("Col de Turini", "Discover the beautiful roads…")
-#   cars    each car's description, the name of its default livery ("Erreffe Team 2025")
-#           and its picture (below)
+#   cars    each car's description, the name of its default livery ("Erreffe Team 2025"),
+#           its picture (below) and its figures (power, torque, weight, engine, driven
+#           wheels, gearbox, steering), from Data/Database/Main/CarSelection/DT_Cars
 #   setup   the Car Setup menu's labels for each setup value ("Front Bias", "Front Left", "Dampers")
 #   ai      each stage variant's time for each car, in ms, from the AI's sector timings in
 #           Data/Database/Main/AI/DT_AITrackVariantsCarsData (the Academy's reference times)
@@ -345,6 +346,73 @@ def ai_times(game):
     return out
 
 
+# Each car's figures, as the game's car selection lists them: DT_Cars (a cooked
+# DataTable like the AI's) has, per car, its year, displacement (cc), power (hp),
+# torque (Nm) and weight (kg), then rows of other tables for the engine, where it
+# sits, its induction, the driven wheels, the gearbox and the steering, and further
+# on the revs of peak power and torque. DT_SteeringAngles gives the steering wheel's
+# turn lock to lock, in degrees. Rows are named as the save names the cars, bar the case.
+DB = '../../../acr/Content/Data/Database/Main/CarSelection/'
+DRIVES = {'Front': 'FWD', 'Rear': 'RWD', 'Four': 'AWD'}
+
+def car_specs(stores):
+    def table(name):
+        for s in stores:
+            if DB + name + '.uasset' in s.paths:
+                b = s.read(s.paths[DB + name + '.uasset'])
+                return zen_names(b), b[struct.unpack_from('<I', b, 4)[0]:]
+        raise SystemExit(f'no {name}: has the game moved it?')
+    names, d = table('DT_SteeringAngles')
+    i32 = lambda o: struct.unpack_from('<i', d, o)[0]
+    u16 = lambda o: struct.unpack_from('<H', d, o)[0]
+    steering = {}
+    # A row: its name, a header, the degrees, its picture's row (Textures), then a few bytes that vary.
+    picture = struct.pack('<Hii', 0x0500, names.index('Textures'), 0)
+    p = 14
+    for _ in range(i32(10)):
+        p = d.index(picture, p) - 14
+        if u16(p + 8) != 0x0700 or i32(p + 4) != 0: raise SystemExit('DT_SteeringAngles: unexpected layout')
+        steering[names[i32(p)]] = i32(p + 10)
+        p += 32
+
+    names, d = table('DT_Cars')
+    def handle(p, want):
+        if u16(p) != 0x0500 or names[i32(p + 2)] != want: raise SystemExit(f'DT_Cars: expected a {want} row at {p}')
+        return names[i32(p + 10)], p + 18
+    def text(p):
+        if i32(p) != 0 or d[p + 4] != 0x0b: raise SystemExit(f'DT_Cars: expected a text at {p}')
+        return p + 17 + i32(p + 13)
+    cars, out = {c.lower(): c for c in CARS}, {}
+    presets = struct.pack('<Hii', 0x0500, names.index('CarsPresets'), 0)
+    p = 14
+    for _ in range(i32(10)):
+        row = names[i32(p)]
+        if u16(p + 8) != 0x3500: raise SystemExit(f'DT_Cars: unexpected row {row}')
+        _, p = handle(p + 10, 'Manufacturers')
+        p = text(text(p))
+        year, _, _, cc, hp, nm = struct.unpack_from('<6i', d, p)
+        kg, = struct.unpack_from('<f', d, p + 24)
+        p += 28
+        engine, p = handle(p, 'EngineTypes')
+        position, p = handle(p, 'EnginePositions')
+        induction, p = handle(p, 'Inductions')
+        drive, p = handle(p, 'WheelDrives')
+        gears, p = handle(p, 'GearsTypes')
+        steer, p = handle(p, 'SteeringAngle')
+        p = d.index(presets, p) + 18
+        power_rpm, torque_rpm = struct.unpack_from('<2i', d, p)
+        p = d.index(struct.pack('<Hii', 0x0500, names.index('CarsTextures'), 0), p)
+        for _ in range(4): p = d.index(struct.pack('<Hii', 0x0500, names.index('CarsTextures'), 0), p) + 18  # its four pictures end the row
+        if row.lower() not in cars: print(f'car {row} is not in CARS: its figures are left out'); continue
+        if drive not in DRIVES: raise SystemExit(f'DT_Cars: unknown wheel drive {drive}')
+        out[cars[row.lower()]] = {
+            'year': year, 'cc': cc, 'hp': hp, 'nm': nm, 'kg': round(kg), 'engine': engine, 'position': position,
+            'induction': induction, 'drive': DRIVES[drive], 'gears': gears, 'steering': steering.get(steer, 0),
+            'powerRpm': power_rpm, 'torqueRpm': torque_rpm,
+        }
+    return out
+
+
 def chip(img):
     """The map for Quick Drive's small stage buttons: only the stage (white) and the part
     driven (red), lines thickened so they still read at 34 px; no start/finish icons."""
@@ -484,6 +552,7 @@ def main():
     paks = os.path.join(game, 'acr', 'Content', 'Paks')
     stores = [IoStore(os.path.join(paks, f)) for f in sorted(os.listdir(paks)) if f.endswith('.utoc')]
     for c, rel in export_cars(stores).items(): cars[c]['picture'] = rel
+    for c, specs in car_specs(stores).items(): cars[c]['specs'] = specs
     media = export_media(game)
     data = {'updated': datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'), 'build': build,
             'languages': LANGS, 'groups': groups, 'stages': stages, 'cars': cars, 'media': media, 'setup': setup, 'ai': ai}
