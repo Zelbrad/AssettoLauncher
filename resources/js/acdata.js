@@ -89,18 +89,22 @@ export async function loadAcCarData(items) {
   return todo.length;
 }
 
-// The tags a car's figures give it on the Mods page: 'fwd' | 'rwd' | 'awd' and
-// its steering angle's band.
-export const STEER_BANDS = ['steering under 20°', 'steering 20–30°', 'steering 30–40°', 'steering 40–50°', 'steering 50°+'];
-// Rally gives the steering wheel's turn lock to lock instead (m.rotation, main.js decorateRally).
+// The steering wheel's turn lock to lock, in degrees: Rally gives it (m.rotation, main.js
+// decorateRally); AC and EVO give the lock to one side (m.lock).
+export const wheelTurn = m => Math.round(m?.rotation || (m?.lock ? m.lock * 2 : 0));
+
+// The tags a car's figures give it on the Mods page: 'fwd' | 'rwd' | 'awd', its gearbox
+// and its steering wheel turn's band.
 export const WHEEL_BANDS = ['steering wheel under 600°', 'steering wheel 600–900°', 'steering wheel over 900°'];
-export const MECH_TAGS = ['fwd', 'rwd', 'awd', ...STEER_BANDS, ...WHEEL_BANDS];
+// EVO's and Rally's gearboxes (m.gearbox): an H-pattern manual, sequential, dual clutch, one speed (electric).
+export const GEARBOXES = ['manual', 'sequential', 'dual clutch', 'single speed'];
+export const MECH_TAGS = ['fwd', 'rwd', 'awd', ...GEARBOXES, ...WHEEL_BANDS];
 export function mechTags(item) {
   const m = item.mech;
   if (!m) return [];
   return [
-    m.drive.toLowerCase(),
-    m.angle ? STEER_BANDS[Math.max(0, Math.min(4, Math.floor(m.angle / 10) - 1))] : '',
-    m.rotation ? WHEEL_BANDS[m.rotation < 600 ? 0 : m.rotation <= 900 ? 1 : 2] : '',
+    (m.drive || '').toLowerCase(),
+    m.gearbox || '',
+    wheelTurn(m) ? WHEEL_BANDS[wheelTurn(m) < 600 ? 0 : wheelTurn(m) <= 900 ? 1 : 2] : '',
   ].filter(Boolean);
 }

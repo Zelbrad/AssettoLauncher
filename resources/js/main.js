@@ -9,7 +9,7 @@ import { SITE_PAGES, siteMaps, rallyStagePhotos, imageSizes, stageGroupOf, words
 import { acBests, acBestKey, evoBests, evoBestKey, lapTime } from './bests.js';
 import { checkMods } from './health.js';
 import { acUpdates, cupDetails } from './updates.js';
-import { loadAcCarData, mechTags, MECH_TAGS } from './acdata.js';
+import { loadAcCarData, mechTags, MECH_TAGS, wheelTurn } from './acdata.js';
 import { listBackups, createBackup, restoreBackup, deleteBackup, autoBackups, backupsRoot } from './backups.js';
 import { findSteamPath, findInstalledApps, getNews, cachedNews, refreshNews, getStoreDetails, newsPageUrl, steamUrls, appBuilds } from './steam.js';
 import { quickDrive, readAcSession, defaultAcSession, acWeathers, roadTemperature, presetForType, AC_MODES, AC_GRIP, AC_ASSIST_PRESETS } from './quickdrive.js';
@@ -838,12 +838,23 @@ function currentTab(g) {
   return state.tab[g.key] || g.tabs[0].id;
 }
 
+// EVO's own cars and tracks (and their pictures) come from content.kspkg. When it
+// changes while the launcher is open (a game update, a tool that edits it), its
+// pictures are rebuilt under a new key, so the lists are read again.
+async function evoContentStamp() {
+  if (!state.paths?.evo?.install) return '';
+  const st = await Neutralino.filesystem.getStats(join(state.paths.evo.install, 'content.kspkg')).catch(() => null);
+  return st ? `${st.size}-${st.modifiedAt}` : '';
+}
+
 async function getItems(g, tab, force = false, onProgress) {
   const key = `${g.key}:${tab}`;
-  if (!force && state.cache[key]) return state.cache[key];
+  const stamp = g.key === 'evo' ? await evoContentStamp() : '';
+  if (!force && state.cache[key] && state.cache[key].stamp === stamp) return state.cache[key];
   const items = await SCANNERS[g.key][tab](state.paths, onProgress);
   if (g.key === 'rally' && (tab === 'cars' || tab === 'tracks')) await decorateRally(items, tab);
   if (tab === 'setups') await decorateSetups(g, items);
+  items.stamp = stamp;
   state.cache[key] = items;
   return items;
 }
@@ -890,7 +901,7 @@ async function decorateRally(items, tab) {
       if (f) {
         i.figures = f;
         i.specs = { bhp: `${f.hp} bhp`, torque: `${f.nm} Nm`, weight: `${f.kg} kg` };
-        i.mech = { drive: f.drive, angle: 0, lock: f.steering / 2, rotation: f.steering };
+        i.mech = { drive: f.drive, rotation: f.steering, gearbox: /^Manual/.test(f.gears) ? 'manual' : 'sequential' };
       }
       i.rally = {
         livery: text.livery,
@@ -947,12 +958,12 @@ function emptyState(g, tab) {
   return '';
 }
 
-// An AC car's figures for its card: power and torque (ui_car.json), driven wheels
-// and steering angle (its data, acdata.js). "420bhp" reads "420 bhp".
+// A car's figures for its card: power and torque, driven wheels and the steering
+// wheel's turn lock to lock (acdata.js wheelTurn). "420bhp" reads "420 bhp".
 const figure = v => (/\d/.test(String(v ?? '')) ? String(v).trim().replace(/(\d)\s*([a-z])/i, '$1 $2') : '');
 function carFigures(item) {
   const s = item.specs || {}, m = item.mech;
-  return [figure(s.bhp), figure(s.torque), item.game === 'rally' ? figure(s.weight) : '', m?.drive, m?.angle ? `${m.angle}°` : ''].filter(Boolean);
+  return [figure(s.bhp), figure(s.torque), m?.drive, wheelTurn(m) ? `${wheelTurn(m)}°` : ''].filter(Boolean);
 }
 // Rally's names for engines and gearboxes, as text: "Inline4" -> "Inline 4",
 // "Sequential6_7_Lever" -> "6/7-speed sequential".
@@ -985,7 +996,7 @@ function cardHTML(item, idx) {
     <div class="card-body">
       <div class="card-title">${esc(item.title)}</div>
       <div class="card-sub">${esc(item.subtitle || ' ')}</div>
-      ${item.kind === 'car' && (item.game === 'ac' || (item.game === 'rally' && item.figures)) ? `<div class="card-specs" title="${esc(item.game === 'rally' ? tr('Power · torque · weight · driven wheels') : tr('Power · torque · driven wheels · steering angle'))}">${esc(carFigures(item).join(' · ')) || '&nbsp;'}</div>` : ''}
+      ${item.kind === 'car' && (item.game === 'ac' || (item.game === 'rally' && item.figures) || (item.game === 'evo' && item.mech)) ? `<div class="card-specs" title="${esc(tr('Power · torque · driven wheels · steering wheel rotation, lock to lock'))}">${esc(carFigures(item).join(' · ')) || '&nbsp;'}</div>` : ''}
       ${item.author ? `<div class="card-author">${esc(item.author)}${item.version ? ` · v${esc(item.version)}` : ''}</div>` : ''}
     </div>
   </button>`;
@@ -1106,13 +1117,13 @@ async function renderMods(force = false) {
   };
 
   // Cars can be narrowed down by their tags (AC's ui_car.json "tags": drift, gt3,
-  // manual…; Rally's classes): a row of the most used ones, each with how many of
+  // manual…; Rally's classes; EVO's own categories): a row of the most used ones, each with how many of
   // the cars listed have it. Picking several keeps the cars that have them all.
   const TAGS_SHOWN = 18;
   let tagsOpen = false;
-  // With the tags the car's own data gives it (acdata.js): fwd / rwd / awd and its steering angle's band.
+  // With the tags the car's own data gives it (acdata.js): fwd / rwd / awd, gearbox and its steering wheel turn's band.
   const tagsOf = i => [...(i.allTags || i.tags || []).map(t => String(t).trim().toLowerCase()).filter(Boolean), ...mechTags(i)];
-  const hasTags = tab === 'cars' && (g.key === 'ac' || g.key === 'rally');
+  const hasTags = tab === 'cars' && (g.key === 'ac' || g.key === 'rally' || g.key === 'evo');
   const byTags = list => {
     if (!hasTags) { $('#tag-bar').innerHTML = ''; return list; }
     const known = new Set(list.flatMap(tagsOf));
@@ -1523,7 +1534,7 @@ function specsHTML(item) {
       if (f) {
         add('Year', String(f.year)); add('Power', `${f.hp} bhp${f.powerRpm ? ` @ ${f.powerRpm} rpm` : ''}`); add('Torque', `${f.nm} Nm${f.torqueRpm ? ` @ ${f.torqueRpm} rpm` : ''}`);
         add('Weight', `${f.kg} kg`); add('Engine', rallyEngine(f)); add('Drivetrain', f.drive); add('Gearbox', rallyGearbox(f.gears));
-        add('Steering wheel', f.steering ? `${f.steering}°` : '');
+        add('Steering wheel', f.steering ? tr('{n}° lock to lock', { n: f.steering }) : '');
       }
       add('Default livery', item.rally?.livery); add('Your liveries', String(item.rally?.liveries || 0));
     } else {
@@ -1536,7 +1547,8 @@ function specsHTML(item) {
     add('0-100', s.acceleration); add('P/W ratio', s.pwratio);
     // From the car's data (acdata.js): the front wheels' most, and the steering wheel's turn lock to lock.
     const m = item.mech;
-    add('Drivetrain', m?.drive); add('Steering angle', m?.angle ? `${m.angle}°` : ''); add('Steering wheel', m?.lock ? `${Math.round(m.lock * 2)}°` : '');
+    add('Drivetrain', m?.drive); add('Gearbox', m?.gearbox ? `${m.gears > 1 ? `${m.gears}-speed ` : ''}${tr(m.gearbox)}` : '');
+    add('Steering wheel', wheelTurn(m) ? tr('{n}° lock to lock', { n: wheelTurn(m) }) : '');
     add('Year', item.year); add('Country', item.country);
     add('Skins', String(item.skins?.length || 0));
   } else if (item.kind === 'track') {
