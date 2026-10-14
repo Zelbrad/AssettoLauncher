@@ -364,10 +364,14 @@ function gridFields(bytes, grid, maxOpponents) {
 // Track, timing and AI grid of every session of the selected mode. session.arch
 // names one of the layout's Driving Academy containers ("Academy R1-1", see
 // kspkg.js) instead: the car starts at its start arch, behind its lights, and a
-// race's split is taken at its finish arch (one driver only).
+// race's split is taken at its finish arch (one driver only). session.flying puts
+// an Instant Race on the layout's Hotstint container, when it has one (one driver):
+// the car starts on track near the line, with no pit exit or out-lap. (A Practice
+// there never leaves EVO's loading screen.)
 async function writeGameMode(session, track, layout, contentPkg) {
   const mode = session.mode, m = EVO_MODES[mode];
-  const c = session.arch ? layout.arches?.find(a => a.container === session.arch) : layout[m.container];
+  const c = session.arch ? layout.arches?.find(a => a.container === session.arch)
+    : (session.flying && mode === 'race' && layout.hotstint) || layout[m.container];
   if (!c) throw new Error(session.arch ? `${track.name} ${layout.name} has no "${session.arch}" in EVO.` : `${track.name} ${layout.name} has no ${m.label} layout in EVO.`);
   const file = join(await saveRoot(), `GameModes/${m.file}.gamemodesave`);
   let data = await readBin(file);
@@ -459,7 +463,8 @@ export async function prepareEvoSession({ session, track, layout, carGuid, conte
   await writeGameMode(session, track, layout, contentPkg);
   await writeLastGameMode(session.mode, session.weather);
   if (carGuid) await setCurrentCar(carGuid);
-  log(`evo ${session.mode}: ${track.name} / ${layout.name}${session.arch ? ` (${session.arch})` : ''} car ${carGuid || '(current)'} ${JSON.stringify(session.weather)}`);
+  const flying = session.flying && session.mode === 'race' && layout.hotstint;
+  log(`evo ${session.mode}: ${track.name} / ${layout.name}${session.arch ? ` (${session.arch})` : flying ? ` (${layout.hotstint.container})` : ''} car ${carGuid || '(current)'} ${JSON.stringify(session.weather)}`);
 }
 
 // Launch through Steam: started directly, the exe can fail Steam's ownership

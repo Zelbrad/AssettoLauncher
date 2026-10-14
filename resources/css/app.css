@@ -591,7 +591,7 @@ select { background: #222; border: 1px solid #383838; border-radius: 6px; height
 #drop-overlay { position: fixed; inset: 0; z-index: 80; display: none; place-items: center; background: rgba(10,10,10,.78); backdrop-filter: blur(3px); pointer-events: none; }
 #drop-overlay.show { display: grid; }
 .drop-box { zoom: var(--page-zoom); width: 520px; padding: 44px 40px; border: 2px dashed var(--red); border-radius: 16px; background: rgba(24,24,24,.9); text-align: center; display: flex; flex-direction: column; align-items: center; gap: 10px; }
-.drop-box .drop-icon { width: 64px; height: 64px; border-radius: 50%; background: var(--red); display: grid; place-items: center; font-size: 34px; line-height: 1; }
+.drop-box .drop-icon { flex: none; width: 64px; height: 64px; border-radius: 50%; background: var(--red); display: grid; place-items: center; font-size: 34px; line-height: 1; }
 .drop-box b { font-family: var(--font-head); font-weight: 400; font-size: 34px; text-transform: uppercase; letter-spacing: .02em; }
 .drop-box span { color: var(--muted); font-size: 13.5px; line-height: 1.6; }
 .modal.imp-modal { width: min(860px, 100%); display: flex; flex-direction: column; }
@@ -862,12 +862,16 @@ body:has(#app-update-bar) #toast { bottom: 78px; }
 .ay-medal.gold { background: var(--gold); }
 .ay-medal.silver { background: var(--silver); }
 .ay-medal.bronze { background: var(--bronze); }
-.ay-dots { display: inline-flex; gap: 4px; }
-.ay-dot { width: 12px; height: 12px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px #444; }
-.ay-dot.on.bronze { background: var(--bronze); box-shadow: none; }
-.ay-dot.on.silver { background: var(--silver); box-shadow: none; }
-.ay-dot.on.gold { background: var(--gold); box-shadow: none; }
-.ay-dot.on.platinum { background: var(--platinum); box-shadow: none; }
+/* An event's medals: a short slanted bar for each, side by side: its metal once
+   won, an empty frame (the border inside the bar) until then. The row is slanted as
+   one, not each bar, so the gaps come out the same at any display scale. */
+.ay-dots { flex: none; display: inline-flex; gap: 3px; padding: 0 3px; transform: skewX(-18deg); }
+.ay-dot { flex: none; box-sizing: border-box; width: 11px; height: 16px; border: 1px solid rgba(255, 255, 255, .22); border-radius: 1px; }
+.ay-dot.on { border: 0; background: var(--m, #555); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .35); }
+.ay-dot.bronze { --m: var(--bronze); }
+.ay-dot.silver { --m: var(--silver); }
+.ay-dot.gold { --m: var(--gold); }
+.ay-dot.platinum { --m: var(--platinum); }
 .ay-empty { padding: 60px 0; color: var(--muted); }
 .ay-none { color: var(--muted); padding: 10px 2px; grid-column: 1 / -1; }
 
@@ -988,7 +992,7 @@ body:has(#app-update-bar) #toast { bottom: 78px; }
 .ay-running-text span { font-size: 12.5px; color: var(--muted); }
 .ay-running-hint { margin-top: 3px; color: #c9c9c9 !important; }
 .ay-live { display: inline-flex; align-items: center; gap: 8px; font-family: var(--font-display); font-size: 10px; letter-spacing: .06em; text-transform: uppercase; }
-.ay-live i { width: 8px; height: 8px; border-radius: 50%; background: var(--red); animation: ayPulse 1.4s ease-in-out infinite; }
+.ay-live i { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--red); animation: ayPulse 1.4s ease-in-out infinite; }
 @keyframes ayPulse { 50% { opacity: .25; } }
 .ay-running .btn { flex: none; min-width: 120px; }
 
@@ -1071,7 +1075,7 @@ button.ay-target.picked { border-color: var(--red); border-radius: 6px; }
 .modal.ay-result-modal { width: 540px; }
 .ay-result .sx-kicker { padding: 0 40px; line-height: 1.5; }
 .ay-result { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 30px 30px 24px; text-align: center; }
-.ay-result-medal { width: 92px; height: 92px; margin: 10px 0 4px; border-radius: 50%; display: grid; place-items: center; background: #262626; color: #777; }
+.ay-result-medal { flex: none; width: 92px; height: 92px; margin: 10px 0 4px; border-radius: 50%; display: grid; place-items: center; background: #262626; color: #777; }
 .ay-result-medal svg { width: 40px; height: 40px; }
 .ay-result-medal.platinum { background: var(--platinum); color: #1a1a1a; }
 .ay-result-medal.gold { background: var(--gold); color: #1a1a1a; }

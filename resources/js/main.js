@@ -2,7 +2,7 @@ import { GAMES, gameByKey, resolvePaths, SCANNERS, setEnabled, contentFolder, ev
 import { ACC_TRACKS, ACC_MODES, ACC_WEATHER, ACC_TIME_SPEEDS, accSeasonName, accOwnedDlcs, accModelOwned, accTrackOwned, accSeasonOwned, accModelClass, readAccSession, accCustomCars, writeAccSession, ensureModelCar } from './acclaunch.js';
 import { readRallySave, rallyStage, writeRallySession, rallyBests, rallyRecords, RALLY_WEATHER_IDS, RALLY_KNOWN_STAGES, rallyCover, rallySelectedLiveries, RALLY_WEATHERS, RALLY_TIME_SPEEDS, RALLY_FORECAST_PROBABILITY, RALLY_PERSISTENCE, RALLY_GRIP, rallyLocationWeathers, rallyWeatherFor } from './rallylaunch.js';
 import { loadRallyData, refreshRallyData, rallyGroupText, rallyGroupName, rallyCarText, rallyCarPicture, rallyStageMedia, rallyAiTime } from './rallydata.js';
-import { TIERS, AC_LEVELS, academyProgress, eventTier, acCareer, acSpecialEvents, seriesState, seriesGoalText, seriesLocked, nextRound, standings, goalValue, scoreText, betterScore, startAcEvent, writeAcEvent, readAcResult, recordResult, setLastEvent, restartChampionship, useAcademyStore, evoAcademy, rallyAcademy, levelMedals, levelLocked, levelBefore, levelGolds, bonusLocked, levelEvents, driverLevel, srOf, srGrade, srGradeMin, srLoss, changeSR, srShort, srReader, evoSessionFor, readEvoResult, evoResultFile, readEvoSprint, sprintReader, raceReader, lapReader, acClasses, classEventLocked, classSession, classGrid } from './academy.js';
+import { TIERS, AC_LEVELS, academyProgress, eventTier, acCareer, acSpecialEvents, seriesState, seriesGoalText, seriesLocked, nextRound, standings, goalValue, scoreText, betterScore, startAcEvent, writeAcEvent, readAcResult, recordResult, tierFor, setLastEvent, restartChampionship, useAcademyStore, evoAcademy, rallyAcademy, levelMedals, levelLocked, levelBefore, levelGolds, bonusLocked, levelEvents, driverLevel, srOf, srGrade, srGradeMin, srLoss, changeSR, srShort, srReader, evoSessionFor, readEvoResult, evoResultFile, evoLapTooShort, readEvoSprint, sprintReader, raceReader, lapReader, acClasses, classEventLocked, classSession, classGrid } from './academy.js';
 import { RALLY_RELEASED } from './academy-data.js';
 import { setupGroups, compareGroups, positionLabel, setupTrackName, renameSetup, duplicateSetup, deleteSetup, exportSetup, exportName, readSetupFile, importSetup, setupSig, allSetupRuns, runsOf, addSetupRun, readAcRun, ACC_SETUP_CARS } from './setups.js';
 import { SITE_PAGES, siteMaps, rallyStagePhotos, imageSizes, stageGroupOf, words } from './sitecatalog.js';
@@ -22,7 +22,7 @@ import { IMPORT_RE, resolveDropped, prepareImport, installItem, setItemCar, carC
 import { syncEvoTrackList, restoreEvoTrackList, evoTrackListStatus } from './evotracks.js';
 import { readEvoExtras, readCarPresets, isLazyImage, lazyImage } from './kspkg.js';
 import { latestRelease, isNewer, isInstalledCopy, installUpdate } from './appupdate.js';
-import { esc, timeAgo, openExternal, openFolder, powershellEncodedCommand, storageGet, storageSet, norm, log, exists, basename, prettifyId, fileUrl, mountDir, listDir, join, run, runningProcesses, stopProcess, readText, writeText, ensureDir, overlayFile, CURL, NULL_DEV, IS_LINUX } from './util.js';
+import { esc, timeAgo, openExternal, openFile, openFolder, safeUrl, powershellEncodedCommand, storageGet, storageSet, norm, log, exists, basename, prettifyId, fileUrl, mountDir, listDir, join, run, runningProcesses, stopProcess, readText, writeText, ensureDir, overlayFile, CURL, NULL_DEV, IS_LINUX } from './util.js';
 import { tr, trn, N_, loadLanguage, systemLanguage, LANGUAGES, lang } from './i18n.js';
 
 Neutralino.init();
@@ -66,7 +66,7 @@ function toast(msg, error = false) {
 }
 
 // Card/thumbnail images fall back through data-fallback, then to a placeholder.
-window.__imgFail = img => {
+function imgFail(img) {
   // An EVO picture not decoded yet: decode it now (cards only load near the
   // view), keep the card blank meanwhile, then show it.
   const src = img.getAttribute('src') || '';
@@ -76,7 +76,7 @@ window.__imgFail = img => {
     lazyImage(src, true, img).then(ok => {
       if (!img.isConnected) return;
       img.style.visibility = '';
-      if (ok) { img.removeAttribute('src'); img.src = src; } else window.__imgFail(img);
+      if (ok) { img.removeAttribute('src'); img.src = src; } else imgFail(img);
     });
     return;
   }
@@ -89,13 +89,27 @@ window.__imgFail = img => {
     img.style.display = 'none';
     img.closest('.thumb, .detail-hero')?.classList.add('noimg');
   }
-};
+}
+
+// Image errors: <img data-err> says what to do, so there are no inline onerror
+// handlers (text from data files inside one could run as code).
+// "fallback": imgFail. "remove": data-fallback once if set, then remove the
+// image. "initials": replace it with a span of data-initials.
+document.addEventListener('error', e => {
+  const img = e.target;
+  const how = img instanceof HTMLImageElement && img.dataset.err;
+  if (!how) return;
+  if (how === 'fallback') return imgFail(img);
+  if (how === 'initials') return img.replaceWith(Object.assign(document.createElement('span'), { textContent: img.dataset.initials || '' }));
+  const next = img.dataset.fallback;
+  if (next) { img.dataset.fallback = ''; img.src = next; } else img.remove();
+}, true);
 
 function imgTag(src, fallback, cls = 'main') {
   if (!src && !fallback) return '';
   const first = src || fallback;
   const fb = src ? (fallback || '') : '';
-  return `<img class="${cls}${!src ? ' contain' : ''}" src="${esc(first)}" data-fallback="${esc(fb)}" loading="lazy" onerror="__imgFail(this)" alt="">`;
+  return `<img class="${cls}${!src ? ' contain' : ''}" src="${esc(first)}" data-fallback="${esc(fb)}" loading="lazy" data-err="fallback" alt="">`;
 }
 
 // Track outlines on cards and detail pages (AC's outline.png, EVO's, Rally's maps)
@@ -902,8 +916,8 @@ function cardHTML(item, idx) {
     <div class="thumb ${item.kind === 'replay' ? 'icon' : ''}">
       ${num}
       ${imgTag(item.image, item.fallbackImage)}
-      ${item.overlay ? `<img class="overlay${item.game === 'rally' ? ' white' : ''}" src="${esc(item.overlay)}" loading="lazy" onerror="this.remove()" alt="">` : ''}
-      ${item.badge && item.image ? `<img class="badge" src="${esc(item.badge)}" loading="lazy" onerror="this.remove()" alt="">` : ''}
+      ${item.overlay ? `<img class="overlay${item.game === 'rally' ? ' white' : ''}" src="${esc(item.overlay)}" loading="lazy" data-err="remove" alt="">` : ''}
+      ${item.badge && item.image ? `<img class="badge" src="${esc(item.badge)}" loading="lazy" data-err="remove" alt="">` : ''}
       ${item.flag ? `<img class="flag-badge" src="${esc(item.flag)}" alt="">` : ''}
       ${fresh}${flag}
     </div>
@@ -1019,7 +1033,7 @@ async function renderMods(force = false) {
     return `<nav class="qd-brands mods-brands" id="mods-brands"><button class="qd-brand all ${on ? '' : 'active'}" data-brand="" title="${esc(tr('All brands'))}">${tr('All')}</button>${names.map(n => {
       const logo = logos.get(n);
       return `<button class="qd-brand ${n === on ? 'active' : ''}" data-brand="${esc(n)}" title="${esc(n)}">${logo
-        ? `<img src="${esc(logo)}" alt="" onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:'${esc(initials(n))}'}))">`
+        ? `<img src="${esc(logo)}" alt="" data-err="initials" data-initials="${initials(n)}">`
         : `<span>${initials(n)}</span>`}</button>`;
     }).join('')}</nav>`;
   };
@@ -1435,7 +1449,9 @@ function openDetail(g, item, onChange) {
   if (item.kind === 'screenshot') actions.push(`<button class="btn primary small" data-a="open">${tr('Open picture')}</button>`);
   if (item.toggle) actions.push(`<button class="btn small ${item.enabled ? 'subtle' : 'primary'}" data-a="toggle">${item.enabled ? tr('Disable') : tr('Enable')}</button>`);
   actions.push(`<button class="btn small subtle" data-a="folder">${tr('Open folder')}</button>`);
-  if (item.url) actions.push(`<button class="btn small subtle" data-a="url">${tr('Author page')} ↗</button>`);
+  // The mod's "url": web pages only (a bare "www.…" gets https://).
+  const authorUrl = /^https?:\/\//i.test(item.url || '') ? item.url : /^www\./i.test(item.url || '') ? `https://${item.url}` : '';
+  if (authorUrl) actions.push(`<button class="btn small subtle" data-a="url">${tr('Author page')} ↗</button>`);
   if (item.update) actions.push(`<button class="btn small primary" data-a="update" title="${esc(tr("Opens the download Content Manager's update registry lists"))}">${tr('Get update')} v${esc(item.update.version)} ↗</button>`);
   if (uninstallPaths(item).length) actions.push(`<button class="btn small danger" data-a="uninstall" title="${esc(isMedia ? tr('Moves the file to the Recycle Bin') : tr("Moves the mod's files to the Recycle Bin"))}">${removeLabel}</button>`);
 
@@ -1458,10 +1474,10 @@ function openDetail(g, item, onChange) {
     <div class="detail-hero ${item.kind === 'replay' ? 'icon' : ''}">
       ${item.number != null ? `<div class="thumb" style="position:absolute;inset:0"><div class="placeholder" style="font-size:140px">#${esc(item.number)}</div></div>` : ''}
       ${imgTag(heroSrc, item.fallbackImage)}
-      ${item.overlay ? `<img class="overlay${item.game === 'rally' ? ' white' : ''}" src="${esc(item.overlay)}" onerror="this.remove()" alt="">` : ''}
+      ${item.overlay ? `<img class="overlay${item.game === 'rally' ? ' white' : ''}" src="${esc(item.overlay)}" data-err="remove" alt="">` : ''}
     </div>
     <div class="detail-body">
-      ${item.kind === 'car' && item.badge ? `<img class="detail-logo" src="${esc(item.badge)}" onerror="this.remove()" alt="">` : ''}
+      ${item.kind === 'car' && item.badge ? `<img class="detail-logo" src="${esc(item.badge)}" data-err="remove" alt="">` : ''}
       <h2>${esc(item.title)}</h2>
       <div class="detail-sub">${esc(item.subtitle || '')}</div>
       <div class="detail-actions">${actions.join('')}</div>
@@ -1501,8 +1517,8 @@ function openDetail(g, item, onChange) {
     }
     const a = e.target.closest('[data-a]')?.dataset.a;
     if (a === 'folder') openFolder(item.path.replace(/\/[^/]+\.(kspkg)(\.disabled)?$/i, ''));
-    if (a === 'url') openExternal(item.url);
-    if (a === 'open') openExternal(item.meta.file);
+    if (a === 'url') openExternal(authorUrl);
+    if (a === 'open') openFile(item.meta.file);
     if (a === 'update') openExternal(item.update.get);
     if (a === 'toggle') {
       try {
@@ -1673,7 +1689,7 @@ function quickDriveModal(o) {
       names.map(n => {
         const logo = o.brandLogo(n);
         return `<button class="qd-brand ${n === brand ? 'active' : ''}" data-brand="${esc(n)}" title="${esc(n)}">${logo
-          ? `<img src="${esc(logo)}" alt="" onerror="this.replaceWith(Object.assign(document.createElement('span'),{textContent:'${esc(initials(n))}'}))">`
+          ? `<img src="${esc(logo)}" alt="" data-err="initials" data-initials="${initials(n)}">`
           : `<span>${initials(n)}</span>`}</button>`;
       }).join('');
   };
@@ -1732,7 +1748,7 @@ function quickDriveModal(o) {
     // an outline to draw white; l.outlineFallback: tried when l.outline doesn't load.
     el.querySelector('#qd-layouts').innerHTML = t ? `<span class="qd-layouts-name">${esc(t.title)}</span>` + t.layouts
       .map(l => `<button class="qd-layout ${l.key === sel.layout ? 'active' : ''}" data-layout="${esc(l.key)}">
-        ${l.outline ? `<img ${l.outlineColor ? 'class="color" ' : ''}src="${esc(l.outline)}" alt="" onerror="${l.outlineFallback ? `this.onerror=()=>this.remove();this.src='${esc(l.outlineFallback)}'` : 'this.remove()'}">` : ''}<span>${esc(l.name)}${l.sub ? `<small>${esc(l.sub)}</small>` : ''}</span></button>`).join('') : '';
+        ${l.outline ? `<img ${l.outlineColor ? 'class="color" ' : ''}src="${esc(l.outline)}" alt="" data-err="remove"${l.outlineFallback ? ` data-fallback="${esc(l.outlineFallback)}"` : ''}>` : ''}<span>${esc(l.name)}${l.sub ? `<small>${esc(l.sub)}</small>` : ''}</span></button>`).join('') : '';
     const note = drawSession();
     const pb = o.best?.(sel);
     el.querySelector('#qd-summary').innerHTML = `
@@ -2072,9 +2088,11 @@ const rallyCarImage = rallyCarPicture;
 // maps added since this launcher was built, and keep their pictures (the
 // game is in Early Access). The page is only downloaded when it changed since the
 // last look (If-Modified-Since: the site then answers 304 with no body); a
-// changed page is ~70 KB compressed.
+// changed page is ~70 KB compressed. The site's date and picture addresses go on
+// a command line, so only well-formed ones are used (HTTP_DATE, safeUrl).
+const HTTP_DATE = /^[A-Z][a-z]{2}, \d{2} [A-Z][a-z]{2} \d{4} \d{2}:\d{2}:\d{2} GMT$/;
 async function siteSync() {
-  const since = state.settings.siteModified ? `-H "If-Modified-Since: ${state.settings.siteModified}"` : '';
+  const since = HTTP_DATE.test(state.settings.siteModified || '') ? `-H "If-Modified-Since: ${state.settings.siteModified}"` : '';
   const res = await run(`${CURL} -s -i -L --compressed --max-time 20 -A "Mozilla/5.0" ${since} "${SITE_PAGES.rally}"`);
   if (res.exitCode !== 0) return;
   const split = res.stdOut.lastIndexOf('\r\n\r\n', res.stdOut.indexOf('<'));
@@ -2103,13 +2121,13 @@ async function siteSync() {
   ].filter(j => !known(j.kind, j.key, j.name));
   for (const j of jobs) {
     const file = `rally-${j.kind}-${(j.key || j.name).replace(/[^A-Za-z0-9]+/g, '_')}.${j.kind === 'maps' ? 'png' : 'jpg'}`;
-    for (const url of j.kind === 'maps' ? [j.img] : imageSizes(j.img)) {
+    for (const url of (j.kind === 'maps' ? [j.img] : imageSizes(j.img)).map(safeUrl).filter(Boolean)) {
       const r = await run(`${CURL} -s -L -f --max-time 30 -o "${join(dir, file)}" "${url}"`);
       if (r.exitCode === 0) { extra.push({ game: 'rally', kind: j.kind, key: j.key, name: j.name, file }); log(`site sync: ${j.name}`); break; }
     }
   }
   state.settings.siteSyncAt = Date.now();
-  if (modified) state.settings.siteModified = modified;
+  if (HTTP_DATE.test(modified)) state.settings.siteModified = modified;
   saveSettings();
   await loadSiteImages();
 }
@@ -3480,8 +3498,10 @@ function requestExit() {
 // (gameClosed). Only drives started here count.
 
 const ACADEMY_GAMES = [['ac', 'Assetto Corsa'], ['evo', 'EVO'], ['rally', 'Rally']];
-// --check-academy sees the levels and games this version doesn't show yet (academy-data.js).
-const ayEvery = () => (window.NL_ARGS || []).includes('--check-academy');
+// The levels and games this version doesn't show yet (academy-data.js) are there in
+// the dev build (run from the project folder: run-dev.bat's --load-dir-res), to drive
+// and check their targets, and for --check-academy. Released builds hide them.
+const ayEvery = () => (window.NL_ARGS || []).some(a => a === '--check-academy' || a === '--load-dir-res');
 const ayLater = game => game === 'rally' && !RALLY_RELEASED && !ayEvery();
 const AY = { game: '', part: 'original', series: '', special: 'all', missing: false, data: {} };
 const AY_KIND = { race: N_('Race'), weekend: N_('Race weekend'), qualify: N_('Qualifying'), hotlap: N_('Hotlap'), timeattack: N_('Time attack'), drift: N_('Drift'), drag: N_('Drag race'), practice: N_('Practice'), timetrial: N_('Time trial'), sprint: N_('Sprint'), stage: N_('Stage') };
@@ -3584,7 +3604,9 @@ function aySessionText(ev, series) {
   const grid = opp ? trn(opp, '1 opponent', '{n} opponents') : '';
   const ai = ev.skill ? tr('AI {min}–{max}%', { min: ev.skill[0], max: ev.skill[1] }) : '';
   if (ev.game === 'rally') return tr('Free Practice: one run, your stage time counts');
-  if (ev.kind === 'timetrial') return tr('Practice, {n} min: your best clean lap counts', { n: ev.minutes });
+  if (ev.kind === 'timetrial') return ev.flying
+    ? tr('Alone on track, {n} min, starting near the line: your best clean lap counts', { n: ev.minutes })
+    : tr('Practice, {n} min: your best clean lap counts', { n: ev.minutes });
   if (ev.kind === 'sprint') return tr('From the start arch on the lights: your time to the finish arch counts');
   if (ev.group === 'modded') {
     const ai = tr('AI {n}%', { n: ev.aiLevel });
@@ -4086,7 +4108,9 @@ async function openAcademyEvent(key) {
       ? tr('Assetto Corsa starts straight on track, with the AI in the other {cls} cars. Drive it, then close the game: the launcher reads your result. Your Quick Drive assists are used.', { cls: tr(cls.name) })
       : tr('Assetto Corsa starts straight on track with this event. Drive it, then close the game: the launcher reads your result. Your Quick Drive assists are used.'),
     evo: ev.kind === 'timetrial'
-      ? tr('EVO starts on its menu with this event set up: open Single Player and press Start. Drive it, then close EVO: the launcher reads your best lap. Only this car on this track counts.')
+      ? ev.flying
+        ? tr("EVO starts on its menu with this event set up: open Single Player and press Start. It's a race on your own: you start on the lights just before the line, and after the short run to it every lap is a flying one. Drive until the time runs out, or close EVO when you're done: the launcher keeps your best clean lap. Only this car on this track counts.")
+        : tr('EVO starts on its menu with this event set up: open Single Player and press Start. Drive it, then close EVO: the launcher reads your best lap. Only this car on this track counts.')
       : ev.kind === 'sprint'
         ? tr("EVO starts on its menu with this event set up: open Single Player and press Start. Go on green and through the finish arch, then close EVO: the launcher reads your time from EVO's log. EVO's clock keeps running after the arch; restart from the pause menu for another try, your best counts.")
         : tr("EVO starts on its menu with this event set up: open Single Player and press Start. Drive it, then close EVO: the launcher reads your result. Only this car on this track counts, against this AI."),
@@ -4120,7 +4144,7 @@ async function openAcademyEvent(key) {
     <div class="ay-ev-cols">
       <div class="ay-ev-left">
         <div class="ay-ev-pic" id="ay-ev-pic">${imgTag(cls ? pickedCar()?.image || ev.image : ev.carImage, ev.image)}</div>
-        <div class="ay-ev-track">${ev.outline ? `<img class="overlay ay-outline${game === 'rally' ? ' color' : ''}" src="${esc(ev.outline)}" alt="" onerror="this.remove()">` : ''}<div><b>${esc(ev.trackName)}</b><small>${esc(ev.carName)}</small></div></div>
+        <div class="ay-ev-track">${ev.outline ? `<img class="overlay ay-outline${game === 'rally' ? ' color' : ''}" src="${esc(ev.outline)}" alt="" data-err="remove">` : ''}<div><b>${esc(ev.trackName)}</b><small>${esc(ev.carName)}</small></div></div>
         ${ev.description && ev.group !== 'special' ? `<p class="ay-ev-desc">${esc(tr(ev.description))}</p>` : ''}
       </div>
       <div class="ay-ev-right">
@@ -4241,9 +4265,15 @@ async function academyClosed(game, l) {
   } else if (game === 'evo' && ev.kind === 'sprint') {
     r = await readEvoSprint(join(state.paths.evo.profiles.replace(/\/[^/]+$/, ''), 'Logs'), ev, l.at - 5000);
     // Runs already saved and shown over EVO (academyWatch) aren't saved again.
-    const live = l.academy.live || 0, rest = r.times.slice(live);
+    // Runs not counted there (EVO marked them invalid) are among the handled ones.
+    // The rest came with the log's last block, as EVO closed: EVO's live data
+    // still says which of them it marked invalid (l.academy.voidAt).
+    const live = l.academy.live || 0, saved = live - (l.academy.liveVoid || 0);
+    const late = r.found.slice(live), rest = late.filter(x => !l.academy.voidAt?.(x.at)).map(x => x.ms);
+    if (late.length > rest.length) log(`academy ${ev.key}: ${late.length - rest.length} run(s) EVO marked invalid, not saved`);
     if (!rest.length) {
-      if (live) toast(trn(live, '{name}: 1 run saved, your best is {v}.', '{name}: {n} runs saved, your best is {v}.', { name, v: lapTime(p.events[ev.key]?.best) }));
+      if (saved) toast(trn(saved, '{name}: 1 run saved, your best is {v}.', '{name}: {n} runs saved, your best is {v}.', { name, v: lapTime(p.events[ev.key]?.best) }));
+      else if (live || late.length) toast(tr("{name}: no run counted: EVO marked them invalid.", { name }));
       else toast(r.mismatch && !r.files ? tr("{name}: EVO was driven with another {what}, so it doesn't count.", { name, what: r.mismatch === 'car' ? tr('car') : tr('track') }) : tr('No result from {name}: no run reached the finish arch, so nothing was saved.', { name }));
       levelUpToast();
       return;
@@ -4253,6 +4283,9 @@ async function academyClosed(game, l) {
     // Results already saved and shown over EVO (academyWatch) aren't saved again.
     const shown = l.academy.liveFiles || [];
     r = await readEvoResult(join(state.paths.evo.profiles.replace(/\/[^/]+$/, ''), 'Results'), ev, l.at - 5000, new Set(shown));
+    // A flying time trial: the best clean lap seen live counts (its race's file may count
+    // the run to the line or a cut lap, and a race left early may save none).
+    if (ev.flying && l.academy.liveBest && !r.mismatch) r = { ...r, ms: l.academy.liveBest, laps: Math.max(r.laps, l.academy.liveLaps || 0), files: r.files || 1 };
     if (!r.files) {
       if (!shown.length) toast(r.mismatch ? tr("{name}: EVO was driven with another {what}, so it doesn't count.", { name, what: r.mismatch === 'car' ? tr('car') : tr('track') }) : tr('No result from {name}: nothing was driven, so nothing was saved.', { name }));
       levelUpToast();
@@ -4427,8 +4460,9 @@ async function overlayOpen(o, side) {
 
 async function academyWatch(ev, l) {
   watchStop();
-  const s = watch = { ev, l, reader: ev.kind === 'sprint' ? sprintReader(ev) : null, race: ev.kind === 'race' ? raceReader(ev) : null, laps: ev.kind === 'timetrial' ? lapReader(ev) : null, early: null, texts: new Set(), gfx: false, liveRuns: [], liveLaps: false, telStop: null, dir: join(state.paths.evo.profiles.replace(/\/[^/]+$/, ''), 'Logs'), file: '', pos: 0, rest: '', decoder: new TextDecoder(), look: 0, n: 0, beat: 0, overlay: '', clock: null, busy: false, sid: Date.now() };
-  l.academy.live = 0; l.academy.liveFiles = [];
+  const s = watch = { ev, l, reader: ev.kind === 'sprint' ? sprintReader(ev) : null, race: ev.kind === 'race' ? raceReader(ev) : null, laps: ev.kind === 'timetrial' ? lapReader(ev) : null, early: null, texts: new Set(), gfx: false, validity: [], liveRuns: [], runs: [], finishAt: ev.kind === 'sprint' ? archFinish(ev) : null, liveLaps: false, telStop: null, dir: join(state.paths.evo.profiles.replace(/\/[^/]+$/, ''), 'Logs'), file: '', pos: 0, rest: '', decoder: new TextDecoder(), look: 0, n: 0, beat: 0, overlay: '', clock: null, busy: false, sid: Date.now() };
+  l.academy.live = 0; l.academy.liveVoid = 0; l.academy.liveFiles = []; l.academy.liveBest = 0; l.academy.liveLaps = 0;
+  l.academy.voidAt = at => sprintVoid(s, at); // for the runs the log gives only when EVO closes (academyClosed)
   const cards = state.settings.academyCard !== false;
   if (cards) await overlayOpen(s, '');
   // Races and weekends: the safety rating, from EVO's live data and the log.
@@ -4438,8 +4472,8 @@ async function academyWatch(ev, l) {
   }
   // EVO's live data: the safety rating's impacts and cuts, and laps the moment
   // they're done (liveDataLap).
-  s.telStop = await startTelemetry(e => evoLive(s, e)).catch(err => { log(`evo telemetry: ${err?.message || err}`); return null; });
-  if (s.stopped) return;
+  s.telStop = await startTelemetry(e => evoLive(s, e), undefined, undefined, { pos: ev.kind === 'sprint' }).catch(err => { log(`evo telemetry: ${err?.message || err}`); return null; });
+  if (s.stopped) { s.telStop?.(); return; } // stopped while the helper started: watchStop didn't have it
   // The clock runs in a worker: with the game in front, the web view slows this
   // page's own timers (to once a minute after a few minutes), not a worker's.
   s.clock = new Worker(URL.createObjectURL(new Blob([`setInterval(() => postMessage(0), ${WATCH_TICK});`], { type: 'text/javascript' })));
@@ -4478,7 +4512,12 @@ function srHitExtra(sr, e, now) {
 function evoLive(s, e) {
   if (e.t === 'open') log('evo telemetry: reading EVO\'s live data');
   else if (e.t === 'gfx') { s.gfx = !!e.ok; log(`evo telemetry: lap validity ${e.ok ? 'read' : `not read (${e.why})`}`); }
-  else if (e.t === 'valid') log(`evo telemetry: lap ${e.v ? 'valid' : 'invalid'}`);
+  else if (e.t === 'pos') sprintPos(s, e);
+  else if (e.t === 'valid') {
+    log(`evo telemetry: lap ${e.v ? 'valid' : 'invalid'}`);
+    s.validity.push({ at: Date.now(), v: e.v }); // for a sprint's run (sprintVoid)
+    if (s.validity.length > 400) s.validity.splice(0, 200); // the last runs' are enough
+  }
   else if (e.t === 'lap') liveDataLap(s, e).catch(err => log(`academy live lap: ${err?.message || err}`));
   else if (s.sr) srTelemetry(s, e);
 }
@@ -4538,6 +4577,12 @@ async function logAppend(s) {
   return s.decoder.decode(buf, { stream: true });
 }
 
+// When EVO started, from its log's name (log-yymmdd-hhmmss, local time); 0 if it isn't one.
+const evoLogStart = f => {
+  const m = /^log-(\d\d)(\d\d)(\d\d)-(\d\d)(\d\d)(\d\d)/i.exec(f);
+  return m ? new Date(2000 + +m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]).getTime() : 0;
+};
+
 async function watchTick() {
   const s = watch;
   if (!s || s.stopped) return;
@@ -4545,11 +4590,24 @@ async function watchTick() {
   try {
     for (const o of [s, s.sr?.ov]) if (o?.overlay && Date.now() - o.beat > OVERLAY_BEAT) await overlaySend(o, { beat: true });
     if (!s.file && Date.now() >= s.look) {
-      // This session's log: EVO's newest, written since the launch.
+      // This session's log: EVO's newest, started since the launch. Its name is the time
+      // EVO started (log-yymmdd-hhmmss); the last session's log, still being written
+      // moments before when EVO was closed just before the launch, isn't it.
       s.look = Date.now() + 1000;
       const f = (await listDir(s.dir)).map(e => e.entry).filter(e => /^log-.*\.txt$/i.test(e)).sort().pop();
-      const st = f && await Neutralino.filesystem.getStats(join(s.dir, f)).catch(() => null);
-      if (st && st.modifiedAt >= s.l.at - 5000) { s.file = join(s.dir, f); log(`academy watch: reading ${f}`); }
+      if (f && evoLogStart(f) >= s.l.at - 5000) { s.file = join(s.dir, f); log(`academy watch: reading ${f}`); }
+    } else if (s.file && Date.now() >= s.look) {
+      // EVO started again (a newer log): this event's session is over, whether or not
+      // this launcher saw EVO close (a minimized launcher checks seldom, and another
+      // launcher window may have started the new one). Its live data is the new
+      // session's now, so the watch ends.
+      s.look = Date.now() + 3000;
+      const f = (await listDir(s.dir)).map(e => e.entry).filter(e => /^log-.*\.txt$/i.test(e)).sort().pop();
+      if (f && evoLogStart(f) > evoLogStart(basename(s.file))) {
+        log(`academy watch: EVO started again (${f}), ${s.ev.key}'s watch ends`);
+        watchStop();
+        return;
+      }
     }
     if (s.file) {
       const text = await logAppend(s);
@@ -4560,9 +4618,15 @@ async function watchTick() {
         if (s.reader) {
           const jumps = s.reader.state.jumps;
           for (const ms of s.reader.feed(`${lines.join('\n')}\n`)) {
-            const shown = s.liveRuns.findIndex(x => Math.abs(x - ms) <= 5);
-            if (shown >= 0) s.liveRuns.splice(shown, 1);
-            if (!s.stopped) await liveResult(s, { ms, runs: 1, laps: 1 }, shown < 0);
+            const at = s.reader.state.runs.findLast(x => x.ms === ms)?.at;
+            sprintLearn(s, ms, at);
+            // Its card shown already, from the live data (sprintPos): saved now with the
+            // log's exact time, a card again only when that gives another medal.
+            const i = s.liveRuns.findIndex(x => Math.abs(x.ms - ms) <= LIVE_RUN_MS && (!at || Math.abs(x.at - at) < 5000));
+            const shown = i >= 0 ? s.liveRuns.splice(i, 1)[0] : null;
+            if (s.stopped) continue;
+            if (shown ? shown.void : sprintVoid(s, at)) await liveVoidRun(s, ms, !shown);
+            else await liveResult(s, { ms, runs: 1, laps: 1 }, !shown || tierFor(s.ev, { ms: shown.ms }) !== tierFor(s.ev, { ms }));
           }
           if (s.reader.state.jumps > jumps) await liveNote(s, tr('Jump start'), tr("The run doesn't count."));
         } else {
@@ -4580,6 +4644,101 @@ async function watchTick() {
 }
 
 const liveNote = (s, title, sub) => overlayShow(s, { kicker: ayCardKicker(s.ev), title, tier: 'void', time: '', sub });
+
+// A sprint's run that EVO marked invalid (off the track: its timer turns red). EVO's
+// log doesn't say so, but its live data does: the lap-valid flag (evoLive) still
+// invalid just before the finish (the log's time, at). The short invalid spell
+// while EVO puts the car on the start arch is long over by then. Without the
+// live data the run counts, as before.
+function sprintVoid(s, at) {
+  if (!s.gfx || !at) return false;
+  const before = (s.validity || []).filter(x => x.at <= at - 300).pop();
+  return !!before && !before.v;
+}
+
+// Not saved, but counted as handled: when EVO closes, the runs it reads from the
+// log after the ones handled here are the new ones (academyClosed).
+async function liveVoidRun(s, ms, card = true) {
+  s.l.academy.live++; s.l.academy.liveVoid++;
+  log(`academy live ${s.ev.key}: run ${lapTime(ms)} not counted (EVO marked it invalid)${card ? '' : ' (its card already shown)'}`);
+  if (card) await voidRunCard(s, ms);
+}
+const voidRunCard = (s, ms) => overlayShow(s, { kicker: ayCardKicker(s.ev), title: tr('Not counted'), tier: 'void', time: lapTime(ms), sub: tr('Off the track: EVO marked the run invalid.') });
+
+// ---- A sprint's finish the moment it's crossed. EVO writes its log in 4 KB blocks,
+// so with little happening on track a run's line can wait there until the pause
+// menu adds more; and its live data has nothing at the finish arch (no lap, no
+// time, the timer runs on). What it has is where the car is (npos, 0-1 round the
+// lap) and the timer since the green: the arch is a place on the lap, learnt from
+// the first run the log gives (sprintLearn) and kept in the settings by arch.
+// Crossing it shows the card with the timer's time there; the log's run, when it
+// comes, saves the exact time (watchTick).
+const LIVE_RUN_MS = 150;   // the live time and the log's of one run: a few ms apart
+const POS_GAP = 250;       // reads further apart than this (a pause between) aren't a crossing
+const POS_KEEP = 6000;     // reads kept for each run (5 min at 20 a second), of the last 3 runs
+// The arch's place: the middle one of the last five learnt, else the one the
+// launcher ships (`finish` in academy-data.js), else null: the first run's card
+// then waits for the log.
+function archFinish(ev) {
+  const seen = state.settings.evoArchFinish?.[ev.arch] || [];
+  return seen.length ? [...seen].sort((a, b) => a - b)[seen.length >> 1] : ev.finish ?? null;
+}
+// From one read to the next, forward (round the lap's end too); 0 when it isn't a
+// step the car could have driven.
+function posStep(a, b) {
+  let d = b.n - a.n;
+  if (d < -0.5) d += 1;
+  return b.ms > a.ms && b.ms - a.ms <= POS_GAP && d > 0 && d < 0.02 ? d : 0;
+}
+function sprintPos(s, e) {
+  if (s.stopped || !(e.ms > 0) || !(e.n >= 0 && e.n <= 1)) return;
+  let run = s.runs.at(-1), prev = run?.reads.at(-1);
+  if (!run || e.ms < prev.ms - 200) { // the timer went back: restarted
+    run = { reads: [], done: false }; prev = null;
+    s.runs.push(run);
+    if (s.runs.length > 3) s.runs.shift();
+  }
+  const read = { at: Date.now(), n: e.n, ms: e.ms };
+  if (run.reads.length < POS_KEEP) run.reads.push(read);
+  const f = s.finishAt, d = prev ? posStep(prev, read) : 0;
+  if (f == null || run.done || !d) return;
+  const to = ((f - prev.n) % 1 + 1) % 1;
+  if (!(to > 0 && to <= d)) return;
+  const ms = Math.round(prev.ms + (read.ms - prev.ms) * to / d);
+  if (ms < sprintLeast(s.ev)) return; // not a run to the arch (a place passed near the start)
+  run.done = true;
+  liveSprintRun(s, ms, read.at).catch(err => log(`academy live run: ${err?.message || err}`));
+}
+const sprintLeast = ev => Math.round((ev.goal?.tiers?.at(-1) || 0) * 0.6); // as academy.js sprintReader
+async function liveSprintRun(s, ms, at) {
+  const v = sprintVoid(s, at);
+  s.liveRuns.push({ ms, at, void: v });
+  if (s.liveRuns.length > 20) s.liveRuns.shift();
+  if (v) {
+    log(`academy live ${s.ev.key}: run ${lapTime(ms)} at the arch, not counted (EVO marked it invalid)`);
+    return voidRunCard(s, ms);
+  }
+  const r = { ms, runs: 1, laps: 1 }, res = await recordResult(s.ev, r, { save: false });
+  log(`academy live ${s.ev.key}: run ${lapTime(ms)} at the arch, medal ${res.gained}`);
+  await overlayShow(s, resultCard(s.ev, r, res));
+}
+// The log's run (its time, and when by the log's clock): where the car was then,
+// from the reads around that time on the timer.
+function sprintLearn(s, ms, at) {
+  if (!at || s.ev.kind !== 'sprint') return;
+  for (const run of s.runs) {
+    const i = run.reads.findIndex((b, j) => j > 0 && b.ms >= ms && run.reads[j - 1].ms <= ms);
+    const a = run.reads[i - 1], b = run.reads[i], d = a && posStep(a, b);
+    if (!d || Math.abs(b.at - at) > 3000) continue;
+    const n = (a.n + d * (ms - a.ms) / (b.ms - a.ms)) % 1, was = s.finishAt;
+    const all = state.settings.evoArchFinish ||= {};
+    all[s.ev.arch] = [...(all[s.ev.arch] || []), Number(n.toFixed(6))].slice(-5);
+    saveSettings();
+    s.finishAt = archFinish(s.ev);
+    log(`academy sprint ${s.ev.arch}: finish arch at ${n.toFixed(5)} of the lap${was == null ? ' (learnt)' : ` (was ${was.toFixed(5)})`}`);
+    return;
+  }
+}
 const AI_EASIER = () => tr("The AI was made easier in EVO's menu.");
 
 // The player has just crossed the line in a race (raceReader): the card now, from
@@ -4603,7 +4762,8 @@ async function liveDataLap(s, e) {
   if (s.stopped || !(e.ms > 0)) return;
   if (ev.kind === 'sprint') {
     if (e.kmh < 20) return; // not the finish arch: the run starts from a standstill
-    s.liveRuns.push(e.ms);
+    if (e.valid === false) return; // marked invalid: the log's run gets the card (sprintVoid)
+    s.liveRuns.push({ ms: e.ms, at: Date.now(), void: false });
     const r = { ms: e.ms, runs: 1, laps: 1 }, res = await recordResult(ev, r, { save: false });
     log(`academy live ${ev.key} run: ${lapTime(e.ms)} medal ${res.gained}`);
     await overlayShow(s, resultCard(ev, r, res));
@@ -4615,13 +4775,17 @@ async function liveDataLap(s, e) {
 
 // A time trial's lap (liveDataLap, or the log's lapReader): its card now, with the lap's medal. The
 // session's best lap (s.early) is saved when EVO saves the session's result
-// (liveResultsFile), at its end or when EVO closes.
+// (liveResultsFile), at its end or when EVO closes. A flying time trial's best clean
+// lap is also kept for the close (l.academy.liveBest), should EVO save no file when
+// its race is left early.
 async function liveLap(s, lap) {
   const ev = s.ev;
-  log(`academy live ${ev.key} lap ${lap.n}: ${lapTime(lap.ms)}${lap.cut ? ' (not counted)' : ''}`);
+  log(`academy live ${ev.key} lap ${lap.n}: ${lapTime(lap.ms)}${lap.cut ? ' (not counted)' : ''}${evoLapTooShort(ev, lap.ms) ? ' (too short: the run to the line from a flying start)' : ''}`);
+  if (evoLapTooShort(ev, lap.ms)) return;
   if (lap.cut) return overlayShow(s, { kicker: ayCardKicker(ev), title: tr('Not counted'), tier: 'void', time: lapTime(lap.ms) });
   const r = { ms: lap.ms, laps: lap.n }, res = await recordResult(ev, r, { save: false });
   if (!s.early?.ms || lap.ms < s.early.ms) s.early = { ms: lap.ms };
+  if (ev.flying) Object.assign(s.l.academy, { liveBest: s.early.ms, liveLaps: lap.n });
   await overlayShow(s, resultCard(ev, r, res));
 }
 
@@ -4643,10 +4807,14 @@ async function liveResultsFile(s, path) {
   s.early = null;
   if (one.mismatch) return liveNote(s, tr("Doesn't count"), one.mismatch === 'car' ? tr('It was driven with another car.') : tr('It was driven on another track.'));
   if (ev.kind !== 'timetrial' && await evoAiEasier(ev)) return early?.easier ? undefined : liveNote(s, tr("Doesn't count"), AI_EASIER());
+  // A flying time trial's file is a race's: its best lap may be the run to the line or
+  // a cut lap, so the best clean lap seen live counts (the file's when none was seen).
+  const got = ev.flying && early?.ms ? { ...one, ms: early.ms } : one;
+  if (ev.flying) s.l.academy.liveBest = 0;
   // Shown at the finish line (or the best lap at its line) already: saved without a
   // card, unless it came out different.
-  const same = !!early && !early.easier && (ev.kind === 'timetrial' ? Math.abs(early.ms - one.ms) <= 5 : early.pos === one.pos && early.finished === one.finished);
-  await liveResult(s, { ...one, files: 1 }, !same);
+  const same = !!early && !early.easier && (ev.kind === 'timetrial' ? Math.abs(early.ms - got.ms) <= 5 : early.pos === got.pos && early.finished === got.finished);
+  await liveResult(s, { ...got, files: 1 }, !same);
 }
 
 async function liveResult(s, r, card = true) {
@@ -5594,15 +5762,15 @@ async function runSnapshots(dir) {
       for (const kind of ['timetrial', 'race', 'weekend']) {
         const e = de.all.find(x => x.kind === kind);
         const s = evoSessionFor(e, defaultEvoSession());
-        log(`check-academy evo session ${kind} ${e.key}: ${JSON.stringify({ mode: s.mode, practice: s.mode === 'practice' ? s.practice : undefined, race: s.mode === 'race' ? s.race : undefined, weekend: s.mode === 'weekend' ? s.weekend : undefined, weather: s.weather })}`);
+        log(`check-academy evo session ${kind} ${e.key}: ${JSON.stringify({ mode: s.mode, practice: s.mode === 'practice' ? s.practice : undefined, flying: s.flying ? e.evoLayout.hotstint.container : undefined, hotstint: e.evoLayout?.hotstint?.container, race: s.mode === 'race' ? s.race : undefined, weekend: s.mode === 'weekend' ? s.weekend : undefined, weather: s.weather })}`);
       }
       const rd = `${sb}/evo-results`;
       await ensureDir(rd);
       const tt = de.all.find(x => x.kind === 'timetrial'), race = de.all.find(x => x.kind === 'race');
       const drv = (name, car, pos, laps, best) => ({ driver_name: name, driver_surname: 'X', car_name: car, position: pos, laps, best_lap: best, is_current_driver: false });
-      await writeText(`${rd}/261010-1000_SP_Practice.sessionresults.json`, JSON.stringify({ session: 'Practice', track: tt.trackTitle, layout: `${tt.layoutName} Time Attack`, drivers: [drv('Test', tt.carName, 0, 5, lapTime(tt.goal.tiers[1] - 300).padStart(9, '0'))] }));
+      await writeText(`${rd}/261010-1000_SP_Practice.sessionresults.json`, JSON.stringify({ session: tt.flying ? 'Race' : 'Practice', track: tt.trackTitle, layout: tt.flying ? tt.evoLayout.hotstint.container : `${tt.layoutName} Time Attack`, drivers: [drv('Test', tt.carName, 0, 5, lapTime(tt.goal.tiers[1] - 300).padStart(9, '0'))] }));
       await writeText(`${rd}/261010-1010_SP_Race.sessionresults.json`, JSON.stringify({ session: 'Race', track: race.trackTitle, layout: `${race.layoutName} Race`, drivers: [drv('•Ai', race.carName, 0, race.laps, '01:00.000'), drv('•Bi', race.carName, 1, race.laps, '01:00.000'), drv('Test', race.carName, 2, race.laps, '01:01.000')] }));
-      log(`check-academy evo result timetrial: ${JSON.stringify(await readEvoResult(rd, tt, 0))}`);
+      log(`check-academy evo result timetrial: ${JSON.stringify(await readEvoResult(rd, tt, 0))} (a flying start's 8 s run to the line too short: ${evoLapTooShort(tt, 8000)})`);
       log(`check-academy evo result race: ${JSON.stringify(await readEvoResult(rd, race, 0))}`);
       log(`check-academy evo result other car: ${JSON.stringify(await readEvoResult(rd, { ...race, carName: 'Other car' }, 0))}`);
       const r = await readEvoResult(rd, race, 0);
@@ -5686,7 +5854,7 @@ async function runSnapshots(dir) {
         // file with the third as its best (saved, no second card).
         const lt = { ev: tt, l: { academy: { live: 0, liveFiles: [] } }, laps: lapReader(tt), early: null, texts: new Set(), overlay: '', n: 0, beat: 0 };
         const evoLap = ms => `${String(Math.floor(ms / 60000)).padStart(2, '0')}:${((ms % 60000) / 1000).toFixed(3).padStart(6, '0')}`;
-        const tl = [`${at(0)}[VehicleSystem][c0ffee] SpawnVehicle(Player)`, `${at(1)}Game Started! GameModeType_PRACTICE | ${tt.trackTitle} ${tt.layoutName} Time Attack Practice  900 seconds @2014/8/15 10:30:0 | ${tt.car} | GameModeSelectionWeatherType_CLEAR | 0 opponents`,
+        const tl = [`${at(0)}[VehicleSystem][c0ffee] SpawnVehicle(Player)`, `${at(1)}Game Started! ${tt.flying ? `GameModeType_INSTANT_RACE | ${tt.trackTitle} ${tt.evoLayout.hotstint.container} Race  900 seconds` : `GameModeType_PRACTICE | ${tt.trackTitle} ${tt.layoutName} Time Attack Practice  900 seconds`} @2014/8/15 10:30:0 | ${tt.car} | GameModeSelectionWeatherType_CLEAR | 0 opponents`,
           `${at(120000)}New lap carId c0ffee: ${evoLap(tt.goal.tiers[1] + 2000)}`, `${at(180000)}UINotification UINotificationType_SessionPenalty `, `${at(180001)}true {PENALTY_ADDED_KEY} #0`, `${at(220000)}New lap carId c0ffee: ${evoLap(tt.goal.tiers[0] - 3000)}`, `${at(320000)}New lap carId c0ffee: ${evoLap(tt.goal.tiers[1] - 300)}`];
         const laps = lt.laps.feed(`${tl.join('\r\n')}\r\n`);
         for (const x of laps) await liveLap(lt, x);

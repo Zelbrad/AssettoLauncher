@@ -485,8 +485,9 @@ export async function scanEvoTracks(paths, onProgress) {
   }
   const cat = await evoCatalog(paths, onProgress);
   const official = (cat?.tracks || []).map(t => {
-    // `practice` / `race` hold what Quick Drive writes into the Practice and Race/Race Weekend saves.
-    const layouts = t.layouts.map(l => ({ id: l.id, name: l.name, preview: fileUrl(l.image), outline: fileUrl(l.map), practice: l.practice, race: l.race, arches: l.arches || [] }));
+    // `practice` / `race` hold what Quick Drive writes into the Practice and Race/Race Weekend saves
+    // (`hotstint`: the flying-start Practice the Academy's time trials use).
+    const layouts = t.layouts.map(l => ({ id: l.id, name: l.name, preview: fileUrl(l.image), outline: fileUrl(l.map), practice: l.practice, race: l.race, hotstint: l.hotstint || null, arches: l.arches || [] }));
     return {
       id: t.id, kind: 'track', game: 'evo',
       title: t.name, subtitle: [t.region, t.country].filter(Boolean).join(' · '),

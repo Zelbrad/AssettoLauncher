@@ -18,9 +18,14 @@
 //     list its "Licences" page is built from): a track container (`arch`,
 //     "Academy R1-1") that puts a start arch with lights and a finish arch on the
 //     layout, a car with its mechanical preset, a time of day, and gold, silver and
-//     bronze times (`tiers` here: bronze, silver, gold, in ms). Run as an Instant
+//     bronze times. The launcher's are 5 % quicker than Kunos's, with a platinum
+//     (`kunos`: Kunos's bronze, silver, gold, then the platinum, in ms), or all four
+//     set by the player after driving it (Racing licences 1 and 2). Run as an Instant
 //     Race of one lap with no AI: standing start at the arch on the lights, timed
-//     to the finish arch (academy.js readEvoSprint).
+//     to the finish arch (academy.js readEvoSprint). `finish`: where the finish arch
+//     is on the lap (EVO's npos, 0-1), measured on a drive, so the card shows as the
+//     car crosses it from the first run (main.js archFinish; without it the first
+//     run's card waits for EVO's log).
 // Rally events are a stage in Free Practice with a car, time and weather. Targets
 // come from the AI's time for that car and stage (rally-game.json "ai") with
 // Rally's own medal margins (DT_MedalPercentageModifiers); platinum is beating
@@ -36,30 +41,32 @@ const times = (...t) => t.map(lapMs);
 // An estimate from an older best over `laps` laps: 5 % quicker from 1-2 laps,
 // 4 % from 3-9, 3 % from 10-29, 2 % from 30 or more.
 const est = (best, laps) => fromPlat(lapMs(best) * (laps <= 2 ? 0.95 : laps < 10 ? 0.96 : laps < 30 ? 0.97 : 0.98));
+// A sprint's targets: Kunos's bronze, silver and gold made 5 % quicker (to the tenth), and the platinum.
+const kunos = (bronze, silver, gold, plat) => [...[bronze, silver, gold].map(ms => Math.round(ms * 0.95 / 100) * 100), plat];
 
 export const EVO_LEVELS = [
   {
     id: 'rookie', name: N_('Rookie'), blurb: N_('Road cars on short tracks, against a gentle field.'),
     events: [
-      { id: 'e1', name: N_('Corkscrew basics'), kind: 'timetrial', car: 'ks_honda_s2000_ap1', track: 'laguna_seca', layout: 'gp', minutes: 15, start: 10 * 60 + 30, tiers: times('2:00.0', '1:55.0', '1:50.0', '1:44.5'), note: N_('Rear-wheel drive and a high-revving engine: be smooth on the throttle out of the slow corners.') },
+      { id: 'e1', name: N_('Corkscrew basics'), kind: 'timetrial', car: 'ks_honda_s2000_ap1', track: 'laguna_seca', layout: 'gp', minutes: 15, start: 10 * 60 + 30, tiers: times('2:00.0', '1:55.0', '1:48.0', '1:43.380'), note: N_('Rear-wheel drive and a high-revving engine: be smooth on the throttle out of the slow corners.') },
       { id: 'e2', name: N_('Club night'), kind: 'race', car: 'ks_toyota_gr86', track: 'brands_hatch', layout: 'indy', laps: 4, opponents: 9, skill: [80, 84], startPos: 10, podium: [5, 3, 1], start: 18 * 60, note: N_('Ten GR86s on the short Indy circuit, starting from the back.') },
       { id: 'e3', name: N_('Light and nimble'), kind: 'timetrial', car: 'ks_alpine_a110_s', track: 'oulton_park', layout: 'international', minutes: 15, start: 11 * 60, tiers: times('2:03.0', '1:58.0', '1:53.0', '1:49.0'), note: N_('Mid-engined and light: carry speed in, the car turns on the brakes.') },
       { id: 'e4', name: N_('Hot hatch scrap'), kind: 'race', car: 'ks_volkswagen_golf_gti_mk8', track: 'donington', layout: 'national', laps: 3, opponents: 11, skill: [81, 85], startPos: 12, podium: [5, 3, 1], start: 14 * 60, note: N_('Front-wheel drive: be gentle with the throttle out of the hairpin.') },
       { id: 'e5', name: N_('Big V8, short brakes'), kind: 'timetrial', car: 'ks_chevrolet_camaro_zl1', track: 'brands_hatch', layout: 'gp', minutes: 15, start: 15 * 60, tiers: times('1:44.5', '1:42.0', '1:39.5', '1:37.0'), note: N_('Lots of power, lots of weight. Brake early into Paddock Hill.') },
       { id: 'e6', name: N_('Minis at Fosters'), kind: 'race', car: 'ks_mini_jcs_1990', track: 'oulton_park', layout: 'fosters', laps: 3, opponents: 11, skill: [82, 86], startPos: 12, podium: [5, 3, 1], start: 16 * 60, note: N_('A dozen Minis, close racing, no room for mistakes.') },
     ],
-    bonus: { id: 'bonus', name: N_('Emira at sunset'), kind: 'race', car: 'ks_lotus_emira', track: 'oulton_park', layout: 'international', laps: 4, opponents: 11, skill: [83, 87], startPos: 12, podium: [5, 3, 1], start: 19 * 60 + 30, note: N_('A dozen Emiras on the full International loop as the sun goes down.') },
+    bonus: { id: 'bonus', name: N_('Emira at sunset'), kind: 'race', car: 'ks_lotus_emira', track: 'oulton_park', layout: 'international', laps: 3, opponents: 11, skill: [83, 87], startPos: 12, podium: [5, 3, 1], start: 19 * 60 + 30, note: N_('A dozen Emiras on the full International loop as the sun goes down.') },
   },
   {
     // Open from the start, beside the others (`side`): one event from each of EVO's licence categories.
-    id: 'sprints', side: true, name: N_('Sprints'), blurb: N_("EVO's own academy runs: from a start arch on the lights to a finish arch, against Kunos's medal times."),
+    id: 'sprints', side: true, name: N_('Sprints'), blurb: N_("EVO's own academy runs: from a start arch on the lights to a finish arch, with medal times a little quicker than Kunos's, and a platinum."),
     events: [
-      { id: 's1', name: N_('Entry licence'), kind: 'sprint', arch: 'Academy SP-1', car: 'ks_audi_rs_3_sportback', mech: 'preset_rs3_mech_1', track: 'brands_hatch', layout: 'gp', start: 14 * 60, tiers: [26000, 22300, 21500] },
-      { id: 's2', name: N_('Sportscar licence'), kind: 'sprint', arch: 'Academy SC-2', car: 'ks_alfa_romeo_giulia_gtam', mech: 'preset_gtam_mech_1', track: 'imola', layout: 'gp', start: 10 * 60, tiers: [42000, 38300, 37000] },
-      { id: 's3', name: N_('Supercar licence'), kind: 'sprint', arch: 'Academy HC-1', car: 'ks_ferrari_296_gtb', mech: 'preset_296gtb_mech_1', track: 'laguna_seca', layout: 'gp', start: 8 * 60, tiers: [43000, 39100, 37800] },
-      { id: 's4', name: N_('Racing licence 1'), kind: 'sprint', arch: 'Academy R1-1', car: 'ks_mazda_mx5_nd_cup', mech: 'preset_mx5ndcup_mech_1', track: 'suzuka', layout: 'gp', start: 7 * 60, tiers: [55000, 50100, 48700], note: N_('From the start line to the middle of the Esses.') },
-      { id: 's5', name: N_('Racing licence 2'), kind: 'sprint', arch: 'Academy R2-1', car: 'ks_bmw_m2_cs_racing', mech: 'preset_m2csr_mech_1', track: 'mount_panorama', layout: 'gp', start: 12 * 60, tiers: [54600, 49500, 48000] },
-      { id: 's6', name: N_('Racing licence 3'), kind: 'sprint', arch: 'Academy R3-4', car: 'ks_porsche_992_gt3_cup', mech: 'preset_992c_mech_2', track: 'suzuka', layout: 'gp', start: 16 * 60, tiers: [143000, 133100, 131300], note: N_("The longest of Suzuka's academy runs, in a Cup car.") },
+      { id: 's1', name: N_('Entry licence'), kind: 'sprint', arch: 'Academy SP-1', car: 'ks_audi_rs_3_sportback', mech: 'preset_rs3_mech_1', track: 'brands_hatch', layout: 'gp', start: 14 * 60, tiers: kunos(26000, 22300, 21500, 19500), finish: 0.18642 },
+      { id: 's2', name: N_('Sportscar licence'), kind: 'sprint', arch: 'Academy SC-2', car: 'ks_alfa_romeo_giulia_gtam', mech: 'preset_gtam_mech_1', track: 'imola', layout: 'gp', start: 10 * 60, tiers: kunos(42000, 38300, 37000, 32700), finish: 0.52369 },
+      { id: 's3', name: N_('Supercar licence'), kind: 'sprint', arch: 'Academy HC-1', car: 'ks_ferrari_296_gtb', mech: 'preset_296gtb_mech_1', track: 'laguna_seca', layout: 'gp', start: 8 * 60, tiers: kunos(43000, 39100, 37800, 33000), finish: 0.24900 },
+      { id: 's4', name: N_('Racing licence 1'), kind: 'sprint', arch: 'Academy R1-1', car: 'ks_mazda_mx5_nd_cup', mech: 'preset_mx5ndcup_mech_1', track: 'suzuka', layout: 'gp', start: 7 * 60, tiers: [55000, 50100, 48700, 47800], finish: 0.28358, note: N_('From the start line to the middle of the Esses.') },
+      { id: 's5', name: N_('Racing licence 2'), kind: 'sprint', arch: 'Academy R2-1', car: 'ks_bmw_m2_cs_racing', mech: 'preset_m2csr_mech_1', track: 'mount_panorama', layout: 'gp', start: 12 * 60, tiers: [59360, 54270, 50130, 48450], finish: 0.31454 },
+      { id: 's6', name: N_('Racing licence 3'), kind: 'sprint', arch: 'Academy R3-4', car: 'ks_porsche_992_gt3_cup', mech: 'preset_992c_mech_2', track: 'suzuka', layout: 'gp', start: 16 * 60, tiers: kunos(143000, 133100, 131300, 118200), finish: 0.58112, note: N_("The longest of Suzuka's academy runs, in a Cup car.") },
     ],
   },
   {
@@ -117,8 +124,8 @@ export const EVO_UNLOCK = 4;
 
 // What this version shows. A level comes out once its targets are checked by
 // driving its events, as Rookie's and the Sprints' were; the rest stay here until
-// then (--check-academy still sees them all). Rally's Academy is shown as coming
-// later, for the same reason.
+// then (the dev build and --check-academy still show them all). Rally's Academy is
+// shown as coming later, for the same reason.
 export const EVO_RELEASED = ['rookie', 'sprints'];
 export const RALLY_RELEASED = false;
 

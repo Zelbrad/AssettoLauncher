@@ -6,7 +6,7 @@
 //     and quits; the installer updates in place (settings kept) and starts the
 //     launcher again (build/installer.iss).
 //   Portable copies (the zip) can't replace themselves: they open the release page.
-import { run, log, join, exists, startProcess, norm, CURL, IS_LINUX, sha256File } from './util.js';
+import { run, log, join, exists, startProcess, norm, safeUrl, CURL, IS_LINUX, sha256File } from './util.js';
 
 export const REPO = 'Zelbrad/AssettoLauncher';
 const API = `https://api.github.com/repos/${REPO}/releases/latest`;
@@ -50,7 +50,7 @@ export async function isInstalledCopy() {
 export async function installUpdate(setup) {
   const temp = norm(await Neutralino.os.getEnv('TEMP'));
   const file = join(temp, setup.name.replace(/[^\w.-]/g, '_'));
-  if (!/^https:\/\/github\.com\//i.test(setup.url)) throw new Error('Unexpected download address');
+  if (!/^https:\/\/github\.com\//i.test(setup.url) || !safeUrl(setup.url)) throw new Error('Unexpected download address');
   const dl = await run(`${CURL} -s -L -f --max-time 300 -o "${file}" "${setup.url}"`);
   if (dl.exitCode !== 0) throw new Error('The download failed. Check your connection and try again.');
   if (setup.sha256) {

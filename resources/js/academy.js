@@ -407,6 +407,12 @@ export function driverLevel(p) {
   return { level, points, into: points - from, need: level + 3 };
 }
 
+// Time trials from near the line on the layout's Hotstint container (`flying`): an
+// Instant Race alone, as long as the event, started on the lights there; after the
+// short run to the line every lap is a flying one. (In Practice, EVO 0.9.1 spawns the
+// car there but never leaves its loading screen: no pit menu; tested 2026-10-14.)
+const EVO_FLYING_START = true;
+
 // cars, tracks: the launcher's EVO lists (games.js scanEvoCars / scanEvoTracks).
 // every: also the levels this version doesn't show yet (EVO_RELEASED).
 export function evoAcademy({ cars, tracks, every = false }) {
@@ -420,7 +426,8 @@ export function evoAcademy({ cars, tracks, every = false }) {
       key: `evo/${lv.id}/${e.id}`, game: 'evo', group: 'level', level: lv.id, index: i, bonus: e.id === 'bonus', def: e,
       name: e.name, description: e.note || '', kind: e.kind,
       car: e.car, carName: car?.title || e.car, carImage: car?.image || '', mech: e.mech || '',
-      track: e.track, layout: e.layout, evoTrack: track?.evoTrack, evoLayout: layout, arch: e.arch || '',
+      track: e.track, layout: e.layout, evoTrack: track?.evoTrack, evoLayout: layout, arch: e.arch || '', finish: e.finish ?? null,
+      flying: EVO_FLYING_START && e.kind === 'timetrial' && !!layout?.hotstint,
       trackName: [track?.title, layout?.name].filter(Boolean).join(' · ') || e.track, trackTitle: track?.title || '', layoutName: layout?.name || '',
       image: layout?.preview || car?.image || '', outline: layout?.outline || '',
       laps: sprint ? 1 : e.laps || 0, qualifying: e.qualifying || 0, minutes: e.minutes || 0, opponents: e.opponents || 0, start: e.startPos || 0, skill: e.skill || null,
@@ -442,7 +449,10 @@ export function evoSessionFor(ev, session) {
   const s = JSON.parse(JSON.stringify(session));
   const max = Math.max(1, (ev.evoLayout?.race?.maxDrivers || 33) - 1);
   const grid = { custom: false, opponents: Math.min(ev.opponents, max), skillMin: ev.skill?.[0] || 88, skillMax: ev.skill?.[1] || 92, singleMake: true };
-  if (ev.kind === 'timetrial') { s.mode = 'practice'; s.practice = { minutes: ev.minutes || 15, start: ev.time, speed: 1 }; }
+  // A time trial: Practice from the pits, or alone in a race of the same length from
+  // near the line (`flying`, evolaunch.js session.flying).
+  if (ev.kind === 'timetrial' && !ev.flying) { s.mode = 'practice'; s.practice = { minutes: ev.minutes || 15, start: ev.time, speed: 1 }; }
+  if (ev.kind === 'timetrial' && ev.flying) { s.mode = 'race'; s.flying = true; s.race = { type: 'time', laps: 1, minutes: ev.minutes || 15, start: ev.time, speed: 1, startPos: 1, grid: { ...grid, opponents: 0, singleMake: false } }; }
   if (ev.kind === 'race') { s.mode = 'race'; s.race = { type: 'laps', laps: ev.laps, minutes: 20, start: ev.time, speed: 1, startPos: Math.min(ev.start || grid.opponents + 1, grid.opponents + 1), grid }; }
   // A sprint: one lap alone in the layout's academy container (evolaunch.js session.arch).
   if (ev.kind === 'sprint') { s.mode = 'race'; s.arch = ev.arch; s.race = { type: 'laps', laps: 1, minutes: 20, start: ev.time, speed: 1, startPos: 1, grid: { ...grid, opponents: 0, singleMake: false } }; }
@@ -463,23 +473,29 @@ export function evoSessionFor(ev, session) {
 // The run counts only with the event's car and track (EVO's menu can change them).
 const evoLap = t => { const p = String(t || '').split(':').map(Number); return p.length > 1 && p.every(Number.isFinite) ? Math.round(p.reduce((a, n) => a * 60 + n, 0) * 1000) : 0; };
 const evoName = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
-const evoLayoutName = s => evoName(s).replace(/ (time attack|race)$/, '');
+const evoLayoutName = s => evoName(s).replace(/(^| )(time attack|hotstint|race)$/, '').trim();
+// The file's layout is the container's name: "<Layout> Time Attack", "<Layout> Race", or
+// the Hotstint one a time trial ran on (Laguna Seca's is plain "Hotstint").
+const evoSameLayout = (j, ev) => evoLayoutName(j.layout) === evoLayoutName(ev.layoutName) || (!!ev.evoLayout?.hotstint && evoName(j.layout) === evoName(ev.evoLayout.hotstint.container));
+// A flying start's first crossing of the line can come as a "lap" of a few seconds:
+// a time trial's lap under 80 % of its fastest target isn't a lap.
+export const evoLapTooShort = (ev, ms) => ev.kind === 'timetrial' && ms > 0 && ms < 0.8 * Math.min(...(ev.goal?.tiers || [0]));
 // One results file (parsed) against the event: null when it's another session (a
 // weekend's practice), { mismatch: 'car' | 'track' }, or { laps, ms, pos, finished }
-// (pos only for a race the player finished).
+// (pos only for a race the player finished). A flying time trial's file is a race's.
 export function evoResultFile(j, ev) {
-  const want = ev.kind === 'timetrial' ? 'practice' : 'race';
+  const want = ev.kind === 'timetrial' && !ev.flying ? 'practice' : 'race';
   if (!j || evoName(j.session) !== want) return null;
   const me = (j.drivers || []).find(d => !String(d.driver_name || '').startsWith('•')) || (j.drivers || []).find(d => d.is_current_driver);
   if (!me) return null;
-  if (evoName(j.track) !== evoName(ev.trackTitle) || evoLayoutName(j.layout) !== evoLayoutName(ev.layoutName)) return { mismatch: 'track' };
+  if (evoName(j.track) !== evoName(ev.trackTitle) || !evoSameLayout(j, ev)) return { mismatch: 'track' };
   if (evoName(me.car_name) !== evoName(ev.carName)) return { mismatch: 'car' };
   // Penalties EVO gave (`penalties`, the worst as `high_penalty`): a disqualification
   // isn't a finish. Others are in EVO's own classification, `position`.
   const penalties = Array.isArray(me.penalties) && me.penalties.length ? me.penalties : null;
   const dsq = /disqualif/i.test(`${JSON.stringify(penalties || [])} ${me.high_penalty || ''}`);
-  const laps = Number(me.laps) || 0, finished = want === 'race' && laps >= ev.laps && !dsq;
-  return { laps, ms: evoLap(me.best_lap), pos: finished ? (Number(me.position) || 0) + 1 : 0, finished, ...(dsq ? { dsq } : {}), ...(penalties ? { penalties } : {}) };
+  const laps = Number(me.laps) || 0, finished = ev.kind !== 'timetrial' && want === 'race' && laps >= ev.laps && !dsq, best = evoLap(me.best_lap);
+  return { laps, ms: evoLapTooShort(ev, best) ? 0 : best, pos: finished ? (Number(me.position) || 0) + 1 : 0, finished, ...(dsq ? { dsq } : {}), ...(penalties ? { penalties } : {}) };
 }
 
 // All the event's results files since `since`, leaving out the names in `skip`
@@ -543,7 +559,8 @@ export function sprintReader(ev) {
   // Anything quicker than this isn't a run to the finish arch (a start line crossed instead).
   const least = Math.round((ev.goal?.tiers?.at(-1) || 0) * 0.6);
   // jumps: runs left out for a jump start (EVO's start check at the arch's lights).
-  const state = { ours: false, seen: false, mismatch: '', jumps: 0 };
+  // runs: each run returned, with when it finished by the log's clock ({ ms, at }).
+  const state = { ours: false, seen: false, mismatch: '', jumps: 0, runs: [] };
   let green = 0, jumped = false;
   const read = text => {
     const start = LOG_START.exec(text);
@@ -566,12 +583,14 @@ export function sprintReader(ev) {
     if (clock < 1500) return 0; // the one that comes with the green
     green = 0; // one run per green
     if (jumped) { state.jumps++; return 0; }
-    return Math.abs(ms - clock) < 1000 && ms >= least ? ms : 0;
+    if (!(Math.abs(ms - clock) < 1000 && ms >= least)) return 0;
+    state.runs.push({ ms, at: logTime(text) });
+    return ms;
   };
   return { state, feed: lineFeed(read) };
 }
 export async function readEvoSprint(logsDir, ev, since) {
-  const r = { ms: 0, runs: 0, laps: 0, times: [], mismatch: '', files: 0 };
+  const r = { ms: 0, runs: 0, laps: 0, times: [], found: [], mismatch: '', files: 0 }; // found: { ms, at } of each time
   for (const f of (await listDir(logsDir)).filter(e => /^log-.*\.txt$/i.test(e.entry)).sort((a, b) => a.entry.localeCompare(b.entry))) {
     const path = join(logsDir, f.entry);
     if ((await fileDate(path)) < since) continue;
@@ -579,6 +598,7 @@ export async function readEvoSprint(logsDir, ev, since) {
     if (!text) continue;
     const reader = sprintReader(ev);
     r.times.push(...reader.feed(text, true));
+    r.found.push(...reader.state.runs);
     if (reader.state.seen) r.files++;
     if (reader.state.mismatch === 'car' || !r.mismatch) r.mismatch = reader.state.mismatch || r.mismatch;
   }
@@ -629,6 +649,7 @@ export function raceReader(ev) {
 
 // A time trial's laps from the same log, each as the player completes it:
 //   Game Started! GameModeType_PRACTICE | <track> <layout> Time Attack Practice  <s> seconds @… | <car id> | …
+//   (a flying time trial: GameModeType_INSTANT_RACE | <track> <layout> Hotstint Race …)
 //   New lap carId <guid>: mm:ss.mmm                     the player's lap (the out-lap isn't logged)
 //   … {PENALTY_ADDED_KEY}                              a penalty given, as for a cut
 // The log doesn't say which laps EVO counts: a lap with a penalty given during it
@@ -641,7 +662,7 @@ export function lapReader(ev) {
     if (player) { me = player[1]; return null; }
     const start = LOG_START.exec(text);
     if (start) {
-      ours = start[1] === 'GameModeType_PRACTICE' && start[3] === ev.car && evoName(start[2]).startsWith(evoName(ev.trackTitle));
+      ours = start[1] === (ev.flying ? 'GameModeType_INSTANT_RACE' : 'GameModeType_PRACTICE') && start[3] === ev.car && evoName(start[2]).startsWith(evoName(ev.trackTitle));
       n = 0; cut = false;
       return null;
     }
