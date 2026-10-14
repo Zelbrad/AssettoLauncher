@@ -59,31 +59,32 @@ a, button { -webkit-user-drag: none; }
 #titlebar {
   grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: var(--sidebar-w) 1fr auto;
+  grid-template-columns: 1fr auto 1fr; /* the nav in the middle of the window */
   align-items: center;
   border-bottom: 1px solid var(--line);
   background: var(--panel);
   position: relative;
   z-index: 5;
 }
-.brand { display: flex; align-items: center; padding-left: 30px; height: 100%; }
+.brand { display: flex; align-items: center; gap: 27px; padding-left: 30px; height: 100%; min-width: 0; }
+.brand img { flex: none; }
 .brand img { height: 40px; }
 
-#nav { display: flex; justify-content: flex-end; align-items: center; gap: 72px; padding-right: 56px; height: 100%; }
+#nav { display: flex; justify-content: center; align-items: center; gap: 60px; padding: 0 24px; height: 100%; }
 #nav button { font-family: var(--font-display); font-size: 19px; line-height: 1; text-transform: uppercase; color: #cfcfcf; position: relative; transition: color .15s; }
 #nav button:hover, #nav button.active { color: #fff; }
 #nav button.off { color: #5a5a5a; cursor: default; }
 #nav button.active::after { content: ''; position: absolute; left: 0; right: 0; bottom: -12px; height: 2px; background: var(--red); }
 
-.win-controls { display: flex; align-items: center; gap: 6px; padding-right: 22px; height: 100%; }
+.win-controls { display: flex; align-items: center; justify-content: flex-end; gap: 6px; padding-right: 22px; height: 100%; }
 .win-controls button { width: 44px; height: 40px; display: grid; place-items: center; border-radius: 6px; color: #ababab; }
 .win-controls button:hover { background: #2a2a2a; color: #fff; }
 .win-controls #win-close:hover { background: var(--red); color: #fff; }
 .win-controls svg { width: 18px; height: 18px; }
 
 /* Mods installing in the background (main.js drawInstallPill): beside the logo, in
-   the room left of the nav at the smallest window. Opens the install list. */
-#install-pill { position: absolute; left: 124px; top: 50%; transform: translateY(-50%); max-width: 360px; height: 34px; display: flex; align-items: center; gap: 10px; padding: 0 15px 0 12px; border-radius: 17px; background: #1d1d1d; border: 1px solid #2f2f2f; overflow: hidden; font-size: 12.5px; color: #d8d8d8; animation: fade .2s ease; }
+   the room left of the nav (shorter at the smallest window). Opens the install list. */
+#install-pill { position: relative; flex: 0 1 auto; min-width: 0; max-width: 360px; height: 34px; display: flex; align-items: center; gap: 10px; padding: 0 15px 0 12px; border-radius: 17px; background: #1d1d1d; border: 1px solid #2f2f2f; overflow: hidden; font-size: 12.5px; color: #d8d8d8; animation: fade .2s ease; }
 #install-pill[hidden] { display: none; }
 #install-pill:hover { background: #242424; border-color: #3c3c3c; color: #fff; }
 #install-pill .ip-spin { width: 14px; height: 14px; flex: none; border-radius: 50%; border: 2px solid #3a3a3a; border-top-color: var(--red); animation: spin .8s linear infinite; }
@@ -198,6 +199,17 @@ a, button { -webkit-user-drag: none; }
 .seg button { padding: 0 14px; height: 38px; font-size: 13px; color: #aaa; }
 .seg button.active { background: #2f2f2f; color: #fff; }
 .mods-meta { color: var(--muted); font-size: 13px; margin: 18px 0 14px; display: flex; gap: 16px; align-items: center; }
+/* Mods › Cars: the cars' tags to filter by (main.js byTags); one line until "more" opens it. */
+#tag-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: -4px 0 14px; flex: none; }
+#tag-bar:empty { display: none; }
+#tag-bar.open { max-height: 132px; overflow-y: auto; }
+.tag-label { margin-right: 4px; font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.tag-chip { padding: 5px 10px; border-radius: 999px; border: 1px solid transparent; background: #232323; color: #c4c4c4; font-size: 11.5px; white-space: nowrap; transition: background .15s, color .15s; }
+.tag-chip small { margin-left: 6px; font-size: 10.5px; color: #7d7e84; }
+.tag-chip:hover { background: #2e2e2e; color: #fff; }
+.tag-chip.active { background: var(--red); color: #fff; }
+.tag-chip.more { background: none; border-color: #353535; color: var(--muted); }
+.tag-chip.more:hover { color: #fff; border-color: #555; }
 .mods-meta .path { color: var(--dim); font-family: Consolas, monospace; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 18px; }
@@ -226,6 +238,7 @@ img.overlay:not([data-trimmed]) { visibility: hidden; }
 .card-body { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 4px; }
 .card-title { font-weight: 600; font-size: 15px; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .card-sub { font-size: 12.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card-specs { font-size: 12px; color: #c9c9cc; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .card-author { font-size: 12px; color: #d36a6e; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .empty { border: 1px dashed #333; border-radius: 12px; padding: 48px; text-align: center; color: var(--muted); max-width: 720px; margin: 40px auto; line-height: 1.55; }
@@ -457,6 +470,10 @@ select { background: #222; border: 1px solid #383838; border-radius: 6px; height
 .qd-card-body small { font-size: 11px; color: var(--muted); margin-top: 2px; }
 .qd-none { color: var(--muted); padding: 24px 4px; grid-column: 1 / -1; }
 .qd-layouts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
+.qd-layouts.grouped { flex-direction: column; align-items: stretch; }
+.qd-layout-group { display: flex; align-items: flex-start; gap: 8px; }
+.qd-layout-group .qd-layouts-name { flex: none; width: 150px; margin: 13px 0 0; }
+.qd-layout-chips { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: 8px; }
 .qd-layouts-name { font-family: var(--font-display); font-size: 11px; text-transform: uppercase; color: #bbb; margin-right: 4px; }
 .qd-layout { display: flex; align-items: center; gap: 8px; padding: 5px 12px 5px 8px; border-radius: 6px; background: #222; border: 1px solid #303030; text-align: left; }
 .qd-layout:hover { border-color: #444; }

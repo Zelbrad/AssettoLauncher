@@ -84,8 +84,7 @@ export async function readCarPresets(pkgPath, cacheDir) {
   const st = await Neutralino.filesystem.getStats(pkgPath);
   const key = cacheKey(pkgPath, st), file = join(cacheDir, `presets-${key}.json`);
   try { const j = JSON.parse(await readText(file) || 'null'); if (Array.isArray(j)) return j; } catch { /* rebuild */ }
-  if (!openPkgs.has(pkgPath)) openPkgs.set(pkgPath, openPackage(pkgPath));
-  const pkg = await openPkgs.get(pkgPath);
+  const pkg = await openCached(pkgPath, st);
   if (!pkg) return [];
   const out = [];
   for (const e of pkg.find(/^content\\cars\\[^\\]+\\presets\\[^\\]+\.mechanicalcarpreset$/i)) {
@@ -114,7 +113,7 @@ function protoFields(buf) {
     if (w === 0) out.push({ f, v: varint() });
     else if (w === 2) { const len = varint(); out.push({ f, v: buf.subarray(i, i + len) }); i += len; }
     else if (w === 1) i += 8;
-    else if (w === 5) i += 4;
+    else if (w === 5) { if (i + 4 <= buf.length) out.push({ f, f32: new DataView(buf.buffer, buf.byteOffset + i, 4).getFloat32(0, true) }); i += 4; }
     else break;
   }
   return out;
@@ -141,6 +140,67 @@ const spawnTypes = scene => msgs(scene, 2).flatMap(a => msgs(a, 50)).flatMap(m =
   const t = d.find(x => x.f === 6);
   return t?.v instanceof Uint8Array ? [...t.v] : typeof t?.v === 'number' ? [t.v] : [];
 });
+
+// EVO's car categories, as its own car selection filters by them: a car record
+// (system\cars.table, or a mod's .moddedcarcontent) lists them in field 30, each a
+// CarCategoryEnum value; the numbers are the game's (its program's protobuf
+// descriptor), the names its English ones, lower case.
+const CAR_CATEGORIES = {
+  0: 'fwd', 1: 'rwd', 2: 'awd', 10: 'mid engine', 11: 'front engine', 12: 'rear engine', 13: 'electric', 14: 'hydrogen',
+  19: 'concept', 20: 'coupé', 21: 'hatchback', 22: 'sedan', 23: 'suv', 24: 'estate', 25: 'convertible', 26: 'cabriolet',
+  27: 'open wheel', 28: 'no assists', 29: 'drift', 30: 'time attack', 40: 'cup', 41: 'gt2', 42: 'gt3', 43: 'gt4', 44: 'tcx',
+  50: 'rally', 51: 'prototype', 52: 'formula', 53: 'dragster', 54: 'touring', 55: 'hillclimb', 56: 'stock', 57: 'dirt',
+  58: 'legend', 70: 'naturally aspirated', 71: 'turbo', 72: 'supercharged', 73: 'three wheeler', 74: 'lm prototype',
+};
+const f32 = (fields, f) => fields.find(x => x.f === f && x.f32 !== undefined)?.f32;
+
+// A car's figures for its card, detail page and tags, from its physics data (CarData,
+// as EVO's program defines it): the driven wheels (field 3 or the .drivetrain file of
+// field 22: TractionType RWD, FWD, FourWD, AWD, AWDF), the gearbox (field 23 or the
+// .gearbox file of 24: an H-pattern shifter (7), a dual clutch (19), its gears (1)),
+// the steering (controls, 8: lock 2, ratio 3), and power, torque and weight as the
+// game's car page lists them (a mechanical preset's field 19: 1 hp, 2 Nm, 11 kg).
+// null when the car has no readable data.
+const TRACTION = ['RWD', 'FWD', 'AWD', 'AWD', 'AWD'];
+const FIGURES = 2; // mod info: 2, power from the engine curve
+async function evoCarFigures(pkg, carDataPath, presets) {
+  const load = async path => { const e = path && pkg.get(path); return e ? protoFields(await pkg.read(e)) : null; };
+  const car = await load(carDataPath);
+  if (!car) return null;
+  const drivetrain = msgs(car, 3)[0] || await load(str(car, 22));
+  const gearbox = msgs(car, 23)[0] || await load(str(car, 24)) || [];
+  const controls = msgs(car, 8)[0] || [];
+  const lock = f32(controls, 2) || 0, ratio = Math.abs(f32(controls, 3) || 0), gears = num(gearbox, 1) || 0;
+  const out = {
+    drive: drivetrain ? TRACTION[num(drivetrain, 2) || 0] || '' : '', lock, ratio, angle: lock && ratio ? Math.round(lock / ratio) : 0,
+    gearbox: num(gearbox, 7) ? 'manual' : num(gearbox, 19) ? 'dual clutch' : gears === 1 ? 'single speed' : gears ? 'sequential' : '',
+    gears, hp: 0, nm: 0, kg: 0, drift: false,
+  };
+  for (const e of presets) {
+    const p = protoFields(await pkg.read(e));
+    if (/\bdrift\b/i.test(`${str(p, 2)} ${str(p, 3)}`)) out.drift = true;
+    if (out.hp) continue;
+    const stats = new Map((msgs(p, 19)[0] ? msgs(msgs(p, 19)[0], 1) : []).map(s => [num(s, 1), f32(s, 4)]));
+    if (stats.get(1)) Object.assign(out, { hp: Math.round(stats.get(1)), nm: Math.round(stats.get(2) || 0), kg: Math.round(stats.get(11) || 0) });
+  }
+  // Mods' presets leave those figures empty. A naturally aspirated engine's power is its
+  // torque curve's peak torque x rpm (CarData field 4, or the .carengine of field 20; its
+  // curve, field 2: points of rpm (1) and Nm (10)), within about 10% of the game's own
+  // figure for its cars; a turbo engine's isn't (the boost model is more than that), so
+  // it has none. hpEstimated marks it.
+  if (!out.hp) {
+    const engine = msgs(car, 4)[0] || await load(str(car, 20));
+    const turbo = engine && (msgs(engine, 24).length || engine.some(x => x.v instanceof Uint8Array && /\.turbo$/i.test(utf8.decode(x.v))));
+    const curve = engine && !turbo ? await load(str(engine, 2)) : null;
+    const peak = Math.max(0, ...(curve ? msgs(curve, 1) : []).map(p => (f32(p, 1) || 0) * (f32(p, 10) || 0)));
+    if (peak) Object.assign(out, { hp: Math.round(peak / 9549 * 1.35962), hpEstimated: true });
+  }
+  return out;
+}
+const presetsOf = (pkg, id) => pkg.find(new RegExp(`^content\\\\cars\\\\${id.replace(/[^\w-]/g, '')}\\\\presets\\\\.*\\.mechanicalcarpreset$`, 'i'));
+
+const carCategories = car => [...new Set(msgs(car, 30).flatMap(m => m.filter(x => x.f === 1)
+  .flatMap(x => (typeof x.v === 'number' ? [x.v] : packedVarints(x.v)))).map(n => CAR_CATEGORIES[n]).filter(Boolean))];
 
 // Human-readable top-level strings (skips nested messages and content paths).
 function protoStrings(buf) {
@@ -347,7 +407,8 @@ export async function readModInfo(file, cacheDir) {
       old = JSON.parse(cached);
       // Read again: tracks read before they were named from their ui\previews.json,
       // and cars whose pictures were framed differently (frameCar), or not at all.
-      if (old.kind === 'track' ? old.named : old.kind !== 'car' || old.framing === FRAMING) return withPaths(old, cacheDir);
+      // Cars read before their categories (tags) and figures (mech, FIGURES) were are read again too.
+      if (old.kind === 'track' ? old.named : old.kind !== 'car' || (old.framing === FRAMING && Array.isArray(old.tags) && old.figures === FIGURES)) return withPaths(old, cacheDir);
     } catch { /* rebuild */ }
   }
 
@@ -363,10 +424,18 @@ export async function readModInfo(file, cacheDir) {
   };
 
   const content = pkg.find(/\.modded\w*content$/i)[0];
+  info.tags = [];
   if (content) {
-    const s = protoStrings(await pkg.read(content));
+    const data = await pkg.read(content), s = protoStrings(data);
     info.name = s[0] || '';
     info.brand = s[1] || '';
+    if (info.kind === 'car') info.tags = carCategories(protoFields(data));
+  }
+  info.mech = null;
+  info.figures = FIGURES;
+  if (info.kind === 'car' && info.contentId) {
+    const carData = pkg.find(/^content\\cars\\[^\\]+\\data\\[^\\]+\.car$/i)[0];
+    info.mech = carData ? await evoCarFigures(pkg, carData.name, presetsOf(pkg, info.contentId)).catch(err => { log(`evo mod figures ${file}: ${err?.message || err}`); return null; }) : null;
   }
   await ensureDir(cacheDir);
 
@@ -610,7 +679,7 @@ export async function looseTextureJpeg(texPath, out, maxWidth = 1000) {
 // Official content (content.kspkg): car list with car-select thumbnails and
 // track list with layout photos + SVG maps, as the game's menus show them.
 
-const BASE_VERSION = 'v8'; // v8: only Hotstint containers whose start is a pit spot too; v7: Hotstint containers per layout; v6: academy arches per layout; v5: pictures decoded when shown (catalogue lists their textures)
+const BASE_VERSION = 'v10'; // v10: both lines below merged; fork v9: power from the engine curve, v8: cars' figures, v7: cars' categories; upstream v8: only Hotstint containers whose start is a pit spot too, v7: Hotstint containers per layout; v6: academy arches per layout; v5: pictures decoded when shown (catalogue lists their textures)
 const slug = name => name.toLowerCase().replace(/\s+/g, '_');
 const layoutName = id => prettifyId(id.replace(/-/g, ' ')).replace(/\bV(\d)/g, 'v$1');
 
@@ -624,7 +693,14 @@ const layoutName = id => prettifyId(id.replace(/-/g, ' ')).replace(/\bV(\d)/g, '
 
 const lazyJobs = new Map(); // picture URL -> { url, pkgPath, tex, out, maxWidth }
 const urgent = [], idle = [];
-const openPkgs = new Map(); // package path -> Promise<package>
+const openPkgs = new Map(); // package path -> { stamp: its size and time, pkg: Promise<package> }
+const pkgStamp = st => `${st.size}-${st.modifiedAt}`;
+// The package at path, kept open, and opened again once it changed (its file table moves with it).
+async function openCached(path, st) {
+  st ||= await Neutralino.filesystem.getStats(path);
+  if (openPkgs.get(path)?.stamp !== pkgStamp(st)) openPkgs.set(path, { stamp: pkgStamp(st), pkg: openPackage(path) });
+  return openPkgs.get(path).pkg;
+}
 let pumping = false, prefetchTimer = 0;
 
 export const isLazyImage = url => lazyJobs.has(url);
@@ -665,8 +741,7 @@ async function pump() {
     let ok = false;
     try {
       if (await exists(job.out)) { job.resolve(true); continue; } // decoded on an earlier run
-      if (!openPkgs.has(job.pkgPath)) openPkgs.set(job.pkgPath, openPackage(job.pkgPath));
-      const pkg = await openPkgs.get(job.pkgPath), e = pkg?.get(job.tex);
+      const pkg = await openCached(job.pkgPath), e = pkg?.get(job.tex);
       ok = !!e && await saveTexture(pkg, e, job.out, job.maxWidth);
     } catch (err) { log(`picture ${job.tex}: ${err?.message || err}`); }
     job.resolve(ok);
@@ -717,14 +792,18 @@ export async function readEvoCatalog(contentPath, cacheDir, onProgress = () => {
   onProgress(0, 0, 'Reading game package…');
   const pkg = await openPackage(contentPath);
   if (!pkg) throw new Error('content.kspkg has no readable file table');
-  openPkgs.set(contentPath, Promise.resolve(pkg)); // reused for the pictures
+  openPkgs.set(contentPath, { stamp: pkgStamp(st), pkg: Promise.resolve(pkg) }); // reused for the pictures
 
   const table = async name => { const e = pkg.get(name); return e ? protoFields(await pkg.read(e)) : []; };
   const rows = (t, inner) => msgs(t, 2).flatMap(m => msgs(m, 3)).flatMap(m => msgs(m, inner));
 
   const cars = rows(await table('system\\cars.table'), 1).map(c => ({
-    id: str(c, 1), name: str(c, 4), year: num(c, 5) || '', brand: str(c, 10), image: '',
+    id: str(c, 1), name: str(c, 4), year: num(c, 5) || '', brand: str(c, 10), image: '', tags: carCategories(c), data: str(c, 6),
   })).filter(c => c.id && c.name);
+  for (const c of cars) {
+    c.mech = await evoCarFigures(pkg, c.data, presetsOf(pkg, c.id)).catch(err => { log(`evo car figures ${c.id}: ${err?.message || err}`); return null; });
+    delete c.data;
+  }
 
   // Track containers describe each layout per game mode: Practice uses the
   // "Time Attack" container (flag field 6), Race and Race Weekend the "Race" one

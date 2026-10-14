@@ -1,5 +1,5 @@
 {
- "updated": "2026-10-12T15:23:24Z",
+ "updated": "2026-10-13T21:21:00Z",
  "build": "25170642",
  "languages": [
   "en",
@@ -323,7 +323,22 @@
     "de": "Der GTA 1300, eine Ikone der 1960er und 1970er, war auf der Rundstrecke, in Bergrennen und in der Rallye erfolgreich. Mit 163 PS und Hinterradantrieb bot er eine für seine Zeit fortschrittliche Leistung.",
     "it": "La GTA 1300, iconica auto degli anni '60 e '70, era capace di vincere su pista, nelle cronoscalate e nel rally. Con 163 cavalli di potenza e la trazione posteriore, offriva prestazioni incredibili per l'epoca."
    },
-   "picture": "img/rally/cars/AlfaRomeoGTA1300.webp"
+   "picture": "img/rally/cars/AlfaRomeoGTA1300.webp",
+   "specs": {
+    "year": 1972,
+    "cc": 1290,
+    "hp": 163,
+    "nm": 148,
+    "kg": 760,
+    "engine": "Inline4",
+    "position": "Front",
+    "induction": "Natural",
+    "drive": "RWD",
+    "gears": "Manual5",
+    "steering": 1332,
+    "powerRpm": 8400,
+    "torqueRpm": 6500
+   }
   },
   "AlpineA110": {
    "livery": {
@@ -340,7 +355,22 @@
     "de": "Als unangefochtene Legende der Rallyewelt der 1960er-Jahre spielte dieser Wagen eine Schlüsselrolle im Aufstieg des Rallyesports. Sein geringes Gewicht und seine hervorragende Leistung gleichen die Komplexität und die hohen technischen Anforderungen beim Fahren vollständig aus.",
     "it": "Icona indiscussa del mondo dei rally negli anni '60, contribuì significativamente alla crescita di questo sport. La sua leggerezza e le ottime prestazioni compensavano pienamente la complessità e le elevate esigenze tecniche richieste alla guida."
    },
-   "picture": "img/rally/cars/AlpineA110.webp"
+   "picture": "img/rally/cars/AlpineA110.webp",
+   "specs": {
+    "year": 1973,
+    "cc": 1774,
+    "hp": 185,
+    "nm": 195,
+    "kg": 650,
+    "engine": "Inline4",
+    "position": "Front",
+    "induction": "Natural",
+    "drive": "RWD",
+    "gears": "Manual5",
+    "steering": 1152,
+    "powerRpm": 7000,
+    "torqueRpm": 5000
+   }
   },
   "AudiQuattroGr4": {
    "livery": {
@@ -353,7 +383,22 @@
     "de": "Mit dem Quattro Gruppe 4 revolutionierte Audi die Welt des Rallyesports. Es war das erste Fahrzeug mit Allradantrieb, das antrat und gewann, und veränderte damit dauerhaft die Entwicklungsrichtung der Fahrzeuge dieser Kategorie.",
     "it": "Con la Quattro Gruppo 4, Audi ha rivoluzionato il mondo dei rally. È stata la prima vettura a trazione integrale a competere e a vincere, cambiando per sempre la direzione dello sviluppo delle auto di questa categoria."
    },
-   "picture": "img/rally/cars/AudiQuattroGr4.webp"
+   "picture": "img/rally/cars/AudiQuattroGr4.webp",
+   "specs": {
+    "year": 1981,
+    "cc": 2178,
+    "hp": 320,
+    "nm": 412,
+    "kg": 1190,
+    "engine": "Inline4",
+    "position": "Front",
+    "induction": "Turbo",
+    "drive": "AWD",
+    "gears": "Manual5",
+    "steering": 900,
+    "powerRpm": 6500,
+    "torqueRpm": 3250
+   }
   },
   "CitroenXsaraWRC": {
    "livery": {
@@ -366,7 +411,22 @@
     "de": "Der Citroën Xsara WRC wurde durch Sébastien Loebs Siege zur Legende und dominierte von 2000 bis 2006 mit fortschrittlicher Aerodynamik, über 300 PS und bemerkenswerter Zuverlässigkeit.",
     "it": "La Citroën Xsara WRC, resa leggendaria dalle vittorie di Sébastien Loeb, ha dominato il mondo del rally dal 2000 al 2006 grazie alle sue proprietà aerodinamiche avanzate, ai suoi oltre 300 cavalli di potenza e alla sua incredibile affidabilità."
    },
-   "picture": "img/rally/cars/CitroenXsaraWRC.webp"
+   "picture": "img/rally/cars/CitroenXsaraWRC.webp",
+   "specs": {
+    "year": 2003,
+    "cc": 1998,
+    "hp": 310,
+    "nm": 570,
+    "kg": 1230,
+    "engine": "Inline4",
+    "position": "Front",
+    "induction": "Turbo",
+    "drive": "AWD",
+    "gears": "Sequential6_SinglePaddle",
+    "steering": 540,
+    "powerRpm": 5500,
+    "torqueRpm": 2750
+   }
   },
   "Fiat124Abarth": {
    "livery": {
@@ -383,7 +443,22 @@
     "de": "Der 124 Abarth 16V ist ein Symbol für Fiats Rallye-Ambitionen und bewies, dass auch kleinere Hersteller konkurrenzfähig sein konnten. Gefertigt aus ultraleichten Materialien, mit Heckantrieb und 200 PS, bot er hervorragende Leistung, Haltbarkeit und große Zuverlässigkeit im Wettbewerb.",
     "it": "Simbolo dell'ambizione di Fiat nel rally, la 124 Abarth 16V ha dimostrato che anche i piccoli costruttori potevano essere competitivi. Grazie ai materiali ultraleggeri, al sistema a trazione posteriore e ai 200 cavalli di potenza, offriva ottime prestazioni, resistenza e grande affidabilità in gara."
    },
-   "picture": "img/rally/cars/Fiat124Abarth.webp"
+   "picture": "img/rally/cars/Fiat124Abarth.webp",
+   "specs": {
+    "year": 1974,
+    "cc": 1840,
+    "hp": 200,
+    "nm": 190,
+    "kg": 900,
+    "engine": "Inline4",
+    "position": "Front",
+    "induction": "Natural",
+    "drive": "RWD",
+    "gears": "Manual5",
+    "steering": 990,
+    "powerRpm": 8000,
+    "torqueRpm": 6000
+   }
   },
   "Fiat131Abarth": {
    "livery": {
@@ -396,7 +471,22 @@
     "de": "Der Fiat 131 Abarth, ein kompakter Hecktriebler der 70er mit ikonischer Alitalia-Lackierung und 245 PS, wurde zur Rallye-Legende und dominierte Wettbewerbe bis zum Beginn der Gruppe-B-Ära.",
     "it": "La Fiat 131 Abarth, una compatta a trazione posteriore degli anni '70 con l'iconica livrea Alitalia e 245 cavalli di potenza, divenne una leggenda del rally, dominando le competizioni fino all'inizio dell'era del Gruppo B."
    },
-   "picture": "img/rally/cars/Fiat131Abarth.webp"
+   "picture": "img/rally/cars/Fiat131Abarth.webp",
+   "specs": {
+    "year": 1976,
+    "cc": 1995,
+    "hp": 245,
+    "nm": 226,
+    "kg": 850,
+    "engine": "Inline4",
+    "position": "Front",
+    "induction": "Natural",
+    "drive": "RWD",
+    "gears": "Manual5",
+    "steering": 720,
+    "powerRpm": 7500,
+    "torqueRpm": 5600
+   }
   },
   "Hyundaii20NRally2": {
    "livery": {
@@ -410,7 +500,22 @@
     "de": "Der Hyundai i20 Rally2, eines der beliebtesten Fahrzeuge seiner Kategorie, ist ein turbogeladener Allradwagen mit hervorragender Leistung und großer Fahrerfreundlichkeit. Er ist sowohl für Einsteiger als auch für erfahrene Fahrer, die ein zuverlässiges Auto suchen, ideal.",
     "it": "La Hyundai i20 Rally2, una delle auto più popolari della sua categoria, è un'auto 4WD con motore turbo dalle prestazioni eccellenti e facile da manovrare. È ideale per i principianti e per i veterani che hanno bisogno di un'auto affidabile."
    },
-   "picture": "img/rally/cars/Hyundaii20NRally2.webp"
+   "picture": "img/rally/cars/Hyundaii20NRally2.webp",
+   "specs": {
+    "year": 2021,
+    "cc": 1597,
+    "hp": 290,
+    "nm": 420,
+    "kg": 1230,
+    "engine": "Inline4",
+    "position": "Front",
+    "induction": "Turbo",
+    "drive": "AWD",
+    "gears": "Sequential5_Lever",
+    "steering": 452,
+    "powerRpm": 5000,
+    "torqueRpm": 4000
+   }
   },
   "LanciaDeltaIntegraleEvo": {
    "livery": {
@@ -423,7 +528,22 @@
     "de": "Der Lancia Delta Integrale Evoluzione ist eine wahre Legende des Rallyesports und bedarf keiner Vorstellung. Seine Leistung (365 PS), sein Handling (Allrad) und seine Robustheit kombinierten Stärke mit Zuverlässigkeit und machten ihn zum unangefochtenen Dominator der Gruppe A.",
     "it": "Una vera leggenda del rally, la Lancia Delta Integrale Evoluzione non ha bisogno di presentazioni. Ha dominato in modo indiscusso nel Gruppo A, grazie alla sua potenza (365 cavalli), alla sua manovrabilità (4WD) e alla sua robustezza, ha combinato affidabilità e grandi prestazioni."
    },
-   "picture": "img/rally/cars/LanciaDeltaIntegraleEvo.webp"
+   "picture": "img/rally/cars/LanciaDeltaIntegraleEvo.webp",
+   "specs": {
+    "year": 1992,
+    "cc": 1995,
+    "hp": 365,
+    "nm": 535,
+    "kg": 1184,
+    "engine": "Inline4",
+    "position": "Front",
+    "induction": "Turbo",
+    "drive": "AWD",
+    "gears": "Manual6",
+    "steering": 900,
+    "powerRpm": 7000,
+    "torqueRpm": 4000
+   }
   },
   "LanciaFulviaHF": {
    "livery": {
@@ -440,7 +560,22 @@
     "de": "Ein legendäres Auto der 1970er-Jahre und das Ergebnis einer Mischung aus Innovation und ingenieurstechnischer Entwicklungsarbeit. Durch das vordere Sperrdifferenzial reagiert das Fahrzeug aufgrund wechselnder Traktion an der Vorderachse sehr sensibel.",
     "it": "Una vettura iconica degli anni '70, un concentrato di innovazioni e ricerca ingegneristica. L'introduzione del differenziale autobloccante anteriore la rende nervosa alla guida, a causa delle variazioni di trazione tra le ruote anteriori."
    },
-   "picture": "img/rally/cars/LanciaFulviaHF.webp"
+   "picture": "img/rally/cars/LanciaFulviaHF.webp",
+   "specs": {
+    "year": 1970,
+    "cc": 1584,
+    "hp": 165,
+    "nm": 172,
+    "kg": 780,
+    "engine": "V4",
+    "position": "Front",
+    "induction": "Natural",
+    "drive": "FWD",
+    "gears": "Manual5",
+    "steering": 1170,
+    "powerRpm": 7200,
+    "torqueRpm": 6000
+   }
   },
   "LanciaRally037Evo2": {
    "livery": {
@@ -453,7 +588,22 @@
     "de": "Der 037 Evo war das letzte heckgetriebene Fahrzeug, das die legendären Giganten der Gruppe B herausforderte und besiegte. Der 325 PS starke Kompressormotor – ein Ausstattungsmerkmal, das ihn von seinen Rivalen abhob – sorgte für eine außergewöhnliche und für den Rallyesport ideale Beschleunigung.",
     "it": "La 037 Evo è stata l'ultima auto a trazione posteriore a sfidare e battere i leggendari giganti del Gruppo B. Il motore sovralimentato da 325 cavalli, caratteristica che la distingueva dalle sue rivali, offriva un'accelerazione eccezionale, ideale per le gare di rally."
    },
-   "picture": "img/rally/cars/LanciaRally037Evo2.webp"
+   "picture": "img/rally/cars/LanciaRally037Evo2.webp",
+   "specs": {
+    "year": 1984,
+    "cc": 2111,
+    "hp": 325,
+    "nm": 320,
+    "kg": 970,
+    "engine": "Inline4",
+    "position": "Middle",
+    "induction": "Turbo",
+    "drive": "RWD",
+    "gears": "Manual5",
+    "steering": 900,
+    "powerRpm": 8000,
+    "torqueRpm": 5500
+   }
   },
   "LanciaStratosHF": {
    "livery": {
@@ -466,7 +616,22 @@
     "de": "Der Lancia Stratos HF mit seinem 250 PS starken Ferrari-Motor, Heckantrieb und innovativem Design dominierte den Rallyesport in den 1970er Jahren. Dieses anspruchsvolle Kraftpaket erforderte außergewöhnliches Können und festigte so seinen Status als Motorsportlegende.",
     "it": "La Lancia Stratos HF, con il suo motore Ferrari da 250 cavalli, la trazione posteriore e il design all'avanguardia, ha dominato la scena del rally degli anni '70. Potente ma difficile da guidare, richiedeva abilità eccezionali che cementano il suo status di leggenda degli sport motoristici."
    },
-   "picture": "img/rally/cars/LanciaStratosHF.webp"
+   "picture": "img/rally/cars/LanciaStratosHF.webp",
+   "specs": {
+    "year": 1976,
+    "cc": 2419,
+    "hp": 250,
+    "nm": 260,
+    "kg": 880,
+    "engine": "V6",
+    "position": "Middle",
+    "induction": "Natural",
+    "drive": "RWD",
+    "gears": "Manual5",
+    "steering": 1170,
+    "powerRpm": 7700,
+    "torqueRpm": 6000
+   }
   },
   "MiniCooperS1275": {
    "livery": {
@@ -483,7 +648,22 @@
     "de": "Der Mini Cooper S ist eine Ikone der 1960er und Stillegende und gilt als Symbol des Rallyesports, das mit kompakter Größe, Leistung und fortschrittlicher Technik aufwartet. Sein Frontantrieb und das hervorragende Handling machen ihn ideal für Einsteiger.",
     "it": "Leggenda degli anni '60 e icona di stile, la Mini Cooper S è un simbolo del rally grazie alle sue dimensioni compatte, alla sua potenza e alla sua ingegneria avanzata. La sua trazione anteriore e l'ottima manovrabilità la rendono perfetta per i principianti."
    },
-   "picture": "img/rally/cars/MiniCooperS1275.webp"
+   "picture": "img/rally/cars/MiniCooperS1275.webp",
+   "specs": {
+    "year": 1964,
+    "cc": 1275,
+    "hp": 115,
+    "nm": 150,
+    "kg": 620,
+    "engine": "Inline4",
+    "position": "Front",
+    "induction": "Natural",
+    "drive": "FWD",
+    "gears": "Manual4",
+    "steering": 840,
+    "powerRpm": 7000,
+    "torqueRpm": 4500
+   }
   },
   "Peugeot206": {
    "livery": {
@@ -499,7 +679,22 @@
     "de": "Der Peugeot 206 WRC zählt zu den ikonischsten Fahrzeugen der französischen Marke. Ausgestattet mit eigens vergrößerten Stoßfängern, um die Mindestmaße für die Homologation in der Topklasse zu erfüllen, konnte er gewinnen und wurde zu einem der begehrtesten Autos unter jungen Menschen, was einen Verkaufsboom der Straßenversion auslöste.",
     "it": "La Peugeot 206 WRC è tra le auto più iconiche del marchio francese. Dotata di paraurti appositamente maggiorati per raggiungere le dimensioni minime di omologazione della classe regina, è riuscita a vincere e a diventare una delle auto più desiderate dai giovani, garantendo un boom di vendite per la versione stradale."
    },
-   "picture": "img/rally/cars/Peugeot206.webp"
+   "picture": "img/rally/cars/Peugeot206.webp",
+   "specs": {
+    "year": 1999,
+    "cc": 1997,
+    "hp": 300,
+    "nm": 525,
+    "kg": 1230,
+    "engine": "Inline4",
+    "position": "Front",
+    "induction": "Turbo",
+    "drive": "AWD",
+    "gears": "Sequential6_Lever",
+    "steering": 720,
+    "powerRpm": 5250,
+    "torqueRpm": 3500
+   }
   },
   "Peugeot208Rally4": {
    "livery": {
@@ -512,7 +707,22 @@
     "de": "Der Peugeot 208 Rally4 ist ein moderner Fronttriebler, der äußerst agil und reaktionsschnell ist. Er kann sehr schnell sein, erfordert jedoch eine sehr sanfte Fahrweise, um die schnelle Rotation der Hinterachse zu kontrollieren und ein Ausbrechen des Fahrzeugs zu vermeiden.",
     "it": "La Peugeot 208 Rally4 è una moderna auto a trazione anteriore, estremamente agile e reattiva. Sa essere molto veloce, ma richiede una guida molto fluida per gestire le veloci rotazioni dell'asse posteriore ed evitare i testacoda."
    },
-   "picture": "img/rally/cars/Peugeot208Rally4.webp"
+   "picture": "img/rally/cars/Peugeot208Rally4.webp",
+   "specs": {
+    "year": 2020,
+    "cc": 1199,
+    "hp": 208,
+    "nm": 290,
+    "kg": 1080,
+    "engine": "Inline3",
+    "position": "Front",
+    "induction": "Turbo",
+    "drive": "FWD",
+    "gears": "Sequential5_Lever",
+    "steering": 750,
+    "powerRpm": 5450,
+    "torqueRpm": 3000
+   }
   },
   "Peugeot306IIMaxiKitCar": {
    "livery": {
@@ -525,7 +735,22 @@
     "de": "Eines der wenigen Kit-Cars mit Frontantrieb, das dank seines geringen Gewichts und seiner außergewöhnlichen Leistung zumindest auf Asphalt-Wertungsprüfungen mit den Spitzenfahrzeugen der World Rally Championship in der zweiten Hälfte der 1990er Jahre mithalten konnte.",
     "it": "Una delle poche kit car a trazione anteriore che, grazie al peso ridotto e alla potenza eccezionale, è riuscita a competere — almeno sulle prove speciali asfaltate — con le vetture di punta del World Rally Championship nella seconda metà degli anni ’90."
    },
-   "picture": "img/rally/cars/Peugeot306IIMaxiKitCar.webp"
+   "picture": "img/rally/cars/Peugeot306IIMaxiKitCar.webp",
+   "specs": {
+    "year": 1997,
+    "cc": 1998,
+    "hp": 300,
+    "nm": 260,
+    "kg": 960,
+    "engine": "Inline4",
+    "position": "Front",
+    "induction": "Natural",
+    "drive": "FWD",
+    "gears": "Sequential6_7_Lever",
+    "steering": 720,
+    "powerRpm": 9600,
+    "torqueRpm": 7750
+   }
   },
   "SkodaFabiaRSRally2": {
    "livery": {
@@ -538,7 +763,22 @@
     "de": "Der Škoda Fabia RS Rally2 ist eines der in den letzten Jahren am häufigsten in regionalen und nationalen Meisterschaften eingesetzten Fahrzeuge. Sein ausgewogenes Leistungsprofil und sein hervorragendes Handling verleihen ihm den Status als einer der besten Wagen seiner Klasse.",
     "it": "La Škoda Fabia RS Rally2 è una delle vetture più utilizzate negli ultimi anni nei campionati regionali e nazionali. Le sue prestazioni equilibrate e la grande maneggevolezza la rendono una delle migliori della categoria."
    },
-   "picture": "img/rally/cars/SkodaFabiaRSRally2.webp"
+   "picture": "img/rally/cars/SkodaFabiaRSRally2.webp",
+   "specs": {
+    "year": 2022,
+    "cc": 1620,
+    "hp": 289,
+    "nm": 430,
+    "kg": 1230,
+    "engine": "Inline4",
+    "position": "Front",
+    "induction": "Turbo",
+    "drive": "AWD",
+    "gears": "Sequential5_Lever",
+    "steering": 540,
+    "powerRpm": 6000,
+    "torqueRpm": 4500
+   }
   },
   "SubaruImprezaS3": {
    "livery": {
@@ -555,7 +795,22 @@
     "de": "Der 1993 eingeführte Impreza S3 ersetzte den Legacy im Gruppe-A-Rallyeprogramm von Subaru. Mit seiner ikonischen blau-gelben Lackierung revolutionierte er die World Rally Championship und wurde durch den legendären Fahrer Colin McRae weltbekannt.",
     "it": "Introdotta nel 1993, l’Impreza S3 ha sostituito la Legacy nel programma rally Gruppo A di Subaru. Con la sua iconica livrea blu e gialla, ha rivoluzionato il World Rally Championship ed è stata portata alla ribalta dal leggendario pilota Colin McRae."
    },
-   "picture": "img/rally/cars/SubaruImprezaS3.webp"
+   "picture": "img/rally/cars/SubaruImprezaS3.webp",
+   "specs": {
+    "year": 1993,
+    "cc": 1998,
+    "hp": 300,
+    "nm": 440,
+    "kg": 1230,
+    "engine": "Boxer4",
+    "position": "Front",
+    "induction": "Turbo",
+    "drive": "AWD",
+    "gears": "Manual6",
+    "steering": 900,
+    "powerRpm": 5500,
+    "torqueRpm": 4000
+   }
   },
   "VWPoloGTIR5": {
    "livery": {
@@ -572,7 +827,22 @@
     "de": "Der Volkswagen Polo GTI R5 wurde 2018 erstmals vorgestellt und in enger Zusammenarbeit mit Škoda entwickelt. Er ist ein direkter Nachfahre des Polo R WRC, der die Weltmeisterschaft dominierte. Für die frühere R5-Kategorie homologiert, trat er nach der Reglementänderung weiterhin in regionalen und nationalen Meisterschaften auf der ganzen Welt an.",
     "it": "Presentata per la prima volta nel 2018 e sviluppata in stretta collaborazione con Škoda, la Volkswagen Polo GTI R5 è una diretta discendente della Polo R WRC, che ha dominato il mondiale. Omologata per la vecchia categoria R5, dopo il cambio regolamentare ha continuato a competere nei campionati regionali e nazionali di tutto il mondo."
    },
-   "picture": "img/rally/cars/VWPoloGTIR5.webp"
+   "picture": "img/rally/cars/VWPoloGTIR5.webp",
+   "specs": {
+    "year": 2018,
+    "cc": 1615,
+    "hp": 272,
+    "nm": 400,
+    "kg": 1230,
+    "engine": "Inline4",
+    "position": "Front",
+    "induction": "Turbo",
+    "drive": "AWD",
+    "gears": "Sequential5_Lever",
+    "steering": 280,
+    "powerRpm": 5500,
+    "torqueRpm": 4000
+   }
   }
  },
  "media": {

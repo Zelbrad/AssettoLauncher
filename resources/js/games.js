@@ -147,6 +147,8 @@ export async function scanAcCars(paths) {
       fallbackImage: fileUrl(join(dir, 'ui/badge.png')),
       badge: fileUrl(join(dir, 'ui/badge.png')),
       tags: (ui.tags || []).map(t => String(t).replace(/^#/, '')).slice(0, 8),
+      // Every tag, for the Mods page's tag filter (the detail page shows the first 8).
+      allTags: (Array.isArray(ui.tags) ? ui.tags : []).map(t => String(t).replace(/^#/, '').trim()).filter(Boolean),
       description: cleanText(ui.description),
       specs: ui.specs || null,
       year: ui.year || '', brand: cleanText(ui.brand) || '',
@@ -354,7 +356,8 @@ async function scanEvoPackages(paths) {
         author: '',
         image: img ? fileUrl(join(dir, img.entry)) : thumbs[0]?.src || '',
         gallery: thumbs.filter(t => t.label), galleryTitle: 'Variants',
-        tags: ['kspkg', ...(thumbs.length > 1 ? [`${thumbs.length} variants`] : [])],
+        tags: ['kspkg', ...(thumbs.length > 1 ? [`${thumbs.length} variants`] : []), ...(info?.tags || [])],
+        allTags: evoTags(info?.tags, info?.mech), ...evoFigures(info?.mech),
         description: `Package: ${e.entry}`,
         isMod: true, enabled: !m[2], path, toggle: 'evo', unreadable: !info,
         carId: info?.kind === 'car' ? info.contentId || m[1] : '', brand: info?.brand || '',
@@ -371,7 +374,7 @@ async function scanEvoPackages(paths) {
         title: cleanText(meta?.name || meta?.displayName) || prettifyId(e.entry),
         subtitle: 'Loose mod folder', author: meta?.author || '',
         image: img ? fileUrl(join(dir, e.entry, img.entry)) : '',
-        tags: ['folder'], description: cleanText(meta?.description) || '',
+        tags: ['folder'], allTags: [], description: cleanText(meta?.description) || '',
         isMod: true, enabled: true, path: join(dir, e.entry),
       });
     }
@@ -440,6 +443,24 @@ export async function scanEvoLiveries(paths) {
   return items.filter(Boolean).sort(byTitle);
 }
 
+// An EVO car's figures (kspkg.js evoCarFigures) as the Mods page uses them: specs for the
+// card and detail page, mech for the drivetrain, gearbox and steering wheel tags (acdata.js).
+// An estimated power reads "≈ 562 hp".
+function evoFigures(m) {
+  if (!m) return {};
+  return {
+    specs: { bhp: m.hp ? `${m.hpEstimated ? '≈ ' : ''}${m.hp} hp` : '', torque: m.nm ? `${m.nm} Nm` : '', weight: m.kg ? `${m.kg} kg` : '' },
+    mech: { drive: m.drive, lock: m.lock, gearbox: m.gearbox, gears: m.gears },
+  };
+}
+// The game's categories, and "drift" for a car with a drift preset (Supra MKIV, RX-7 FD).
+// The driven wheels come from the car's physics (mechTags) when it has them: the
+// categories disagree for one car (the Alpine A290 β is listed AWD, its drivetrain is FWD).
+const evoTags = (tags, m) => [
+  ...(tags || []).filter(t => !(m?.drive && /^(fwd|rwd|awd)$/.test(t))),
+  ...(m?.drift && !(tags || []).includes('drift') ? ['drift'] : []),
+];
+
 export async function scanEvoCars(paths, onProgress) {
   const mods = (await scanEvoPackages(paths)).filter(i => i.kind === 'car');
   const cat = await evoCatalog(paths, onProgress);
@@ -447,8 +468,9 @@ export async function scanEvoCars(paths, onProgress) {
     id: c.id, kind: 'car', game: 'evo',
     title: c.name, subtitle: [c.brand, c.year].filter(Boolean).join(' · '),
     author: 'Kunos Simulazioni', image: fileUrl(c.image),
-    tags: [c.brand].filter(Boolean), description: '',
-    isMod: false, enabled: true, path: paths.evo.install, carId: c.id, brand: c.brand || '',
+    // The game's own categories (kspkg.js carCategories): drivetrain, engine, body, racing class.
+    tags: c.tags?.length ? c.tags : [c.brand].filter(Boolean), allTags: evoTags(c.tags, c.mech), description: '',
+    isMod: false, enabled: true, path: paths.evo.install, carId: c.id, brand: c.brand || '', ...evoFigures(c.mech),
   }));
   await markFresh('evo_cars', official);
   return [...mods.sort(byTitle), ...official.sort(byTitle)];
