@@ -3,8 +3,9 @@
 // track): the shared memory it keeps for third-party tools, read-only. The layout
 // is Kunos's (SharedFileOut.h, packed to 4):
 //   Local\acevo_pmf_physics   speedKmh (float) at 28, carDamage[5] floats at 224, numberOfTyresOut (int) at 244
-//   Local\acevo_pmf_graphics  status (int) at 4 (2: driving), total_lap_count and last_laptime_ms
-//                             (ints) at 2384 and 2396, car_model (char[33]) at 3086,
+//   Local\acevo_pmf_graphics  status (int) at 4 (2: driving), current_lap_time_ms (int) at 188,
+//                             npos (float, 0-1 round the lap) at 1244, total_lap_count and
+//                             last_laptime_ms (ints) at 2384 and 2396, car_model (char[33]) at 3086,
 //                             is_in_pit_box, is_in_pit_lane, is_valid_lap (bools) at 3119-3121
 // A PowerShell helper reads them 20 times a second and prints a line of JSON when
 //   the car's damage goes up (an impact)                { "t": "hit", "d": how much, over 0.4 s }
@@ -15,13 +16,16 @@
 //   the lap's validity changes                          { "t": "valid", "v": 0 | 1 }
 //   a lap is done (the lap count went up)               { "t": "lap", "n": laps, "ms": its time, "valid": not marked
 //                                                         invalid, "pit": in the pit lane during it, "kmh": speed then }
+//   with `pos` (a sprint), each read while driving      { "t": "pos", "n": npos, "ms": the timer }
+//     (EVO's live data says nothing at a sprint's finish arch: main.js finds it by
+//     where the car is, sprintPos)
 // Without a readable graphics page, there are no cuts or laps from here (main.js reads them
 // from the log then). It waits for the pages while EVO starts, and ends with the
 // launcher or when stopped. It's too long for a command line: it's written to a
 // file in the temp folder, which a short command reads and runs.
 import { powershellEncodedCommand, psQuote, writeText, join, norm, log } from './util.js';
 
-const script = (name, gfxName, parent) => `
+const script = (name, gfxName, parent, pos) => `
 $ErrorActionPreference = 'SilentlyContinue'; $ProgressPreference = 'SilentlyContinue'
 $inv = [Globalization.CultureInfo]::InvariantCulture
 $sw = [Diagnostics.Stopwatch]::StartNew()
@@ -87,6 +91,8 @@ while ($true) {
         Say ('{"t":"lap","n":' + $lapN + ',"ms":' + $lms + ',"valid":' + (-not $wasBad).ToString().ToLower() + ',"pit":' + $wasPit.ToString().ToLower() + ',"kmh":' + [Math]::Round($view.ReadSingle(28)) + '}')
         $lapMs = $lms; $lapAt = 0
       }
+      ${pos ? `$cur = $gview.ReadInt32(188)
+      if ($cur -gt 0) { Say ('{"t":"pos","n":' + $gview.ReadSingle(1244).ToString('0.000000', $inv) + ',"ms":' + $cur + '}') }` : ''}
     }
   }
   $dmg = 0.0
@@ -115,10 +121,11 @@ while ($true) {
 `;
 
 // Starts the helper; onEvent gets each event. Returns stop(). names: the pages to
-// read (others for --check-academy, never EVO's while it runs).
-export async function startTelemetry(onEvent, name = 'Local\\acevo_pmf_physics', gfxName = 'Local\\acevo_pmf_graphics') {
+// read (others for --check-academy, never EVO's while it runs); pos: the car's place
+// on the lap and the timer, for a sprint.
+export async function startTelemetry(onEvent, name = 'Local\\acevo_pmf_physics', gfxName = 'Local\\acevo_pmf_graphics', { pos = false } = {}) {
   const file = join(norm(await Neutralino.os.getPath('temp')), 'assetto-launcher-evotelemetry.ps1');
-  const text = script(name, gfxName, window.NL_PID);
+  const text = script(name, gfxName, window.NL_PID, pos);
   await writeText(file, text);
   // The command checks the file is what was written before running it.
   const sha = [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)))].map(b => b.toString(16).padStart(2, '0')).join('');

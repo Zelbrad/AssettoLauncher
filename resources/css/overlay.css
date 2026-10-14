@@ -26,7 +26,7 @@
   --secs: 8s;
   display: flex;
   align-items: stretch;
-  height: 66px;
+  min-height: 66px; /* taller with a line saying why (.ov-sub) */
   font-family: var(--font-body);
   -webkit-font-smoothing: antialiased;
   user-select: none;
@@ -63,6 +63,8 @@
 @keyframes ov-sheen { from { left: -60%; opacity: 1; } to { left: 120%; opacity: 1; } }
 .ov-title { position: relative; font-family: var(--font-head); font-size: 44px; line-height: 1; letter-spacing: 0.05em; padding-top: 4px; color: var(--ink); text-transform: uppercase; white-space: nowrap; }
 .ov-card:is(.platinum, .gold, .silver, .bronze) .ov-title { text-shadow: 0 1px 0 rgba(255, 255, 255, 0.35); }
+/* "Not counted" is longer than a medal's name: smaller, a word to a line. */
+.ov-card.void .ov-title { width: min-content; font-size: 30px; line-height: 0.92; padding-top: 3px; text-align: center; white-space: normal; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3); }
 
 /* The event and the time: dark, slanted the same way, a step to the right. */
 .ov-info {
@@ -70,10 +72,10 @@
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 6px;
+  gap: 5px;
   min-width: 200px;
   margin-left: calc(6px - var(--slant));
-  padding: 0 calc(var(--slant) + 30px) 2px calc(var(--slant) + 20px);
+  padding: 10px calc(var(--slant) + 30px) 12px calc(var(--slant) + 20px);
   background: linear-gradient(180deg, rgba(30, 31, 34, 0.96), rgba(13, 13, 15, 0.96));
   clip-path: polygon(var(--slant) 0, 100% 0, calc(100% - var(--slant)) 100%, 0 100%);
 }

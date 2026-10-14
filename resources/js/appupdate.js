@@ -6,7 +6,7 @@
 //     and quits; the installer updates in place (settings kept) and starts the
 //     launcher again (build/installer.iss).
 //   Portable copies (the zip) can't replace themselves: they open the release page.
-import { run, log, join, exists, startProcess, norm, CURL, IS_LINUX, sha256File } from './util.js';
+import { run, log, join, exists, startProcess, norm, safeUrl, CURL, IS_LINUX, sha256File } from './util.js';
 
 // This fork's own releases (the original is Zelbrad/AssettoLauncher).
 export const REPO = 'tawndelli/AssettoLauncher';
@@ -57,7 +57,7 @@ export async function isInstalledCopy() {
 export async function installUpdate(setup) {
   const temp = norm(await Neutralino.os.getEnv('TEMP'));
   const file = join(temp, setup.name.replace(/[^\w.-]/g, '_'));
-  if (!installable(setup)) throw new Error('Unexpected download address');
+  if (!installable(setup) || !safeUrl(setup.url)) throw new Error('Unexpected download address');
   const dl = await run(`${CURL} -s -L -f --proto =https --proto-redir =https --max-time 300 -o "${file}" "${setup.url}"`);
   if (dl.exitCode !== 0) throw new Error('The download failed. Check your connection and try again.');
   const got = (await sha256File(file)).toLowerCase();

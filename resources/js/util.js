@@ -182,19 +182,16 @@ export async function run(cmd, opts) {
   catch (e) { log(`exec failed: ${cmd} ${JSON.stringify(e)}`); return { exitCode: -1, stdOut: '', stdErr: String(e?.message || e) }; }
 }
 
-// Web and Steam links only.
+// Web and Steam addresses only: links can come from mod files (ui_car.json
+// "url"), and one pointing at a program would run it. Local files: openFile.
 export async function openExternal(target) {
-  if (!/^(https?|steam):\/\/[^\s"'`<>\\]+$/i.test(String(target || ''))) { log(`open refused ${target}`); return; }
+  if (!/^(https?|steam):\/\//i.test(String(target ?? ''))) { log(`open refused: ${target}`); return; }
   try { await Neutralino.os.open(target); } catch (e) { log(`open failed ${target}: ${JSON.stringify(e)}`); }
 }
 
-// A file of the user's own (a screenshot), in the program Windows/Linux opens it with.
-export async function openFile(path) {
-  try { await Neutralino.os.open(path); } catch (e) { log(`open failed ${path}: ${JSON.stringify(e)}`); }
-}
-
-// A plain https address.
-export const safeUrl = u => /^https:\/\/[A-Za-z0-9._~:/?#@!&*+,;=%-]+$/.test(String(u || ''));
+// A web address that can go inside double quotes on a command line (cmd and
+// sh): http(s) with plain URL characters, % only as %XX. Anything else gives ''.
+export const safeUrl = u => /^https?:\/\/(?:[\w\-.~:/?#[\]@&+,=]|%[0-9A-Fa-f]{2})+$/.test(String(u ?? '')) ? String(u) : '';
 
 // Backslashes don't survive execCommand reliably (stripped or doubled depending
 // on the command shape), so anything that takes a filesystem path goes through
@@ -221,10 +218,12 @@ export function sh(script, opts) {
   return Neutralino.os.execCommand(script, opts);
 }
 
+// A folder, or a file with its default app.
 export async function openFolder(path) {
   if (IS_LINUX) await sh(`xdg-open ${shQuote(norm(path))} </dev/null >/dev/null 2>&1 &`);
   else await powershell(`Invoke-Item -LiteralPath ${psQuote(path)}`, { background: true });
 }
+export const openFile = openFolder;
 
 // Whether a game's process is running; name without ".exe". Under Proton the
 // command line holds the Windows exe path, e.g. "Z:\...\acs.exe".

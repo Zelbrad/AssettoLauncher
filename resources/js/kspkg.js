@@ -131,6 +131,15 @@ const isText = b => b.length && b.every(x => x >= 0x20 && x !== 0x7F);
 const str = (fields, f) => { const x = fields.find(x => x.f === f && x.v instanceof Uint8Array); return x ? utf8.decode(x.v) : ''; };
 const num = (fields, f) => fields.find(x => x.f === f && typeof x.v === 'number')?.v;
 const msgs = (fields, f) => fields.filter(x => x.f === f && x.v instanceof Uint8Array).map(x => protoFields(x.v));
+const strs = (fields, f) => fields.filter(x => x.f === f && x.v instanceof Uint8Array).map(x => utf8.decode(x.v));
+
+// A spawn points scene: each point (an actor, field 2) has its StartingPositionData
+// at 50 > 104, whose field 6 lists the types it serves (packed): Grid 3, Pit 4, Box 5, Poi 6.
+const SPAWN_GRID = 3, SPAWN_PIT = 4, SPAWN_BOX = 5;
+const spawnTypes = scene => msgs(scene, 2).flatMap(a => msgs(a, 50)).flatMap(m => msgs(m, 104)).flatMap(d => {
+  const t = d.find(x => x.f === 6);
+  return t?.v instanceof Uint8Array ? [...t.v] : typeof t?.v === 'number' ? [t.v] : [];
+});
 
 // EVO's car categories, as its own car selection filters by them: a car record
 // (system\cars.table, or a mod's .moddedcarcontent) lists them in field 30, each a
@@ -670,7 +679,7 @@ export async function looseTextureJpeg(texPath, out, maxWidth = 1000) {
 // Official content (content.kspkg): car list with car-select thumbnails and
 // track list with layout photos + SVG maps, as the game's menus show them.
 
-const BASE_VERSION = 'v9'; // v9: power from the engine curve when no preset lists it; v8: cars' figures; v7: cars' categories; v6: academy arches per layout; v5: pictures decoded when shown (catalogue lists their textures)
+const BASE_VERSION = 'v10'; // v10: both lines below merged; fork v9: power from the engine curve, v8: cars' figures, v7: cars' categories; upstream v8: only Hotstint containers whose start is a pit spot too, v7: Hotstint containers per layout; v6: academy arches per layout; v5: pictures decoded when shown (catalogue lists their textures)
 const slug = name => name.toLowerCase().replace(/\s+/g, '_');
 const layoutName = id => prettifyId(id.replace(/-/g, ' ')).replace(/\bV(\d)/g, 'v$1');
 
@@ -799,17 +808,31 @@ export async function readEvoCatalog(contentPath, cacheDir, onProgress = () => {
   // Track containers describe each layout per game mode: Practice uses the
   // "Time Attack" container (flag field 6), Race and Race Weekend the "Race" one
   // (flag field 5). Each carries the track_item values the game mode saves need
-  // (container name, max drivers, length). The Driving Academy's containers
-  // (is_a_to_b, field 13: "Academy R1-1"…) put a start arch with lights and a
-  // finish arch on the layout; a layout can have several (`arches`).
-  const containers = { practice: new Map(), race: new Map() }, arches = new Map();
+  // (container name, max drivers, length). The "Hotstint" one (flag field 7, one
+  // driver) has a single spawn point on track before the line, for a flying lap;
+  // EVO's menus don't offer it, the Academy's time trials use it (`hotstint`).
+  // The Driving Academy's containers (is_a_to_b, field 13: "Academy R1-1"…) put a
+  // start arch with lights and a finish arch on the layout; a layout can have
+  // several (`arches`).
+  const containers = { practice: new Map(), race: new Map(), hotstint: new Map() }, arches = new Map();
   for (const c of rows(await table('system\\track_containers.table'), 8)) {
-    const mode = num(c, 6) === 1 ? 'practice' : num(c, 5) === 1 ? 'race' : num(c, 13) === 1 ? 'arch' : '';
+    const mode = num(c, 6) === 1 ? 'practice' : num(c, 5) === 1 ? 'race' : num(c, 7) === 1 ? 'hotstint' : num(c, 13) === 1 ? 'arch' : '';
     const venue = str(c, 10), layout = str(c, 14);
     if (!mode || !venue || !layout) continue;
     const item = { layoutName: layout, container: str(c, 1), maxDrivers: num(c, 9) ?? 0, length: num(c, 8) ?? 0 }, at = `${slug(venue)}|${slug(layout)}`;
     if (mode === 'arch') arches.set(at, [...(arches.get(at) || []), item]);
-    else containers[mode].set(at, item);
+    else containers[mode].set(at, mode === 'hotstint' ? { ...item, scenes: strs(c, 11) } : item);
+  }
+  // A Hotstint container is kept only when its start spot is a grid spot (the race
+  // starts the car there), a pit spot and a box: EVO gives the car a pit slot as it
+  // creates it and crashes without one (Oulton Park's is a grid spot only; Laguna
+  // Seca's and Brands Hatch's are all three; tested 2026-10-14).
+  for (const [at, item] of containers.hotstint) {
+    const scene = item.scenes.find(p => /hotlap/i.test(p.split('\\').pop()));
+    const e = scene && pkg.get(scene);
+    const types = e ? spawnTypes(protoFields(await pkg.read(e))) : [];
+    delete item.scenes;
+    if (![SPAWN_GRID, SPAWN_PIT, SPAWN_BOX].every(t => types.includes(t))) containers.hotstint.delete(at);
   }
 
   const photos = pkg.find(/^uiresources\\images\\tracks\\[^\\]+\.texture$/i);
@@ -824,7 +847,7 @@ export async function readEvoCatalog(contentPath, cacheDir, onProgress = () => {
         const file = basename(e.name.replace(/\\/g, '/')).replace(/\.texture$/i, '');
         const id = file.slice(s.length + 1);
         const practice = containers.practice.get(`${s}|${id}`) || null, race = containers.race.get(`${s}|${id}`) || null;
-        return { id, name: (practice || race)?.layoutName || layoutName(id), file, practice, race, arches: arches.get(`${s}|${id}`) || [] };
+        return { id, name: (practice || race)?.layoutName || layoutName(id), file, practice, race, hotstint: containers.hotstint.get(`${s}|${id}`) || null, arches: arches.get(`${s}|${id}`) || [] };
       }).sort((a, b) => a.name.localeCompare(b.name)),
     };
   });

@@ -371,8 +371,8 @@ const pkgPathOf = paths => (paths.evo.install ? join(paths.evo.install, 'content
 
 // The enabled mod tracks as the official ones are described for Quick Drive
 // (kspkg.js readEvoCatalog): [{ file, name, country, region, layouts: [{ id, name,
-// outline, practice, race, arches }] }], practice/race being what its saves write
-// (TrackItem: layout name, event name, max drivers, length). None while the list
+// outline, practice, race, hotstint, arches }] }], practice/race/hotstint being what
+// its saves write (TrackItem: layout name, event name, max drivers, length). None while the list
 // is restored: EVO wouldn't know them.
 export async function evoModTracks(paths) {
   const file = pkgPathOf(paths);
@@ -383,7 +383,7 @@ export async function evoModTracks(paths) {
     file: t.file, name: t.name, country: t.nation, region: t.continent,
     layouts: t.layouts.map(l => {
       const m = layoutModes(l);
-      return { id: l.id, name: l.name, outline: l.outline ? join(cacheDir, l.outline) : '', practice: item(l, m.practice), race: item(l, m.race), noAiLine: l.ai === false, arches: [] };
+      return { id: l.id, name: l.name, outline: l.outline ? join(cacheDir, l.outline) : '', practice: item(l, m.practice), race: item(l, m.race), hotstint: item(l, m.hotstint), noAiLine: l.ai === false, arches: [] };
     }),
   }));
 }
