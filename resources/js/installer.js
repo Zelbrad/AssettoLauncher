@@ -12,13 +12,15 @@
 //   ACC    livery folder (decals/sponsors .json/.png), car file (*.json with carModelType)
 //   EVO    *.kspkg, external livery folder (external_livery.json + its SavedCar),
 //          track folder as EVO's own (<id>.track + <id>.scene, as tools converting
-//          Assetto Corsa tracks make them), packed into mods\<id>.kspkg on install
+//          Assetto Corsa tracks make them), packed into mods\<id>.kspkg on install,
+//          livery for one of the game's cars as content\cars\<car>\ with its visual
+//          preset (LiveryLab Evo exports), packed into mods\<car>_<livery>.kspkg
 //   Rally  livery folder (livery.json + icon.png / body_livery_*.dds), or *.pak + .utoc + .ucas
 import {
   norm, join, basename, exists, listDir, readText, readTextAnyEncoding, parseLooseJson, cleanText,
   prettifyId, log, mountDir, fileUrl, extractArchive, ensureDir, IS_LINUX,
 } from './util.js';
-import { readModInfo, packEvoTrack, looseTextureJpeg, evoTrackName, evoLayoutName, evoTrackLayouts } from './kspkg.js';
+import { readModInfo, packEvoTrack, looseTextureJpeg, evoTrackName, evoLayoutName, evoTrackLayouts, readCarPresets, protoLabels, writePackage } from './kspkg.js';
 import { isPpFilterIni, ppFilterAbout, ppFilterCompanions, beforePpFilterInstall, KUNOS_FILTERS } from './ppfilters.js';
 import { guessLiveryCar } from './rallylivery.js';
 import { rallyCarIds, rallyCarName, guessRallyCar, evoSavedCarsDir, utocVersion, rallyGameTocVersion } from './games.js';
@@ -165,6 +167,18 @@ class Detector {
     return !!kid(n, 'extension');
   }
 
+  // EVO car content: content\cars\<car>\ with visual presets (presets\*.visualcarpreset).
+  // Returns those car folders: [{ car, rel }].
+  evoCarFolders(rel) {
+    const content = kid(this.node(rel), 'content'), cRel = content && sub(rel, content);
+    const cars = cRel && kid(this.node(cRel), 'cars'), carsRel = cars && sub(cRel, cars);
+    if (!carsRel) return [];
+    return this.node(carsRel).dirs.map(d => ({ car: d, rel: sub(carsRel, d) })).filter(c => {
+      const presets = kid(this.node(c.rel), 'presets');
+      return presets && this.node(sub(c.rel, presets)).files.some(f => /\.visualcarpreset$/i.test(f));
+    });
+  }
+
   // An EVO track folder: <id>.track beside <id>.scene. Returns the id, or ''.
   evoTrackId(n) {
     const track = n.files.find(f => /\.track$/i.test(f));
@@ -181,6 +195,9 @@ class Detector {
     if (!n) return;
     const evoTrack = this.evoTrackId(n);
     if (evoTrack) return this.addEvoTrack(rel, evoTrack);
+    // Before the AC layouts: content\cars\<car>\skins would read as an AC skin pack.
+    const evoCars = this.evoCarFolders(rel);
+    if (evoCars.length) return this.addEvoCarLiveries(evoCars);
     if (this.isAcCar(rel)) return this.addAcCar(rel);
     if (this.isAcTrack(rel)) return this.addAcTrack(rel);
     if (this.isAcRoot(rel)) return this.addAcRoot(rel);
@@ -490,6 +507,51 @@ class Detector {
     });
   }
 
+  // --- AC EVO liveries for the game's own cars. LiveryLab Evo exports one as
+  // content\cars\<car>\: the livery's visual preset, car design, design and skin
+  // folder, plus the car's actor and mechanical preset as the author's game had them.
+  // The livery's files are packed into mods\<car>_<livery>.kspkg; the car's stay
+  // EVO's, and evotracks.js adds the livery to them. The author's copies would drop
+  // the car's other liveries, and may not match this version of EVO.
+  async addEvoCarLiveries(cars) {
+    const manifest = await this.findManifest();
+    const pkgPath = this.paths.evo.install ? join(this.paths.evo.install, 'content.kspkg') : '';
+    const presets = pkgPath && this.evoCache ? await readCarPresets(pkgPath, this.evoCache).catch(err => { log(`import evo presets: ${err?.message || err}`); return []; }) : [];
+    const labelsOf = async f => protoLabels(new Uint8Array(await Neutralino.filesystem.readBinaryFile(f.src)));
+    for (const { car, rel } of cars) {
+      const files = [];
+      const walk = r => {
+        const inner = r === rel ? [] : r.slice(rel.length + 1).split('/');
+        for (const f of this.node(r).files) files.push({ name: ['content', 'cars', car, ...inner, f].join('\\'), src: join(this.abs(r), f) });
+        for (const d of this.node(r).dirs) walk(sub(r, d));
+      };
+      walk(rel);
+      const ofCar = presets.filter(p => p.carId.toLowerCase() === car.toLowerCase());
+      const stock = new Set(ofCar.flatMap(p => p.visuals.map(v => v.toLowerCase())));
+      const own = files.filter(f => !/\.(actor|mechanicalcarpreset)$/i.test(f.name));
+      const visuals = own.filter(f => /\\presets\\[^\\]+\.visualcarpreset$/i.test(f.name) && !stock.has(f.name.toLowerCase()));
+      if (!visuals.length) continue;
+      for (const f of own) f.size = (await Neutralino.filesystem.getStats(f.src)).size;
+      // Mechanical presets carry [brand, model, class]: "Audi", "R8 LMS GT3 Evo II", "GT3".
+      const mech = files.find(f => /\.mechanicalcarpreset$/i.test(f.name));
+      const carLabels = mech ? await labelsOf(mech) : [];
+      const carName = carLabels.length >= 2 ? `${carLabels[0]} ${carLabels[1]}` : prettifyId(car);
+      const skin = stem(visuals[0].name.split('\\').pop()), id = safeId(`${car}_${skin}`);
+      const named = manifest?.skin?.carModel?.toLowerCase() === car.toLowerCase() && visuals.length === 1 ? manifest.skin.displayName : '';
+      const thumb = own.find(f => /\\livery_thumbnail\.png$/i.test(f.name)) || own.find(f => IMG_RE.test(f.name));
+      const target = this.paths.evo.mods && pkgPath ? join(this.paths.evo.mods, `${id}.kspkg`) : '';
+      this.add({
+        game: 'evo', kind: 'livery', tab: 'liveries',
+        title: named || (await labelsOf(visuals[0]))[1] || prettifyId(skin),
+        sub: `For the ${carName}${visuals.length > 1 ? ` · ${visuals.length} liveries` : ''}`,
+        detail: `mods/${id}.kspkg`, mode: 'evo-pack', files: own, target,
+        image: thumb ? fileUrl(thumb.src) : '',
+        note: "EVO lists a car's liveries in its own game file, content.kspkg, so the launcher adds this one there and keeps a copy of what it changes. Settings can put the file back.",
+        missing: !target ? 'Assetto Corsa EVO not found' : presets.length && !ofCar.length ? `${carName} isn't one of the cars in your EVO` : '',
+      });
+    }
+  }
+
   async addEvo(dir, file, img) {
     let info = null;
     try { info = this.evoCache && await readModInfo(join(dir, file), this.evoCache); } catch (err) { log(`import evo info: ${err?.message || err}`); }
@@ -568,7 +630,7 @@ async function detectSource(source, session, paths, { evoCache, onStatus } = {})
 
   let det;
   if (ARCHIVE_RE.test(name)) {
-    onStatus?.(`Extracting ${name}…`);
+    onStatus?.('Extracting');
     const root = join(session, 'x');
     await ensureDir(root);
     await extractArchive(source.path, root);
@@ -576,15 +638,15 @@ async function detectSource(source, session, paths, { evoCache, onStatus } = {})
     // Packs sometimes wrap more archives; extract those once, in place.
     const inner = [...nodes].flatMap(([rel, n]) => n.files.filter(f => ARCHIVE_RE.test(f)).map(f => sub(rel, f)));
     if (inner.length && inner.length <= 20) {
-      for (const rel of inner) {
-        onStatus?.(`Extracting ${basename(rel)}…`);
+      for (const [k, rel] of inner.entries()) {
+        onStatus?.(`Extracting ${basename(rel)}${inner.length > 1 ? ` (${k + 1} of ${inner.length})` : ''}`);
         const out = join(root, `${rel}~`);
         await ensureDir(out);
         await extractArchive(join(root, rel), out).catch(err => log(`inner archive ${rel}: ${err.message}`));
       }
       nodes = await scanTree(root);
     }
-    onStatus?.(`Looking inside ${name}…`);
+    onStatus?.('Looking inside');
     det = new Detector({ ...ctx, root, nodes, copyOnly: false });
     await det.walk('');
     det.dropRallyPakTwins();
@@ -724,10 +786,13 @@ export async function installItem(item, onProgress) {
     }
   } else if (item.mode === 'evo-pack') {
     // Written next to the mods (as <id>.kspkg.part, renamed when done); an older,
-    // disabled copy would show up twice.
+    // disabled copy would show up twice. A track folder, or a livery's files.
     await ensureDir(parentOf(item.target));
     await Neutralino.filesystem.remove(`${item.target}.disabled`).catch(() => {});
-    await packEvoTrack(item.src, item.id, item.target, onProgress);
+    if (item.files) {
+      const r = await writePackage(item.target, item.files, onProgress);
+      log(`kspkg: packed ${item.title} as ${item.target}: ${r.files} files, ${r.size} bytes`);
+    } else await packEvoTrack(item.src, item.id, item.target, onProgress);
   } else if (item.mode === 'ppfilter') {
     // The installed version is backed up and removed first (ppfilters.js).
     await beforePpFilterInstall(item.paths, item.filterId);

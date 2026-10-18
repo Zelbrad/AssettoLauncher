@@ -388,6 +388,9 @@ export async function importSetup(s, paths, track, name) {
     return saved;
   }
   const root = s.game === 'ac' ? paths.ac.setups : paths.acc.setups;
+  // The car comes from the file ([CAR] MODEL, carName): a plain folder name only, so a
+  // shared file can't put itself outside the setups folder ("..\..\").
+  if (!s.car || /[\\/:]/.test(s.car) || /^\.+$/.test(s.car.trim())) throw new Error(tr('This setup names an unknown car ({car}).', { car: s.car }));
   const folder = join(root, s.car, track || (s.game === 'ac' ? 'generic' : ''));
   await Neutralino.filesystem.createDirectory(folder).catch(() => {});
   const saved = freeName((await files(folder, s.game === 'ac' ? /\.ini$/i : /\.json$/i)).map(f => f.replace(/\.(ini|json)$/i, '')), name);

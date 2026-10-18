@@ -347,6 +347,20 @@ async function scanEvoPackages(paths) {
       if (info?.key) liveKeys.add(info.key);
       const thumbs = (info?.thumbs || []).map(t => ({ src: fileUrl(t.path), label: t.label }));
       const img = sidecar(m[1]);
+      if (info?.kind === 'livery') {
+        // A livery for one of the game's cars (kspkg.js readModInfo), listed with the
+        // external liveries.
+        items.push({
+          id: e.entry, kind: 'livery', game: 'evo',
+          title: info.name || prettifyId(m[1]), subtitle: info.contentId ? prettifyId(info.contentId.replace(/^ks_/, '')) : 'Livery',
+          author: '', image: img ? fileUrl(join(dir, img.entry)) : thumbs[0]?.src || '',
+          tags: ['kspkg', 'Livery for a game car'],
+          description: `Package: ${e.entry}. EVO offers it among the car's own liveries once the launcher has added it to the car (Settings · Mod tracks and liveries).`,
+          isMod: true, enabled: !m[2], path, toggle: 'evo',
+          meta: { sidecar: img ? join(dir, img.entry) : '', carId: info.contentId || '' },
+        });
+        continue;
+      }
       items.push({
         id: e.entry, kind: info?.kind === 'track' ? 'track' : 'car', game: 'evo',
         title: info?.name || prettifyId(m[1]),
@@ -401,10 +415,21 @@ export async function evoSavedCarsDir(paths) {
   return best;
 }
 
+// EVO's liveries tab: livery packages for the game's cars (mods folder) and
+// external liveries.
+export async function scanEvoLiveries(paths) {
+  const packed = (await scanEvoPackages(paths)).filter(i => i.kind === 'livery');
+  if (packed.length) {
+    const carNames = new Map(((await evoCatalog(paths).catch(() => null))?.cars || []).map(c => [c.id, c.name]));
+    for (const i of packed) i.subtitle = carNames.get(i.meta.carId) || i.subtitle;
+  }
+  return [...packed, ...await scanEvoExternalLiveries(paths)].sort(byTitle);
+}
+
 // External liveries (made with tools like LiveryLab Evo). Each folder has an
 // external_livery.json whose car_guid links it to a car in SavedCars, named
 // <car id>_<guid>.carfinalstatewithconsumable.
-export async function scanEvoLiveries(paths) {
+async function scanEvoExternalLiveries(paths) {
   const root = paths.evo.liveries;
   if (!root || !(await exists(root))) return [];
   await mountDir('/m/evo-liveries', root);
@@ -808,7 +833,7 @@ export function uninstallPaths(item) {
   switch (item.game) {
     case 'ac': return [item.path];
     case 'acc': return [item.path, ...(item.meta?.carFiles || [])];
-    case 'evo': return item.kind === 'livery'
+    case 'evo': return item.kind === 'livery' && !item.toggle
       ? [item.path, ...(item.meta?.savedCars || [])]
       : [item.path, item.meta?.sidecar].filter(Boolean);
     case 'rally': return item.toggle === 'rally'

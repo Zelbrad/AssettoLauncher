@@ -21,7 +21,15 @@
 // or a game update replaces the file; the next sync then starts from the new one.
 // The file is written with a small PowerShell helper (dd on Linux), which can't open
 // it while EVO runs.
-import { join, log, storageGet, storageSet, psQuote, shQuote, powershellEncoded, sh, ensureDir, listDir, readText, IS_LINUX } from './util.js';
+//
+// Liveries for EVO's own cars work the same way. A livery is a visual preset with its
+// car design, design and skin folder (LiveryLab exports them as content\cars\<car>\…);
+// those are new files, so they go in a package in the mods folder (installer.js). But a
+// car offers only the liveries its own files list: its actor (103 > 13: 9 car designs,
+// 11 visual presets) and its mechanical presets (8: visual presets). A mod package
+// can't replace those, so changed copies of them, with the mod liveries added, go into
+// the same unused space after the two tables, and their entries point there.
+import { join, basename, log, storageGet, storageSet, psQuote, shQuote, powershellEncoded, sh, ensureDir, listDir, readText, prettifyId, IS_LINUX } from './util.js';
 import { openPackage, readModInfo, cacheKey, kspkgXor, evoTrackName, evoLayoutName, evoUiTrackId, evoTrackLayouts } from './kspkg.js';
 import { evoCacheDir } from './games.js';
 import { isEvoRunning } from './evolaunch.js';
@@ -30,6 +38,8 @@ const TABLE_SIZE = 0x4000000, ENTRY = 0x100;
 const TRACKS = 'system\\tracks.table', CONTAINERS = 'system\\track_containers.table';
 const STATE_KEY = 'evoTrackList'; // { [content.kspkg path]: state }
 const INFO_VERSION = 4; // 2: each layout's containers; 3: map outline; 4: layouts from containers\layout_*.scene, AI line, why one isn't a track
+const LIVERY_VERSION = 1;
+const ACTOR_LISTS = [103, 13]; // where an actor lists its car designs (9) and visual presets (11)
 
 // ---------------------------------------------------------------------------
 // Protobuf, just what these tables need.
@@ -71,6 +81,31 @@ function fields(buf, from = 0, to = buf.length) {
 }
 const sub = (buf, x) => buf.subarray(x.value[0], x.value[1]);
 const strOf = (msg, f) => { const x = fields(msg).find(y => y.f === f && y.w === 2); return x ? utf8.decode(sub(msg, x)) : ''; };
+const strsOf = (msg, f) => fields(msg).filter(y => y.f === f && y.w === 2).map(y => utf8.decode(sub(msg, y)));
+const concat = (...parts) => {
+  const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+  let at = 0;
+  for (const p of parts) { out.set(p, at); at += p.length; }
+  return out;
+};
+
+// The message at `path` (field numbers; the first such field at each level), or null.
+function msgAt(buf, path) {
+  let m = buf;
+  for (const f of path) { const x = fields(m).find(y => y.f === f && y.w === 2); if (!x) return null; m = sub(m, x); }
+  return m;
+}
+
+// buf with `bytes` (encoded fields) added at the end of the message at `path`, the
+// lengths around it made to match; null when that message isn't there. Repeated
+// fields may simply follow the others; everything else stays as it was.
+function appendAt(buf, path, bytes) {
+  if (!path.length) return concat(buf, bytes);
+  const x = fields(buf).find(y => y.f === path[0] && y.w === 2);
+  const inner = x && appendAt(sub(buf, x), path.slice(1), bytes);
+  if (!inner) return null;
+  return concat(buf.subarray(0, x.start), new Uint8Array([...key(path[0], 2), ...varint(inner.length)]), inner, buf.subarray(x.end));
+}
 
 // The table's lines, as messages: field 2 (tracks) or 8 (containers) of each.
 function tableLines(buf, inner) {
@@ -85,19 +120,10 @@ function tableLines(buf, inner) {
   return out;
 }
 
-// The table with lines added at the end of its preset (repeated fields may simply
-// follow the others); everything else stays as it was.
+// The table with lines added at the end of its preset.
 function withLines(buf, inner, records) {
-  const top = fields(buf), at = top.findIndex(x => x.f === 2 && x.w === 2);
-  if (at < 0) throw new Error('table has no lines');
-  const preset = sub(buf, top[at]);
-  const added = records.flatMap(r => pb.msg(3, pb.msg(inner, r)));
-  const body = new Uint8Array(preset.length + added.length);
-  body.set(preset); body.set(added, preset.length);
-  const head = buf.subarray(0, top[at].start), tail = buf.subarray(top[at].end);
-  const field = new Uint8Array([...key(2, 2), ...varint(body.length)]);
-  const out = new Uint8Array(head.length + field.length + body.length + tail.length);
-  out.set(head); out.set(field, head.length); out.set(body, head.length + field.length); out.set(tail, head.length + field.length + body.length);
+  const out = appendAt(buf, [2], new Uint8Array(records.flatMap(r => pb.msg(3, pb.msg(inner, r)))));
+  if (!out) throw new Error('table has no lines');
   return out;
 }
 
@@ -266,6 +292,105 @@ function trackRecords(t) {
 }
 
 // ---------------------------------------------------------------------------
+// Mod liveries for EVO's own cars
+
+// What adding a livery package to its car needs: { name, liveries: [{ car, name,
+// visual, cardesign, mech, actor }] } or { skip: why }. Each visual preset is a
+// livery (VisualCarPresetData: 2 its name, 5 its car design). A carfinalstate for it
+// (CarFinalStateData: 2 actor, 10 > 1 mechanical and 2 visual preset) says which
+// mechanical preset it goes with; without one it goes with every one of the car's.
+async function modLiveryInfo(file, cacheDir) {
+  const st = await Neutralino.filesystem.getStats(file);
+  const cached = join(cacheDir, `liveryreg-${cacheKey(file, st)}-${LIVERY_VERSION}.json`);
+  try { const j = JSON.parse(await readText(cached) || 'null'); if (j?.liveries || j?.skip) return j; } catch { /* read again */ }
+  const pkg = await openPackage(file);
+  const read = async e => new Uint8Array(await pkg.read(e));
+  const states = [];
+  for (const e of pkg?.find(/^content\\cars\\[^\\]+\\.*\.carfinalstate$/i) || []) {
+    const m = await read(e), config = msgAt(m, [10]);
+    if (config) states.push({ actor: strOf(m, 2), mech: strOf(config, 1), visual: strOf(config, 2).toLowerCase() });
+  }
+  const liveries = [];
+  for (const e of pkg?.find(/^content\\cars\\[^\\]+\\presets\\[^\\]+\.visualcarpreset$/i) || []) {
+    const car = e.name.split('\\')[2], v = await read(e), s = states.find(x => x.visual === e.name.toLowerCase());
+    const cardesign = strOf(v, 5);
+    if (!cardesign) continue;
+    liveries.push({
+      car, name: strOf(v, 2) || prettifyId(basename(e.name.replace(/\\/g, '/')).replace(/\.\w+$/, '')),
+      visual: e.name, cardesign, mech: s?.mech || '', actor: s?.actor || `content\\cars\\${car}\\${car}.actor`,
+    });
+  }
+  const info = liveries.length ? { name: liveries.map(l => l.name).join(', '), liveries } : { skip: 'no visual preset with a car design (content\\cars\\<car>\\presets\\*.visualcarpreset)' };
+  if (info.skip) log(`evo liveries: ${file}: not a livery EVO can list: ${info.skip}`);
+  await ensureDir(cacheDir);
+  await Neutralino.filesystem.writeBinaryFile(cached, toUtf8.encode(JSON.stringify(info)).buffer).catch(() => {});
+  return info;
+}
+
+// The enabled livery packages in the mods folder (readModInfo's kind 'livery').
+async function modLiveries(paths, skipped = []) {
+  const dir = paths.evo.mods, cacheDir = await evoCacheDir(), out = [];
+  for (const e of await listDir(dir)) {
+    if (e.type !== 'FILE' || !/\.kspkg$/i.test(e.entry)) continue;
+    const file = join(dir, e.entry);
+    try {
+      if ((await readModInfo(file, cacheDir))?.kind !== 'livery') continue;
+      const info = await modLiveryInfo(file, cacheDir);
+      if (info.skip) skipped.push({ file: e.entry, why: info.skip });
+      else out.push({ ...info, file });
+    } catch (err) { log(`evo liveries: ${e.entry}: ${err?.message || err}`); }
+  }
+  return out.sort((a, b) => a.file.localeCompare(b.file));
+}
+
+// The car files the liveries are added to, changed: [{ n, e, bytes }] (n the name in
+// lower case, e its entry as EVO's own, bytes the new contents, plain), and the
+// packages added. entryFor(n): a file's entry as it was before any change, or null;
+// mechsOf(car): the names of the car's mechanical presets. A livery whose car isn't
+// in the game, or whose car files aren't as expected, is skipped.
+async function liveryChanges(file, packages, entryFor, mechsOf, skipped) {
+  const adds = new Map(); // n -> { e, kind, lists: { field: [paths] } }
+  const original = new Map();
+  const bytesOf = async e => original.get(e.i) || original.set(e.i, await readBlob(file, e)).get(e.i);
+  const listed = [];
+  for (const p of packages) {
+    const plan = [];
+    let why = '';
+    for (const l of p.liveries) {
+      const actor = entryFor(l.actor.toLowerCase());
+      const mechs = (l.mech ? [l.mech.toLowerCase()] : mechsOf(l.car)).map(entryFor).filter(Boolean);
+      if (!actor || !mechs.length) { why = `${l.car} isn't one of the game's cars`; break; }
+      if (!msgAt(await bytesOf(actor), ACTOR_LISTS)) { why = `${l.car}'s actor has no livery list`; break; }
+      plan.push({ l, actor, mechs });
+    }
+    if (why) { skipped.push({ file: basename(p.file), why }); continue; }
+    for (const { l, actor, mechs } of plan) {
+      const add = (e, kind, f, path) => {
+        const n = e.name.toLowerCase(), a = adds.get(n) || adds.set(n, { e, kind, lists: {} }).get(n);
+        (a.lists[f] ||= []).push(path);
+      };
+      add(actor, 'actor', 9, l.cardesign);
+      add(actor, 'actor', 11, l.visual);
+      for (const m of mechs) add(m, 'mech', 8, l.visual);
+    }
+    listed.push(p.name);
+  }
+  const out = [];
+  for (const [n, a] of adds) {
+    const orig = await bytesOf(a.e), lists = a.kind === 'actor' ? msgAt(orig, ACTOR_LISTS) : orig;
+    // Only what isn't listed yet (a game update may have added it).
+    const extra = Object.entries(a.lists).flatMap(([f, list]) => {
+      const have = new Set(strsOf(lists, +f).map(s => s.toLowerCase()));
+      return [...new Set(list)].filter(s => !have.has(s.toLowerCase())).flatMap(s => pb.str(+f, s));
+    });
+    if (!extra.length) continue;
+    const bytes = a.kind === 'actor' ? appendAt(orig, ACTOR_LISTS, new Uint8Array(extra)) : concat(orig, new Uint8Array(extra));
+    out.push({ n, e: a.e, bytes });
+  }
+  return { changes: out, listed };
+}
+
+// ---------------------------------------------------------------------------
 // content.kspkg
 
 const b64 = bytes => { let s = ''; for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000)); return btoa(s); };
@@ -283,9 +408,10 @@ const withPlace = (e, offset, size) => {
   return raw;
 };
 
-// The whole file table: the two tables' entries and where the last data ends.
-async function readTable(file, size) {
-  const start = size - TABLE_SIZE, CH = 4 << 20;
+// The whole file table: the two tables' entries, where the last data ends, and the
+// entries pick(name in lower case) wants (picked: Map of them by that name).
+async function readTable(file, size, pick = () => false) {
+  const start = size - TABLE_SIZE, CH = 4 << 20, picked = new Map();
   let tracks = null, containers = null, dataEnd = 0, i = 0;
   scan: for (let pos = start; pos < size; pos += CH) {
     const chunk = kspkgXor(await readBytes(file, pos, Math.min(CH, size - pos)));
@@ -295,11 +421,13 @@ async function readTable(file, size) {
       if (!(dv.getUint32(0xE8, true) || dv.getUint32(0xEC, true)) || len <= 0 || len > 0xE0) break scan;
       const e = entryOf(raw.slice(), i);
       if (e.offset + e.size > dataEnd) dataEnd = e.offset + e.size;
-      if (e.name.toLowerCase() === TRACKS) tracks = e;
-      else if (e.name.toLowerCase() === CONTAINERS) containers = e;
+      const n = e.name.toLowerCase();
+      if (n === TRACKS) tracks = e;
+      else if (n === CONTAINERS) containers = e;
+      else if (pick(n)) picked.set(n, e);
     }
   }
-  return { start, tracks, containers, dataEnd };
+  return { start, tracks, containers, dataEnd, picked };
 }
 const readEntry = async (file, start, i) => entryOf(kspkgXor(await readBytes(file, start + i * ENTRY, ENTRY)), i);
 const readBlob = async (file, e) => { const b = await readBytes(file, e.offset, e.size); return (e.flags & 0x100) ? kspkgXor(b) : b; };
@@ -339,12 +467,12 @@ async function saveState(file, state) {
   await storageSet(STATE_KEY, all);
 }
 
-// Our change is still in the file: same size, and both entries point at our copies.
+// Our change is still in the file: same size, and the entries point at our copies.
 async function intact(file, size, s) {
   if (!s || s.size !== size) return false;
-  for (const k of ['t', 'c']) {
-    const e = await readEntry(file, s.start, s[k].i).catch(() => null);
-    if (!e || e.offset !== s[k].patched.offset || e.size !== s[k].patched.size) return false;
+  for (const x of [s.t, s.c, ...Object.values(s.x || {})]) {
+    const e = await readEntry(file, s.start, x.i).catch(() => null);
+    if (!e || e.offset !== x.patched.offset || e.size !== x.patched.size) return false;
   }
   return true;
 }
@@ -388,27 +516,37 @@ export async function evoModTracks(paths) {
   }));
 }
 
-// For Settings: { listed: [names], waiting: [names], skipped: [{ file, why }], off }.
+// For Settings: { listed: [names], waiting: [names], liveries: [names], liveriesWaiting:
+// [names], skipped: [{ file, why }], off }.
 export async function evoTrackListStatus(paths) {
   const file = pkgPathOf(paths);
-  if (!file) return { listed: [], waiting: [], skipped: [], off: false };
+  if (!file) return { listed: [], waiting: [], liveries: [], liveriesWaiting: [], skipped: [], off: false };
   const st = await Neutralino.filesystem.getStats(file).catch(() => null);
   const s = await loadState(file), ok = st && await intact(file, st.size, s);
-  const skipped = [], want = await modTracks(paths, skipped), listed = ok ? s.listed : [];
-  return { listed, waiting: want.map(t => t.name).filter(n => !listed.includes(n)), skipped, off: !!s?.off };
+  const skipped = [], want = await modTracks(paths, skipped), wantL = await modLiveries(paths, skipped);
+  const listed = ok ? s.listed : [], liveries = ok ? s.liveries || [] : [];
+  // Liveries left out when the list was last made (their car isn't in the game…).
+  for (const x of ok ? s.skipped || [] : []) if (!skipped.some(y => y.file === x.file)) skipped.push(x);
+  return {
+    listed, waiting: want.map(t => t.name).filter(n => !listed.includes(n)),
+    liveries, liveriesWaiting: wantL.filter(p => !liveries.includes(p.name) && !skipped.some(x => x.file === basename(p.file))).map(p => p.name),
+    skipped, off: !!s?.off,
+  };
 }
 
-// Makes EVO's track list hold exactly the enabled mod tracks (none: the original
-// list). force: also after a restore (which turns the automatic sync off). Returns
-// { changed, listed: [names] }; throws when it can't (EVO running, no room…).
+// Makes EVO's track list hold exactly the enabled mod tracks, and its cars' livery
+// lists the enabled mod liveries (none: the original file). force: also after a
+// restore (which turns the automatic sync off). Returns { changed, listed: [track
+// names], liveries: [livery names] }; throws when it can't (EVO running, no room…).
 // isRunning: only for the import test's stand-in package, which EVO doesn't hold.
 export async function syncEvoTrackList(paths, { force = false, restore = false, isRunning = isEvoRunning } = {}) {
+  const none = { changed: false, listed: [], liveries: [] };
   const file = pkgPathOf(paths);
-  if (!file) return { changed: false, listed: [] };
+  if (!file) return none;
   const st = await Neutralino.filesystem.getStats(file).catch(() => null);
-  if (!st || st.size < TABLE_SIZE) return { changed: false, listed: [] };
+  if (!st || st.size < TABLE_SIZE) return none;
   let s = await loadState(file);
-  if (s?.off && !force && !restore) return { changed: false, listed: [] };
+  if (s?.off && !force && !restore) return none;
   const ok = await intact(file, st.size, s);
   if (s?.t && !ok) {
     // Replaced since (update, Verify integrity): what was saved belongs to the old file.
@@ -417,43 +555,48 @@ export async function syncEvoTrackList(paths, { force = false, restore = false, 
     await saveState(file, s.off ? { off: true } : null);
     s = null;
   }
-  const want = restore ? [] : await modTracks(paths);
-  const wantKey = JSON.stringify(want);
-  if (ok && s.want === wantKey) return { changed: false, listed: s.listed };
-  if (!ok && !want.length) {
+  const skipped = [];
+  const want = restore ? [] : await modTracks(paths), wantL = restore ? [] : await modLiveries(paths, skipped);
+  const wantKey = JSON.stringify([want, wantL]);
+  if (ok && s.want === wantKey) return { changed: false, listed: s.listed, liveries: s.liveries || [] };
+  if (!ok && !want.length && !wantL.length) {
     if (restore) await saveState(file, { off: true });
-    return { changed: false, listed: [] };
+    return none;
   }
   const work = join(await evoCacheDir(), 'track-list');
   const notRunning = async () => { if (await isRunning()) throw new Error('Close Assetto Corsa EVO first: its track list is in a file it keeps open.'); };
 
-  if (ok && !want.length) {
+  if (ok && !want.length && !wantL.length) {
     await notRunning();
-    // Back to the original: the saved space and the two entries as they were.
+    // Back to the original: the saved space and the entries as they were.
     const gap = new Uint8Array(await Neutralino.filesystem.readBinaryFile(s.backup));
     await writeAt(file, [
       { offset: s.region.start, bytes: gap },
-      { offset: s.start + s.t.i * ENTRY, bytes: kspkgXor(unb64(s.t.raw)) },
-      { offset: s.start + s.c.i * ENTRY, bytes: kspkgXor(unb64(s.c.raw)) },
+      ...[s.t, s.c, ...Object.values(s.x || {})].map(e => ({ offset: s.start + e.i * ENTRY, bytes: kspkgXor(unb64(e.raw)) })),
     ], work);
     await Neutralino.filesystem.remove(s.backup).catch(() => {});
     await saveState(file, restore ? { off: true } : null);
     log(`evo track list: restored the original list in ${file}`);
-    return { changed: true, listed: [] };
+    return { changed: true, listed: [], liveries: [] };
   }
+
+  // The liveries' cars' actors and mechanical presets are found in the file table,
+  // which a first change reads anyway.
+  const cars = new Set(wantL.flatMap(p => p.liveries.map(l => l.car.toLowerCase())));
+  const carFile = n => cars.has(/^content\\cars\\([^\\]+)\\(?:[^\\]+\.actor|presets\\[^\\]+\.mechanicalcarpreset)$/.exec(n)?.[1]);
+  const table = !ok || cars.size ? await readTable(file, st.size, carFile) : null;
 
   let base = s;
   if (!ok) {
     // First change to this file: save the unused space and the two entries.
     await notRunning();
-    const t = await readTable(file, st.size);
-    if (!t.tracks || !t.containers) throw new Error("EVO's track tables weren't found in content.kspkg");
-    if (t.dataEnd > t.start) throw new Error('content.kspkg has no unused space before its file table');
+    if (!table.tracks || !table.containers) throw new Error("EVO's track tables weren't found in content.kspkg");
+    if (table.dataEnd > table.start) throw new Error('content.kspkg has no unused space before its file table');
     const backup = join(work, `track-list-backup-${st.size}.bin`);
     await ensureDir(work);
-    await Neutralino.filesystem.writeBinaryFile(backup, (await readBytes(file, t.dataEnd, t.start - t.dataEnd)).slice().buffer);
+    await Neutralino.filesystem.writeBinaryFile(backup, (await readBytes(file, table.dataEnd, table.start - table.dataEnd)).slice().buffer);
     const place = e => ({ i: e.i, raw: b64(e.raw), orig: { offset: e.offset, size: e.size, flags: e.flags } });
-    base = { size: st.size, start: t.start, region: { start: t.dataEnd, end: t.start }, backup, t: place(t.tracks), c: place(t.containers) };
+    base = { size: st.size, start: table.start, region: { start: table.dataEnd, end: table.start }, backup, t: place(table.tracks), c: place(table.containers) };
   }
 
   // The original tables, plus a line set per mod track not already in them.
@@ -462,37 +605,56 @@ export async function syncEvoTrackList(paths, { force = false, restore = false, 
   const add = want.filter(t => !have.has(t.folder.toLowerCase()));
   const recs = add.map(trackRecords);
   const newT = withLines(origT, 2, recs.flatMap(r => r[0])), newC = withLines(origC, 8, recs.flatMap(r => r[1]));
+
+  // The car files with the mod liveries added, from the files as EVO has them (the
+  // ones changed before: as they were).
+  const before = n => (base.x?.[n] ? entryOf(unb64(base.x[n].raw), base.x[n].i) : table?.picked.get(n) || null);
+  const names = [...new Set([...Object.keys(base.x || {}), ...(table?.picked.keys() || [])])];
+  const mechsOf = car => names.filter(n => n.startsWith(`content\\cars\\${car.toLowerCase()}\\presets\\`) && n.endsWith('.mechanicalcarpreset'));
+  const { changes, listed: liveries } = await liveryChanges(file, wantL, before, mechsOf, skipped);
+
+  // Everything goes after the last file's data: the two tables, then the car files.
   const at = base.region.start, room = base.region.end - at;
-  if (newT.length + newC.length > room) throw new Error(`not enough room in content.kspkg for the track list (${newT.length + newC.length} of ${room} bytes)`);
+  let end = at + newT.length + newC.length;
+  const placed = changes.map(c => { const p = { ...c, offset: end }; end += c.bytes.length; return p; });
+  if (end - at > room) throw new Error(`not enough room in content.kspkg for the mod tracks and liveries (${end - at} of ${room} bytes)`);
   const xorIf = (b, flags) => ((flags & 0x100) ? kspkgXor(b.slice()) : b);
-  const blob = new Uint8Array(newT.length + newC.length);
-  blob.set(xorIf(newT, base.t.orig.flags)); blob.set(xorIf(newC, base.c.orig.flags), newT.length);
+  const blob = concat(xorIf(newT, base.t.orig.flags), xorIf(newC, base.c.orig.flags), ...placed.map(p => xorIf(p.bytes, p.e.flags)));
   const eT = entryOf(unb64(base.t.raw), base.t.i), eC = entryOf(unb64(base.c.raw), base.c.i);
+  const x = Object.fromEntries(placed.map(p => [p.n, { i: p.e.i, raw: b64(p.e.raw), orig: { offset: p.e.offset, size: p.e.size, flags: p.e.flags }, patched: { offset: p.offset, size: p.bytes.length } }]));
+  const dropped = Object.keys(base.x || {}).filter(n => !x[n]);
   const listed = want.map(t => t.name);
   const keep = () => saveState(file, {
-    ...base, want: wantKey, listed,
+    ...base, want: wantKey, listed, liveries, skipped, x,
     t: { ...base.t, patched: { offset: at, size: newT.length } },
     c: { ...base.c, patched: { offset: at + newT.length, size: newC.length } },
   });
-  // Something the tables don't hold changed (a newer launcher reading more about the
-  // track): the file already has these exact tables, so it isn't written again.
-  if (ok && s.t.patched.offset === at && s.t.patched.size === newT.length && s.c.patched.size === newC.length) {
+  // Something the lists don't hold changed (a newer launcher reading more about the
+  // track): the file already has these exact tables and files, so it isn't written again.
+  const samePlace = (e, offset, size) => e?.patched.offset === offset && e.patched.size === size;
+  if (ok && samePlace(s.t, at, newT.length) && samePlace(s.c, at + newT.length, newC.length) && !dropped.length
+    && placed.every(p => samePlace(s.x?.[p.n], p.offset, p.bytes.length))) {
     const now = await readBytes(file, at, blob.length);
-    if (now.every((b, i) => b === blob[i])) { await keep(); return { changed: false, listed }; }
+    if (now.every((b, i) => b === blob[i])) { await keep(); return { changed: false, listed, liveries }; }
   }
   await notRunning();
   await writeAt(file, [
     { offset: at, bytes: blob },
     { offset: base.start + base.t.i * ENTRY, bytes: kspkgXor(withPlace(eT, at, newT.length)) },
     { offset: base.start + base.c.i * ENTRY, bytes: kspkgXor(withPlace(eC, at + newT.length, newC.length)) },
+    ...placed.map(p => ({ offset: base.start + p.e.i * ENTRY, bytes: kspkgXor(withPlace(p.e, p.offset, p.bytes.length)) })),
+    ...dropped.map(n => ({ offset: base.start + base.x[n].i * ENTRY, bytes: kspkgXor(unb64(base.x[n].raw)) })),
   ], work);
 
   // Read back before keeping the state.
-  const backT = await readEntry(file, base.start, base.t.i);
-  if (backT.offset !== at || backT.size !== newT.length) throw new Error('content.kspkg did not take the change');
+  for (const [i, offset, size] of [[base.t.i, at, newT.length], ...placed.map(p => [p.e.i, p.offset, p.bytes.length])]) {
+    const back = await readEntry(file, base.start, i);
+    if (back.offset !== offset || back.size !== size) throw new Error('content.kspkg did not take the change');
+  }
   await keep();
-  log(`evo track list: ${listed.join(', ') || 'no mod tracks'} in ${file}${add.length < want.length ? ` (${want.length - add.length} already listed)` : ''}`);
-  return { changed: true, listed };
+  const short = n => n.split('\\').pop();
+  log(`evo track list: ${listed.join(', ') || 'no mod tracks'}${liveries.length ? `; liveries ${liveries.join(', ')} (${placed.map(p => short(p.n)).join(', ')})` : ''} in ${file}${add.length < want.length ? ` (${want.length - add.length} already listed)` : ''}${skipped.length ? `; left out: ${skipped.map(k => `${k.file} (${k.why})`).join(', ')}` : ''}`);
+  return { changed: true, listed, liveries };
 }
 
 export const restoreEvoTrackList = (paths, opts = {}) => syncEvoTrackList(paths, { ...opts, restore: true });

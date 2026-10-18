@@ -25,7 +25,14 @@ import { latestRelease, isNewer, isInstalledCopy, installUpdate } from './appupd
 import { esc, timeAgo, openExternal, openFile, openFolder, safeUrl, powershellEncodedCommand, storageGet, storageSet, norm, log, exists, basename, prettifyId, fileUrl, mountDir, listDir, join, run, runningProcesses, stopProcess, readText, writeText, ensureDir, overlayFile, CURL, NULL_DEV, IS_LINUX } from './util.js';
 import { tr, trn, N_, loadLanguage, systemLanguage, LANGUAGES, lang } from './i18n.js';
 
+// tr() for HTML: the values filled in ({name}, {version}…) are escaped, since names
+// from setup files, mods and games can hold any text. Values that are HTML already
+// (code()) go through tr().
+const trh = (text, vars) => tr(text, vars && Object.fromEntries(Object.entries(vars).map(([k, v]) => [k, esc(v)])));
+
 Neutralino.init();
+// Anything the page's Content-Security-Policy (index.html) blocked, for the log.
+document.addEventListener('securitypolicyviolation', e => log(`csp: ${e.violatedDirective} blocked ${e.blockedURI || 'inline code'}`));
 
 const DEFAULT_SETTINGS = { overrides: {}, minimizeOnLaunch: true, lastGame: 'rally', acFilter: 'all', academyCard: true, academyCardSeconds: 8, academyCardSound: true };
 
@@ -736,8 +743,9 @@ function renderGames() {
 }
 
 // News art: the post's own image, else the game's Steam header (then hero) art.
+// The picture goes into CSS, where escaping for HTML doesn't help: plain web addresses only (safeUrl).
 function newsBg(n, g) {
-  const layers = n.image ? [n.image] : [steamUrls.header(g.appid), steamUrls.hero(g.appid)];
+  const layers = safeUrl(n.image) ? [n.image] : [steamUrls.header(g.appid), steamUrls.hero(g.appid)];
   return layers.map(u => `url('${esc(u)}')`).join(', ');
 }
 
@@ -1212,7 +1220,7 @@ function openSetups(g, item) {
         </div>
         <div class="sx-tools">
           ${others.length ? `<div class="sx-pick"><button class="sx-tool" data-s="compare-menu">${sxIcon('compare')}<span>${tr('Compare')}</span></button>
-            <div class="sx-menu" hidden><small>${tr('Compare {name} with', { name: s.name })}</small>${others.map(([x, i]) => `<button data-cmp="${i}"><b>${esc(x.name)}</b><small>${esc([x.trackName, ago(x)].filter(Boolean).join(' · '))}</small></button>`).join('')}</div></div>` : ''}
+            <div class="sx-menu" hidden><small>${trh('Compare {name} with', { name: s.name })}</small>${others.map(([x, i]) => `<button data-cmp="${i}"><b>${esc(x.name)}</b><small>${esc([x.trackName, ago(x)].filter(Boolean).join(' · '))}</small></button>`).join('')}</div></div>` : ''}
           <button class="sx-tool" data-s="export">${sxIcon('export')}<span>${tr('Export')}</span></button>
           <button class="sx-tool" data-s="duplicate">${sxIcon('duplicate')}<span>${tr('Duplicate')}</span></button>
           <button class="sx-tool" data-s="rename">${sxIcon('rename')}<span>${tr('Rename')}</span></button>
@@ -1382,7 +1390,7 @@ async function importSetupFlow(into) {
       <label>${tr('Name')}<input id="si-name" value="${esc(s.name)}" maxlength="60"></label>
       ${tracks.length ? `<label>${tr('Track')}<select id="si-track">${tracks.map(([id, name]) => `<option value="${esc(id)}">${esc(name)}</option>`).join('')}</select></label>` : ''}
       ${s.game === 'rally' ? `<p class="sx-hint">${sxIcon('info')}<span>${tr("It goes into Rally's Personal setups for this car: load it in Car Setup › Save/Load Setup.")}</span></p>` : ''}
-      ${oldVersion ? `<p class="sx-hint warn">${sxIcon('info')}<span>${tr('Made with Rally {version}; your setups are from {yours}. Rally may change some values when it loads it.', { version: s.version, yours: versions.join(', ') })}</span></p>` : ''}
+      ${oldVersion ? `<p class="sx-hint warn">${sxIcon('info')}<span>${trh('Made with Rally {version}; your setups are from {yours}. Rally may change some values when it loads it.', { version: s.version, yours: versions.join(', ') })}</span></p>` : ''}
       <div class="detail-actions"><button class="btn small primary" data-imp>${tr('Import')}</button><button class="btn small subtle" data-close>${tr('Cancel')}</button></div>
     </div>`, 'modal slim setup-import-modal');
   el.querySelector('[data-imp]').onclick = async e => {
@@ -1529,7 +1537,7 @@ function openDetail(g, item, onChange) {
         toast(tr(item.enabled ? '{name} enabled' : '{name} disabled', { name: item.title }));
         close();
         onChange?.();
-        if (item.game === 'evo' && item.kind === 'track') evoTrackSync();
+        if (isEvoListed(item)) evoTrackSync();
       } catch (err) {
         toast(tr('Could not change {name}: {error}', { name: item.title, error: err?.message || tr('file in use?') }), true);
       }
@@ -1550,7 +1558,7 @@ function openDetail(g, item, onChange) {
         toast(tr(isMedia ? '{name} deleted (moved to the Recycle Bin)' : '{name} uninstalled (moved to the Recycle Bin)', { name: item.title }));
         close();
         onChange?.();
-        if (item.game === 'evo' && item.kind === 'track' && item.isMod) evoTrackSync();
+        if (isEvoListed(item) && item.isMod) evoTrackSync();
       } catch (err) {
         b.disabled = false; delete b.dataset.armed; b.textContent = removeLabel;
         toast(tr('Could not uninstall {name}: {error}', { name: item.title, error: err?.message || tr('file in use?') }), true);
@@ -1976,12 +1984,97 @@ function quickDriveModal(o) {
   return ui;
 }
 
+// Icons for the session sheets' rows, as Rally's: the game's own pictures for the
+// time and the weather, line icons in the same style for the rest.
+const qdSvg = d => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+const QD_ICONS = {
+  clock: '/img/rally/weather/clock.png',
+  speed: qdSvg('<path d="M13 19l9-7-9-7v14zM2 19l9-7-9-7v14z"/>'),
+  dynamic: qdSvg('<path d="M3 12a9 9 0 0 1 15-6.7L21 8M21 3v5h-5M21 12a9 9 0 0 1-15 6.7L3 16M8 16H3v5"/>'),
+  random: qdSvg('<path d="M2 18h1.4c1.3 0 2.5-.6 3.3-1.7l6.1-8.6c.7-1.1 2-1.7 3.3-1.7H22M18 2l4 4-4 4M2 6h1.9c1.5 0 2.9.9 3.6 2.2M22 18h-5.9c-1.3 0-2.6-.7-3.3-1.8l-.5-.8M18 14l4 4-4 4"/>'),
+  probability: qdSvg('<path d="M19 5L5 19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/>'),
+  persistence: qdSvg('<path d="M5 22h14M5 2h14M17 22v-4.2a2 2 0 0 0-.6-1.4L12 12l-4.4 4.4a2 2 0 0 0-.6 1.4V22M7 2v4.2a2 2 0 0 0 .6 1.4L12 12l4.4-4.4a2 2 0 0 0 .6-1.4V2"/>'),
+  wetness: qdSvg('<path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z"/>'),
+  snow: qdSvg('<path d="M12 2v20M4.9 7l14.2 10M4.9 17L19.1 7M9 4l3 2 3-2M9 20l3-2 3 2"/>'),
+  grip: qdSvg('<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>'),
+  mode: qdSvg('<path d="M6 4l14 8-14 8V4z"/>'),
+  trophy: qdSvg('<path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0V4zM17 5h3v2a3 3 0 0 1-3 3M7 5H4v2a3 3 0 0 0 3 3"/>'),
+  timer: qdSvg('<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2M10 2h4"/>'),
+  flag: qdSvg('<path d="M5 22V3M5 4h13l-2.5 4.5L18 13H5"/>'),
+  laps: qdSvg('<path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/>'),
+  users: qdSvg('<circle cx="9" cy="8" r="4"/><path d="M2 21v-1a6 6 0 0 1 6-6h2a6 6 0 0 1 6 6v1M16 4.1a4 4 0 0 1 0 7.8M22 21v-1a6 6 0 0 0-4-5.6"/>'),
+  grid: qdSvg('<rect x="4" y="3" width="6" height="7" rx="1"/><rect x="14" y="8" width="6" height="7" rx="1"/><rect x="4" y="14" width="6" height="7" rx="1"/>'),
+  gauge: qdSvg('<path d="M12 14l4-4M3.3 19a10 10 0 1 1 17.4 0"/>'),
+  flame: qdSvg('<path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.4-.5-2-1-3-1.1-2.1-.2-4 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.2.4-2.3 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>'),
+  spread: qdSvg('<path d="M2 12h4l3-8 6 16 3-8h4"/>'),
+  car: qdSvg('<path d="M5 17H3v-5l2.5-5h13L21 12v5h-2M5 12h16"/><circle cx="7.5" cy="17" r="2"/><circle cx="16.5" cy="17" r="2"/>'),
+  calendar: qdSvg('<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>'),
+  code: qdSvg('<path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/>'),
+  thermometer: qdSvg('<path d="M14 14.8V3.5a2.5 2.5 0 0 0-5 0v11.3a4.5 4.5 0 1 0 5 0z"/>'),
+  road: qdSvg('<path d="M4 21L8 3M20 21L16 3M12 4v3M12 11v3M12 18v3"/>'),
+  wind: qdSvg('<path d="M17.7 7.7A2.5 2.5 0 1 1 19.5 12H2M9.6 4.6A2 2 0 1 1 11 8H2M12.6 19.4A2 2 0 1 0 14 16H2"/>'),
+  gusts: qdSvg('<path d="M3 8h10a3 3 0 1 0-3-3M3 16h14a3 3 0 1 1-3 3M3 12h18"/>'),
+  compass: qdSvg('<circle cx="12" cy="12" r="10"/><path d="M16.2 7.8l-2.1 6.3-6.3 2.1 2.1-6.3z"/>'),
+  warning: qdSvg('<path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0zM12 9v4M12 17h.01"/>'),
+  sliders: qdSvg('<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/>'),
+  brake: qdSvg('<path d="M7.9 2h8.2L22 7.9v8.2L16.1 22H7.9L2 16.1V7.9z"/><path d="M8 12h8"/>'),
+  traction: qdSvg('<rect x="6" y="2" width="12" height="20" rx="4"/><path d="M6 7h12M6 12h12M6 17h12"/>'),
+  shield: qdSvg('<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>'),
+  pedal: qdSvg('<rect x="7" y="3" width="10" height="16" rx="2"/><path d="M7 8h10M10 22h4"/>'),
+  gears: qdSvg('<path d="M6 4v16M12 4v16M18 4v8M6 12h12"/><circle cx="6" cy="4" r="1"/><circle cx="12" cy="4" r="1"/><circle cx="18" cy="4" r="1"/>'),
+  zap: qdSvg('<path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>'),
+  line: qdSvg('<path d="M3 20c4-10 14-6 18-16"/><circle cx="3" cy="20" r="1"/><circle cx="21" cy="4" r="1"/>'),
+  wrench: qdSvg('<path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z"/>'),
+  eye: qdSvg('<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>'),
+  fuel: qdSvg('<path d="M3 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18M2 22h14M3 10h12M15 13h2a2 2 0 0 1 2 2v3a2 2 0 0 0 4 0V9l-3-3"/>'),
+  tyre: qdSvg('<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/>'),
+  heat: qdSvg('<path d="M3 8c3-2 6 2 9 0s6 2 9 0M3 13c3-2 6 2 9 0s6 2 9 0M3 18c3-2 6 2 9 0s6 2 9 0"/>'),
+  slipstream: qdSvg('<path d="M3 7h12M3 12h17M3 17h10"/>'),
+};
+// The closest of Rally's weather pictures for a weather's name, from any game.
+function weatherIcon(name) {
+  const s = String(name).toLowerCase();
+  if (/random/.test(s)) return QD_ICONS.random;
+  const light = /light|few|scattered|partly|mid|drizzle|damp|haze|mist/.test(s);
+  const pick = /blizzard/.test(s) ? 'blizzard'
+    : /snow|sleet|hail/.test(s) ? (light ? 'light-snow' : 'snow')
+    : /thunder|storm|hurricane|tornado/.test(s) ? 'storm'
+    : /rain|drizzle|shower|wet/.test(s) ? (light ? 'light-rain' : 'rain')
+    : /fog|mist|haze|smog|dust|sand/.test(s) ? (light ? 'light-fog' : 'fog')
+    : /overcast|cloud|broken/.test(s) ? (light ? 'light-clouds' : 'clouds')
+    : 'clear';
+  return `/img/rally/weather/${pick}.png`;
+}
+// A weather row's icon, for the weather picked.
+const weatherRowIcon = f => weatherIcon((f.options || []).find(([v]) => v === f.get())?.[1] || '');
+
+// A typed value for a number field: an option's own label ("Off", "P3", "14:30"),
+// else the option nearest to the number. Clock fields take "14:30", or "14" as an
+// hour. -1 when it isn't one.
+function typedOption(f, text) {
+  const t = text.trim().toLowerCase();
+  const byLabel = f.options.findIndex(([, l]) => tr(l).toLowerCase() === t);
+  if (byLabel >= 0) return byLabel;
+  const nums = f.options.map(([v]) => (typeof v === 'number' ? v : NaN));
+  const clock = f.options.some(([, l]) => /^\d{1,2}:\d{2}$/.test(l));
+  const hours = clock && Math.max(...nums.filter(Number.isFinite)) <= 24;
+  const hm = /^(\d{1,2})[:h](\d{2})$/.exec(t);
+  let x = clock && hm ? (hours ? +hm[1] + hm[2] / 60 : hm[1] * 60 + +hm[2]) : parseFloat(t.replace(/[^\d.-]/g, ''));
+  if (clock && !hm && !hours && x <= 24) x *= 60;
+  if (!Number.isFinite(x)) return -1;
+  let best = -1, gap = Infinity;
+  nums.forEach((v, j) => { if (Math.abs(v - x) < gap) { gap = Math.abs(v - x); best = j; } });
+  return best;
+}
+
 // Session settings sheet over the Quick Drive dialog. session.sections(sel) returns
-//   [{ title, note?, wide?, fields: [{ label, hint?, icon?, disabled?, type: 'seg'|'select'|'date'|'range', options: [[value, label]], get(), set(value) }] }]
+//   [{ title, note?, wide?, fields: [{ label, hint?, icon?, disabled?, type: 'seg'|'select'|'num'|'date'|'range', options: [[value, label]], get(), set(value) }] }]
 // ('date' has no options: its value is YYYY-MM-DD; 'range' is a slider with
 // min, max, step and unit instead) and is rebuilt after every change, so fields
-// can depend on each other. icon: a picture url, or an SVG (markup starting with
-// "<"), or a function giving either for the current value.
+// can depend on each other. 'num' steps through its options in order: a small
+// slider, and the value, which can be dragged left and right or double-clicked to
+// type. icon: a picture url, or an SVG (markup starting with "<"), or a function
+// of the field giving either for the current value.
 function openSessionSheet(host, session, getSel, onChange) {
   host.querySelector('.qd-sheet-wrap')?.remove();
   const wrap = document.createElement('div');
@@ -1989,13 +2082,19 @@ function openSessionSheet(host, session, getSel, onChange) {
   host.appendChild(wrap);
   let fields = [];
   const iconHTML = f => {
-    const icon = typeof f.icon === 'function' ? f.icon() : f.icon;
+    const icon = typeof f.icon === 'function' ? f.icon(f) : f.icon;
     return !icon ? '' : icon.startsWith('<') ? `<span class="qd-row-icon">${icon}</span>` : `<span class="qd-row-icon"><img src="${esc(icon)}" alt=""></span>`;
+  };
+  const fill = (k, n) => `${n > 1 ? (k / (n - 1)) * 100 : 0}%`;
+  const numHTML = (f, i, k, off) => {
+    const at = Math.max(0, k), n = f.options.length;
+    return `<div class="qd-num" data-f="${i}"><input type="range" min="0" max="${n - 1}" step="1" value="${at}" style="--fill: ${fill(at, n)}" tabindex="-1"${off}><output tabindex="${f.disabled ? -1 : 0}" title="${esc(tr('Drag left or right, or double-click to type'))}">${esc(tr(f.options[at]?.[1] ?? ''))}</output></div>`;
   };
   const fieldHTML = (f, i) => {
     const k = (f.options || []).findIndex(([v]) => v === f.get());
     const off = f.disabled ? ' disabled' : '';
     const control = f.type === 'date' ? `<input type="date" data-f="${i}" value="${esc(f.get())}"${off}>`
+      : f.type === 'num' ? numHTML(f, i, k, off)
       : f.type === 'range'
       ? `<div class="qd-range"><input type="range" data-f="${i}" min="${f.min}" max="${f.max}" step="${f.step || 1}" value="${esc(f.get())}" style="--fill: ${((f.get() - f.min) / (f.max - f.min || 1)) * 100}%"${off}><output>${esc(f.get())}${esc(f.unit || '')}</output></div>`
       : f.type === 'seg'
@@ -2021,14 +2120,75 @@ function openSessionSheet(host, session, getSel, onChange) {
     const b = e.target.closest('.qd-seg [data-k]');
     if (b) set(Number(b.parentElement.dataset.f), Number(b.dataset.k));
   });
+  // Number fields: the value is dragged (8 px a step), stepped with the arrow keys or
+  // typed; their slider works like the others.
+  const numOf = el => { const box = el.closest('.qd-num'); return box && { box, i: Number(box.dataset.f), f: fields[Number(box.dataset.f)] }; };
+  const preview = (box, f, k) => {
+    const r = box.querySelector('input[type=range]'), out = box.querySelector('output');
+    r.value = k; r.style.setProperty('--fill', fill(k, f.options.length));
+    if (out) out.textContent = tr(f.options[k][1]);
+  };
+  // Applies option k of field i (-1 or the same value: just shows it again), keeping the focus there.
+  const pick = (i, k) => {
+    const f = fields[i];
+    if (k < 0 || f.options[k][0] === f.get()) { draw(); return; }
+    set(i, k);
+    wrap.querySelector(`.qd-num[data-f="${i}"] output`)?.focus();
+  };
+  wrap.addEventListener('pointerdown', e => {
+    const out = e.target.closest('.qd-num output'), n = out && numOf(out);
+    if (!n || n.f.disabled || e.button !== 0) return;
+    const x0 = e.clientX, k0 = Number(n.box.querySelector('input').value), last = n.f.options.length - 1;
+    let k = k0;
+    out.setPointerCapture(e.pointerId);
+    n.box.classList.add('dragging');
+    const move = ev => {
+      const at = Math.max(0, Math.min(last, k0 + Math.round((ev.clientX - x0) / 8)));
+      if (at !== k) { k = at; preview(n.box, n.f, k); }
+    };
+    const up = () => {
+      out.removeEventListener('pointermove', move); out.removeEventListener('pointerup', up); out.removeEventListener('pointercancel', up);
+      n.box.classList.remove('dragging');
+      if (k !== k0) pick(n.i, k);
+    };
+    out.addEventListener('pointermove', move); out.addEventListener('pointerup', up); out.addEventListener('pointercancel', up);
+  });
+  wrap.addEventListener('dblclick', e => {
+    const out = e.target.closest('.qd-num output'), n = out && numOf(out);
+    if (!n || n.f.disabled) return;
+    const input = document.createElement('input');
+    input.className = 'qd-num-edit';
+    input.value = out.textContent;
+    out.replaceWith(input);
+    input.focus(); input.select();
+    let done = false;
+    const finish = ok => { if (!done) { done = true; pick(n.i, ok ? typedOption(n.f, input.value) : -1); } };
+    input.addEventListener('keydown', ev => {
+      if (ev.key === 'Enter') finish(true);
+      else if (ev.key === 'Escape') { ev.stopPropagation(); finish(false); }
+    });
+    input.addEventListener('blur', () => finish(true));
+  });
+  wrap.addEventListener('keydown', e => {
+    const out = e.target.closest?.('.qd-num output'), n = out && numOf(out);
+    if (!n || n.f.disabled) return;
+    const d = { ArrowLeft: -1, ArrowDown: -1, ArrowRight: 1, ArrowUp: 1 }[e.key];
+    if (d) {
+      e.preventDefault();
+      const k = Number(n.box.querySelector('input').value) + d;
+      if (k >= 0 && k < n.f.options.length) pick(n.i, k);
+    } else if (e.key === 'Enter') out.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+  });
   // A slider shows its value while dragged and applies it when let go.
   wrap.addEventListener('input', e => {
+    if (e.target.matches('.qd-num input[type=range]')) { const n = numOf(e.target); preview(n.box, n.f, Number(e.target.value)); return; }
     if (!e.target.matches('input[type=range][data-f]')) return;
     const out = e.target.nextElementSibling, r = e.target;
     if (out) out.textContent = `${r.value}${fields[Number(r.dataset.f)].unit || ''}`;
     r.style.setProperty('--fill', `${((r.value - r.min) / (r.max - r.min || 1)) * 100}%`);
   });
   wrap.addEventListener('change', e => {
+    if (e.target.matches('.qd-num input[type=range]')) { const n = numOf(e.target); pick(n.i, Number(e.target.value)); return; }
     if (e.target.matches('select[data-f]')) set(Number(e.target.dataset.f), Number(e.target.value));
     if (e.target.matches('input[type=range][data-f]')) { fields[Number(e.target.dataset.f)].set(Number(e.target.value)); draw(); onChange(); }
     if (e.target.matches('input[type=date][data-f]') && /^\d{4}-\d{2}-\d{2}$/.test(e.target.value)) {
@@ -2247,35 +2407,35 @@ async function openAccQuickDrive() {
     sheetNote: tr("Set in ACC's Single Player menu: ACC opens with these choices and you press Start."),
     sections: () => [
       { title: tr('Game mode'), wide: true, fields: [
-        { label: tr('Championship'), hint: tr('Season of the Single Player menu; it decides the official cars and teams. A car from another year or class may need Free selection'), type: 'select', options: seasons.map(id => [id, accSeasonName(id)]), get: () => ss.season, set: v => { ss.season = v; } },
-        { label: tr('Mode'), type: 'seg', options: Object.entries(ACC_MODES), get: () => ss.mode, set: v => { ss.mode = v; } },
+        { icon: QD_ICONS.trophy, label: tr('Championship'), hint: tr('Season of the Single Player menu; it decides the official cars and teams. A car from another year or class may need Free selection'), type: 'select', options: seasons.map(id => [id, accSeasonName(id)]), get: () => ss.season, set: v => { ss.season = v; } },
+        { icon: QD_ICONS.mode, label: tr('Mode'), type: 'seg', options: Object.entries(ACC_MODES), get: () => ss.mode, set: v => { ss.mode = v; } },
       ] },
       ...(ss.mode === 'Practice' ? [{ title: tr('Practice'), fields: [
-        { label: tr('Length'), type: 'select', options: minuteOptions(ss.practice, 5, 120, 5), get: () => ss.practice, set: v => { ss.practice = v; } },
+        { icon: QD_ICONS.timer, label: tr('Length'), type: 'num', options: minuteOptions(ss.practice, 5, 120, 5), get: () => ss.practice, set: v => { ss.practice = v; } },
       ] }] : []),
       ...(ss.mode === 'Hotlap' ? [{ title: tr('Hotlap'), note: tr('Hotlap runs until you leave; only time and weather apply.'), fields: [] }] : []),
       ...(ss.mode === 'Hotstint' ? [{ title: tr('Hotstint'), fields: [
-        { label: tr('Stint length'), type: 'select', options: minuteOptions(ss.stint, 5, 60, 5), get: () => ss.stint, set: v => { ss.stint = v; } },
+        { icon: QD_ICONS.timer, label: tr('Stint length'), type: 'num', options: minuteOptions(ss.stint, 5, 60, 5), get: () => ss.stint, set: v => { ss.stint = v; } },
       ] }] : []),
       ...(ss.mode === 'QuickRace' ? [{ title: tr('Race'), fields: [
-        { label: tr('Race length'), type: 'select', options: minuteOptions(ss.race, 5, 120, 5), get: () => ss.race, set: v => { ss.race = v; } },
+        { icon: QD_ICONS.timer, label: tr('Race length'), type: 'num', options: minuteOptions(ss.race, 5, 120, 5), get: () => ss.race, set: v => { ss.race = v; } },
       ] }] : []),
       ...(ss.mode === 'CustomRace' ? [{ title: tr('Race weekend'), fields: [
-        { label: tr('Practice'), type: 'select', options: minuteOptions(ss.practice, 0, 120, 5, tr('Skip')), get: () => ss.practice, set: v => { ss.practice = v; } },
-        { label: tr('Qualifying'), type: 'select', options: minuteOptions(ss.qualifying, 5, 60, 5), get: () => ss.qualifying, set: v => { ss.qualifying = v; } },
-        { label: tr('Race'), type: 'select', options: minuteOptions(ss.race, 5, 180, 5), get: () => ss.race, set: v => { ss.race = v; } },
+        { icon: QD_ICONS.timer, label: tr('Practice'), type: 'num', options: minuteOptions(ss.practice, 0, 120, 5, tr('Skip')), get: () => ss.practice, set: v => { ss.practice = v; } },
+        { icon: QD_ICONS.timer, label: tr('Qualifying'), type: 'num', options: minuteOptions(ss.qualifying, 5, 60, 5), get: () => ss.qualifying, set: v => { ss.qualifying = v; } },
+        { icon: QD_ICONS.timer, label: tr('Race'), type: 'num', options: minuteOptions(ss.race, 5, 180, 5), get: () => ss.race, set: v => { ss.race = v; } },
       ] }] : []),
       ...(racing() ? [{ title: tr('Opponents'), fields: [
-        { label: tr('Opponents'), hint: tr("ACC caps it at the track's pit boxes"), type: 'select', options: countOptions(ss.opponents, 1, 49), get: () => ss.opponents, set: v => { ss.opponents = v; } },
-        { label: tr('Starting position'), type: 'select', get: () => (ss.startPos = Math.min(ss.startPos, ss.opponents + 1)), set: v => { ss.startPos = v; },
+        { icon: QD_ICONS.users, label: tr('Opponents'), hint: tr("ACC caps it at the track's pit boxes"), type: 'num', options: countOptions(ss.opponents, 1, 49), get: () => ss.opponents, set: v => { ss.opponents = v; } },
+        { icon: QD_ICONS.grid, label: tr('Starting position'), type: 'num', get: () => (ss.startPos = Math.min(ss.startPos, ss.opponents + 1)), set: v => { ss.startPos = v; },
           options: steps(1, ss.opponents + 1, 1).map(n => [n, `P${n}`]) },
-        { label: tr('Skill'), type: 'select', options: withCurrent(steps(50, 100, 1).map(n => [n, `${n}%`]), ss.skill, n => `${n}%`), get: () => ss.skill, set: v => { ss.skill = v; } },
-        { label: tr('Aggression'), type: 'select', options: withCurrent(steps(0, 100, 5).map(n => [n, `${n}%`]), ss.aggro, n => `${n}%`), get: () => ss.aggro, set: v => { ss.aggro = v; } },
+        { icon: QD_ICONS.gauge, label: tr('Skill'), type: 'num', options: withCurrent(steps(50, 100, 1).map(n => [n, `${n}%`]), ss.skill, n => `${n}%`), get: () => ss.skill, set: v => { ss.skill = v; } },
+        { icon: QD_ICONS.flame, label: tr('Aggression'), type: 'num', options: withCurrent(steps(0, 100, 5).map(n => [n, `${n}%`]), ss.aggro, n => `${n}%`), get: () => ss.aggro, set: v => { ss.aggro = v; } },
       ] }] : []),
       { title: tr('Conditions'), fields: [
-        { label: tr('Time of day'), type: 'select', options: withCurrent(steps(0, 23, 1).map(h => [h, hour(h)]), ss.time, hour), get: () => ss.time, set: v => { ss.time = v; } },
-        { label: tr('Time speed'), type: 'select', options: withCurrent(ACC_TIME_SPEEDS.map(x => [x, `${x}×`]), ss.speed, x => `${x}×`), get: () => ss.speed, set: v => { ss.speed = v; } },
-        { label: tr('Weather'), type: 'select', options: ACC_WEATHER, get: () => ss.weather, set: v => { ss.weather = v; } },
+        { icon: QD_ICONS.clock, label: tr('Time of day'), type: 'num', options: withCurrent(steps(0, 23, 1).map(h => [h, hour(h)]), ss.time, hour), get: () => ss.time, set: v => { ss.time = v; } },
+        { icon: QD_ICONS.speed, label: tr('Time speed'), type: 'num', options: withCurrent(ACC_TIME_SPEEDS.map(x => [x, `${x}×`]), ss.speed, x => `${x}×`), get: () => ss.speed, set: v => { ss.speed = v; } },
+        { icon: weatherRowIcon, label: tr('Weather'), type: 'select', options: ACC_WEATHER, get: () => ss.weather, set: v => { ss.weather = v; } },
       ] },
     ],
     onChange: () => { state.settings.accQD = { ...(state.settings.accQD || {}), session: ss }; saveSettings(); },
@@ -2467,17 +2627,7 @@ async function openRallyQuickDrive() {
   // Free Practice's Weather & Time settings, laid out as Rally's screen. The
   // weather rows show the game's icon for the chosen weather; the weathers on
   // offer are the ones the stage's location has (no snow in Greece).
-  const svg = d => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
-  const ICONS = {
-    speed: svg('<path d="M13 19l9-7-9-7v14zM2 19l9-7-9-7v14z"/>'),
-    dynamic: svg('<path d="M3 12a9 9 0 0 1 15-6.7L21 8M21 3v5h-5M21 12a9 9 0 0 1-15 6.7L3 16M8 16H3v5"/>'),
-    random: svg('<path d="M2 18h1.4c1.3 0 2.5-.6 3.3-1.7l6.1-8.6c.7-1.1 2-1.7 3.3-1.7H22M18 2l4 4-4 4M2 6h1.9c1.5 0 2.9.9 3.6 2.2M22 18h-5.9c-1.3 0-2.6-.7-3.3-1.8l-.5-.8M18 14l4 4-4 4"/>'),
-    probability: svg('<path d="M19 5L5 19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/>'),
-    persistence: svg('<path d="M5 22h14M5 2h14M17 22v-4.2a2 2 0 0 0-.6-1.4L12 12l-4.4 4.4a2 2 0 0 0-.6 1.4V22M7 2v4.2a2 2 0 0 0 .6 1.4L12 12l4.4-4.4a2 2 0 0 0 .6-1.4V2"/>'),
-    wetness: svg('<path d="M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z"/>'),
-    snow: svg('<path d="M12 2v20M4.9 7l14.2 10M4.9 17L19.1 7M9 4l3 2 3-2M9 20l3-2 3 2"/>'),
-    grip: svg('<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>'),
-  };
+  const ICONS = QD_ICONS;
   const locationOf = s => (s?.layout ? rallyStage(s.layout).location : '');
   // The weather Rally will start with on that stage (another one when the location doesn't have it).
   const startWeather = s => rallyWeatherFor(locationOf(s), weather.weather);
@@ -2489,13 +2639,13 @@ async function openRallyQuickDrive() {
     sheetNote: saveProblem || tr("Set in Rally's Free Practice menu: Rally opens it on this stage and car."),
     sections: s => {
       const time = { title: N_('Event Start Time'), fields: [
-        { label: N_('Event start time'), icon: '/img/rally/weather/clock.png', type: 'select', options: timeOptions(minutes), get: () => minutes, set: v => { minutes = v; } },
+        { label: N_('Event start time'), icon: '/img/rally/weather/clock.png', type: 'num', options: timeOptions(minutes), get: () => minutes, set: v => { minutes = v; } },
       ] };
       const mine = setupsOf(s.car);
       const setup = { title: N_('Car Setup'), note: mine.length
         ? N_("Rally can't be given a setup: load it in Car Setup › Save/Load Setup. Picking it here notes the stage bests you set with it (Mods › Setups).")
         : N_("No Personal setups for this car yet: save one in Rally's Car Setup menu, and pick it here to note the stage bests you set with it."),
-      fields: mine.length ? [{ label: N_("Setup you'll drive"), type: 'select', options: [['', N_('Not noted')], ...mine.map(x => [x.name, x.name])], get: () => pickedSetup(s.car)?.name || '', set: v => { setupPick[s.car] = v; } }] : [] };
+      fields: mine.length ? [{ icon: QD_ICONS.sliders, label: N_("Setup you'll drive"), type: 'select', options: [['', N_('Not noted')], ...mine.map(x => [x.name, x.name])], get: () => pickedSetup(s.car)?.name || '', set: v => { setupPick[s.car] = v; } }] : [] };
       if (!weather) return [{ ...time, note: N_("Rally's save doesn't have its Weather & Time settings where the launcher expects them, so pick them in Free Practice's Weather & Time screen.") }, setup];
       const w = weather, start = startWeather(s), forecast = w.forecast === -1 ? -1 : rallyWeatherFor(locationOf(s), w.forecast);
       time.fields.push({ label: N_('Time acceleration'), icon: ICONS.speed, type: 'select', options: RALLY_TIME_SPEEDS.map((l, i) => [i, l]), get: () => w.speed, set: v => { w.speed = v; } });
@@ -2727,20 +2877,20 @@ async function openEvoQuickDrive({ car, track } = {}) {
   };
   const length = r => r.type === 'laps' ? `${r.laps} lap${r.laps > 1 ? 's' : ''}` : `${r.minutes} min`;
   const timing = (t, { lengths, zero }) => [
-    { label: 'Length', type: 'select', options: minuteOptions(t.minutes, ...lengths, zero), get: () => t.minutes, set: v => { t.minutes = v; } },
-    { label: 'Start time', type: 'select', options: timeOptions(t.start), get: () => t.start, set: v => { t.start = v; } },
-    { label: 'Time speed', hint: 'In-game minutes per real minute', type: 'select', options: EVO_TIME_SPEEDS.map(x => [x, `${x}×`]), get: () => t.speed, set: v => { t.speed = v; } },
+    { icon: QD_ICONS.timer, label: 'Length', type: 'num', options: minuteOptions(t.minutes, ...lengths, zero), get: () => t.minutes, set: v => { t.minutes = v; } },
+    { icon: QD_ICONS.clock, label: 'Start time', type: 'num', options: timeOptions(t.start), get: () => t.start, set: v => { t.start = v; } },
+    { icon: QD_ICONS.speed, label: 'Time speed', hint: 'In-game minutes per real minute', type: 'num', options: EVO_TIME_SPEEDS.map(x => [x, `${x}×`]), get: () => t.speed, set: v => { t.speed = v; } },
   ];
   const raceFields = (r, startPos, sel) => [
-    { label: 'Race length', type: 'seg', options: [['laps', 'Laps'], ['time', 'Time']], get: () => r.type, set: v => { r.type = v; } },
+    { icon: QD_ICONS.flag, label: 'Race length', type: 'seg', options: [['laps', 'Laps'], ['time', 'Time']], get: () => r.type, set: v => { r.type = v; } },
     r.type === 'laps'
-      ? { label: 'Laps', type: 'select', options: countOptions(r.laps, 1, 100), get: () => r.laps, set: v => { r.laps = v; } }
-      : { label: 'Duration', type: 'select', options: minuteOptions(r.minutes, 5, 180, 5), get: () => r.minutes, set: v => { r.minutes = v; } },
-    { label: 'Start time', type: 'select', options: timeOptions(r.start), get: () => r.start, set: v => { r.start = v; } },
-    { label: 'Time speed', type: 'select', options: EVO_TIME_SPEEDS.map(x => [x, `${x}×`]), get: () => r.speed, set: v => { r.speed = v; } },
+      ? { icon: QD_ICONS.laps, label: 'Laps', type: 'num', options: countOptions(r.laps, 1, 100), get: () => r.laps, set: v => { r.laps = v; } }
+      : { icon: QD_ICONS.timer, label: 'Duration', type: 'num', options: minuteOptions(r.minutes, 5, 180, 5), get: () => r.minutes, set: v => { r.minutes = v; } },
+    { icon: QD_ICONS.clock, label: 'Start time', type: 'num', options: timeOptions(r.start), get: () => r.start, set: v => { r.start = v; } },
+    { icon: QD_ICONS.speed, label: 'Time speed', type: 'num', options: EVO_TIME_SPEEDS.map(x => [x, `${x}×`]), get: () => r.speed, set: v => { r.speed = v; } },
     ...(startPos ? [{
       // EVO keeps the slot within the grid (opponents + 1).
-      label: 'Starting position', type: 'select', get: () => (r.startPos = Math.min(r.startPos, Math.min(r.grid.opponents, maxOpponents(sel)) + 1)), set: v => { r.startPos = v; },
+      icon: QD_ICONS.grid, label: 'Starting position', type: 'num', get: () => (r.startPos = Math.min(r.startPos, Math.min(r.grid.opponents, maxOpponents(sel)) + 1)), set: v => { r.startPos = v; },
       options: [[0, 'Random'], ...steps(1, Math.min(r.grid.opponents, maxOpponents(sel)) + 1, 1).map(n => [n, `P${n}`])],
     }] : []),
   ];
@@ -2748,12 +2898,12 @@ async function openEvoQuickDrive({ car, track } = {}) {
     title: 'Opponents',
     note: grid.custom ? 'Uses the grid you built in EVO (Edit grid). Switch to Automatic to set it here.' : '',
     fields: [
-      { label: 'Grid', type: 'seg', options: [[false, 'Automatic'], [true, 'Custom (from EVO)']], get: () => grid.custom, set: v => { grid.custom = v; } },
+      { icon: QD_ICONS.sliders, label: 'Grid', type: 'seg', options: [[false, 'Automatic'], [true, 'Custom (from EVO)']], get: () => grid.custom, set: v => { grid.custom = v; } },
       ...(grid.custom ? [] : [
-        { label: 'Opponents', hint: `Up to ${maxOpponents(sel)} on this layout`, type: 'select', options: countOptions(Math.min(grid.opponents, maxOpponents(sel)), 1, maxOpponents(sel)), get: () => Math.min(grid.opponents, maxOpponents(sel)), set: v => { grid.opponents = v; } },
-        { label: 'Skill from', type: 'select', options: steps(80, 100, 1).map(n => [n, `${n}%`]), get: () => grid.skillMin, set: v => { grid.skillMin = v; grid.skillMax = Math.max(grid.skillMax, v); } },
-        { label: 'Skill to', type: 'select', options: steps(80, 100, 1).map(n => [n, `${n}%`]), get: () => grid.skillMax, set: v => { grid.skillMax = v; grid.skillMin = Math.min(grid.skillMin, v); } },
-        { label: 'Single make', hint: 'Every AI car is the same model as yours', type: 'seg', options: [[false, 'Off'], [true, 'On']], get: () => grid.singleMake, set: v => { grid.singleMake = v; } },
+        { icon: QD_ICONS.users, label: 'Opponents', hint: `Up to ${maxOpponents(sel)} on this layout`, type: 'num', options: countOptions(Math.min(grid.opponents, maxOpponents(sel)), 1, maxOpponents(sel)), get: () => Math.min(grid.opponents, maxOpponents(sel)), set: v => { grid.opponents = v; } },
+        { icon: QD_ICONS.gauge, label: 'Skill from', type: 'num', options: steps(80, 100, 1).map(n => [n, `${n}%`]), get: () => grid.skillMin, set: v => { grid.skillMin = v; grid.skillMax = Math.max(grid.skillMax, v); } },
+        { icon: QD_ICONS.gauge, label: 'Skill to', type: 'num', options: steps(80, 100, 1).map(n => [n, `${n}%`]), get: () => grid.skillMax, set: v => { grid.skillMax = v; grid.skillMin = Math.min(grid.skillMin, v); } },
+        { icon: QD_ICONS.car, label: 'Single make', hint: 'Every AI car is the same model as yours', type: 'seg', options: [[false, 'Off'], [true, 'On']], get: () => grid.singleMake, set: v => { grid.singleMake = v; } },
       ]),
     ],
   });
@@ -2771,7 +2921,7 @@ async function openEvoQuickDrive({ car, track } = {}) {
     set: d => { mergeSettings(ss, d); },
     sheetNote: "EVO's Single Player settings: they're saved into EVO when you launch.",
     sections: sel => [
-      { title: 'Game mode', wide: true, fields: [{ label: 'Mode', type: 'seg', options: Object.entries(EVO_MODES).map(([k, m]) => [k, m.label]), get: () => ss.mode, set: v => { ss.mode = v; } }] },
+      { title: 'Game mode', wide: true, fields: [{ icon: QD_ICONS.mode, label: 'Mode', type: 'seg', options: Object.entries(EVO_MODES).map(([k, m]) => [k, m.label]), get: () => ss.mode, set: v => { ss.mode = v; } }] },
       ...(ss.mode === 'practice' ? [{ title: 'Practice', fields: timing(ss.practice, { lengths: [5, 90, 5] }) }] : []),
       ...(ss.mode === 'race' ? [{ title: 'Race', fields: raceFields(ss.race, true, sel) }, gridSection(ss.race.grid, sel)] : []),
       ...(ss.mode === 'weekend' ? [
@@ -2783,9 +2933,9 @@ async function openEvoQuickDrive({ car, track } = {}) {
       ] : []),
       {
         title: 'Weather', fields: [
-          { label: 'Weather', type: 'select', options: EVO_WEATHER.map(w => [w.id, w.label]), get: () => ss.weather.type, set: v => { ss.weather.type = v; } },
-          { label: 'Changes', hint: 'Dynamic weather evolves during the session', type: 'seg', options: [[false, 'Static'], [true, 'Dynamic']], get: () => ss.weather.dynamic, set: v => { ss.weather.dynamic = v; } },
-          { label: 'Initial grip', type: 'seg', options: EVO_GRIP, get: () => ss.weather.grip, set: v => { ss.weather.grip = v; } },
+          { icon: weatherRowIcon, label: 'Weather', type: 'select', options: EVO_WEATHER.map(w => [w.id, w.label]), get: () => ss.weather.type, set: v => { ss.weather.type = v; } },
+          { icon: QD_ICONS.dynamic, label: 'Changes', hint: 'Dynamic weather evolves during the session', type: 'seg', options: [[false, 'Static'], [true, 'Dynamic']], get: () => ss.weather.dynamic, set: v => { ss.weather.dynamic = v; } },
+          { icon: QD_ICONS.grip, label: 'Initial grip', type: 'seg', options: EVO_GRIP, get: () => ss.weather.grip, set: v => { ss.weather.grip = v; } },
         ],
       },
     ],
@@ -2963,96 +3113,96 @@ async function openQuickDrive({ car, skin, track } = {}) {
     sections: sel => {
       const max = maxOpponents(sel), layout = layoutOf(sel);
       return [
-        { title: 'Game mode', wide: true, fields: [{ label: 'Mode', type: 'seg', options: Object.entries(AC_MODES), get: () => ss.mode, set: v => { ss.mode = v; } }] },
+        { title: 'Game mode', wide: true, fields: [{ icon: QD_ICONS.mode, label: 'Mode', type: 'seg', options: Object.entries(AC_MODES), get: () => ss.mode, set: v => { ss.mode = v; } }] },
         ...(ss.mode === 'practice' ? [{ title: 'Practice', fields: [
-          { label: 'Length', type: 'select', options: minuteOptions(ss.practice.minutes, 0, 120, 5, 'Unlimited'), get: () => ss.practice.minutes, set: v => { ss.practice.minutes = v; } },
+          { icon: QD_ICONS.timer, label: 'Length', type: 'num', options: minuteOptions(ss.practice.minutes, 0, 120, 5, 'Unlimited'), get: () => ss.practice.minutes, set: v => { ss.practice.minutes = v; } },
         ] }] : []),
         ...(ss.mode === 'race' ? [{ title: 'Race', fields: [
-          { label: 'Laps', type: 'select', options: countOptions(ss.race.laps, 1, 100), get: () => ss.race.laps, set: v => { ss.race.laps = v; } },
-          { label: 'Starting position', type: 'select', get: () => ss.race.startPos, set: v => { ss.race.startPos = v; },
+          { icon: QD_ICONS.laps, label: 'Laps', type: 'num', options: countOptions(ss.race.laps, 1, 100), get: () => ss.race.laps, set: v => { ss.race.laps = v; } },
+          { icon: QD_ICONS.grid, label: 'Starting position', type: 'num', get: () => ss.race.startPos, set: v => { ss.race.startPos = v; },
             options: [[0, 'Last'], [-1, 'Random'], ...steps(1, Math.min(ss.ai.count, max) + 1, 1).map(n => [n, `P${n}`])] },
         ] }] : []),
         ...(ss.mode === 'weekend' ? [{ title: 'Weekend', fields: [
-          { label: 'Practice', type: 'select', options: minuteOptions(ss.weekend.practice, 0, 90, 5, 'Skip'), get: () => ss.weekend.practice, set: v => { ss.weekend.practice = v; } },
-          { label: 'Qualifying', type: 'select', options: minuteOptions(ss.weekend.qualifying, 5, 90, 5), get: () => ss.weekend.qualifying, set: v => { ss.weekend.qualifying = v; } },
-          { label: 'Race laps', type: 'select', options: countOptions(ss.weekend.laps, 1, 100), get: () => ss.weekend.laps, set: v => { ss.weekend.laps = v; } },
+          { icon: QD_ICONS.timer, label: 'Practice', type: 'num', options: minuteOptions(ss.weekend.practice, 0, 90, 5, 'Skip'), get: () => ss.weekend.practice, set: v => { ss.weekend.practice = v; } },
+          { icon: QD_ICONS.timer, label: 'Qualifying', type: 'num', options: minuteOptions(ss.weekend.qualifying, 5, 90, 5), get: () => ss.weekend.qualifying, set: v => { ss.weekend.qualifying = v; } },
+          { icon: QD_ICONS.laps, label: 'Race laps', type: 'num', options: countOptions(ss.weekend.laps, 1, 100), get: () => ss.weekend.laps, set: v => { ss.weekend.laps = v; } },
         ] }] : []),
         ...(racing() ? [{
           title: 'Opponents',
           note: layout && !layout.aiLine ? "This layout has no AI line (ai/fast_lane.ai), so it can't have opponents. Pick another layout or track." : 'Same car as yours, in its other skins.',
           fields: [
-            { label: 'Opponents', hint: `Up to ${max} (pit boxes on this layout)`, type: 'select', options: countOptions(Math.min(ss.ai.count, max), 1, max), get: () => Math.min(ss.ai.count, max), set: v => { ss.ai.count = v; } },
-            { label: 'Strength', type: 'select', options: steps(80, 100, 1).map(n => [n, `${n}%`]), get: () => ss.ai.strength, set: v => { ss.ai.strength = v; } },
-            { label: 'Variation', hint: 'How much each AI driver differs', type: 'select', options: steps(0, 5, 1).map(n => [n, `${n}%`]), get: () => ss.ai.variation, set: v => { ss.ai.variation = v; } },
-            { label: 'Aggression', type: 'select', options: steps(0, 100, 10).map(n => [n, `${n}%`]), get: () => ss.ai.aggression, set: v => { ss.ai.aggression = v; } },
+            { icon: QD_ICONS.users, label: 'Opponents', hint: `Up to ${max} (pit boxes on this layout)`, type: 'num', options: countOptions(Math.min(ss.ai.count, max), 1, max), get: () => Math.min(ss.ai.count, max), set: v => { ss.ai.count = v; } },
+            { icon: QD_ICONS.gauge, label: 'Strength', type: 'num', options: steps(80, 100, 1).map(n => [n, `${n}%`]), get: () => ss.ai.strength, set: v => { ss.ai.strength = v; } },
+            { icon: QD_ICONS.spread, label: 'Variation', hint: 'How much each AI driver differs', type: 'num', options: steps(0, 5, 1).map(n => [n, `${n}%`]), get: () => ss.ai.variation, set: v => { ss.ai.variation = v; } },
+            { icon: QD_ICONS.flame, label: 'Aggression', type: 'num', options: steps(0, 100, 10).map(n => [n, `${n}%`]), get: () => ss.ai.aggression, set: v => { ss.ai.aggression = v; } },
           ],
         }] : []),
         {
           title: 'Conditions',
           note: wfx && isWetWeather(wfxType()) && !csp.rainFx ? 'Rain FX is off (Settings → Custom Shaders Patch), so the track stays dry.' : '',
           fields: [
-            { label: 'Time of day', hint: h24 ? 'Any hour with Custom Shaders Patch' : '', type: 'select', options: timeOptions(ss.time, h24 ? 0 : 8 * 60, h24 ? 23 * 60 + 45 : 18 * 60), get: () => ss.time, set: v => { ss.time = v; } },
-            { label: 'Time speed', type: 'select', options: withCurrent([1, 2, 4, 8, 16, 30, 60].map(x => [x, `${x}×`]), ss.speed, x => `${x}×`), get: () => ss.speed, set: v => { ss.speed = v; } },
+            { icon: QD_ICONS.clock, label: 'Time of day', hint: h24 ? 'Any hour with Custom Shaders Patch' : '', type: 'num', options: timeOptions(ss.time, h24 ? 0 : 8 * 60, h24 ? 23 * 60 + 45 : 18 * 60), get: () => ss.time, set: v => { ss.time = v; } },
+            { icon: QD_ICONS.speed, label: 'Time speed', type: 'num', options: withCurrent([1, 2, 4, 8, 16, 30, 60].map(x => [x, `${x}×`]), ss.speed, x => `${x}×`), get: () => ss.speed, set: v => { ss.speed = v; } },
             ...(dated ? [
-              { label: 'Date', hint: 'Sun position and season (CSP)', type: 'seg', options: [[false, 'Today'], [true, 'Pick a day']], get: () => !!ss.date, set: v => { ss.date = v ? (ss.date || todayIso()) : ''; } },
-              ...(ss.date ? [{ label: 'Day', type: 'date', get: () => ss.date, set: v => { ss.date = v; } }] : []),
+              { icon: QD_ICONS.calendar, label: 'Date', hint: 'Sun position and season (CSP)', type: 'seg', options: [[false, 'Today'], [true, 'Pick a day']], get: () => !!ss.date, set: v => { ss.date = v ? (ss.date || todayIso()) : ''; } },
+              ...(ss.date ? [{ icon: QD_ICONS.calendar, label: 'Day', type: 'date', get: () => ss.date, set: v => { ss.date = v; } }] : []),
             ] : []),
             wfx
-              ? { label: 'Weather', hint: ['CSP Weather FX', csp.style !== 'base' && (csp.styles.find(s => s.id === csp.style)?.name || csp.style), controllerName() !== 'Default' && controllerName()].filter(Boolean).join(' · '),
+              ? { icon: weatherRowIcon, label: 'Weather', hint: ['CSP Weather FX', csp.style !== 'base' && (csp.styles.find(s => s.id === csp.style)?.name || csp.style), controllerName() !== 'Default' && controllerName()].filter(Boolean).join(' · '),
                 type: 'select', get: () => ss.cspWeather, set: v => { ss.cspWeather = v; },
                 options: [...types.map(t => [String(t.id), t.label]), ...ownWeather.map(c => [`ctrl:${c.id}`, `${c.name} (controller)`])] }
-              : { label: 'Weather', type: 'select', options: weathers.length ? weathers.map(w => [w.id, w.name]) : [[ss.weather, ss.weather]], get: () => ss.weather, set: v => { ss.weather = v; } },
+              : { icon: weatherRowIcon, label: 'Weather', type: 'select', options: weathers.length ? weathers.map(w => [w.id, w.name]) : [[ss.weather, ss.weather]], get: () => ss.weather, set: v => { ss.weather = v; } },
             // Default unless the user picks another one (with Pure: Pure Static, readCsp).
             ...(wfx && !ss.cspWeather.startsWith('ctrl:') ? [{
-              label: 'Weather controller', hint: 'Script that sets the conditions from the weather', type: 'select', get: () => ss.wfxController, set: v => { ss.wfxController = v; },
+              icon: QD_ICONS.code, label: 'Weather controller', hint: 'Script that sets the conditions from the weather', type: 'select', get: () => ss.wfxController, set: v => { ss.wfxController = v; },
               options: [['', 'Default'], ...typeControllers.filter(c => c.id !== csp.baseController).map(c => [c.id, c.name])],
             }] : []),
-            { label: 'Air temperature', type: 'select', options: withCurrent(steps(10, 36, 1).map(n => [n, `${n} °C`]), ss.air, n => `${n} °C`), get: () => ss.air, set: v => { ss.air = v; } },
-            { label: 'Track temperature', hint: 'Auto uses the formula of AC\'s launcher (air, time, weather)', type: 'select', get: () => ss.road, set: v => { ss.road = v; },
+            { icon: QD_ICONS.thermometer, label: 'Air temperature', type: 'num', options: withCurrent(steps(10, 36, 1).map(n => [n, `${n} °C`]), ss.air, n => `${n} °C`), get: () => ss.air, set: v => { ss.air = v; } },
+            { icon: QD_ICONS.road, label: 'Track temperature', hint: 'Auto uses the formula of AC\'s launcher (air, time, weather)', type: 'num', get: () => ss.road, set: v => { ss.road = v; },
               options: [['auto', `Auto · ${roadNow()} °C`], ...steps(10, 60, 1).map(n => [n, `${n} °C`])] },
-            { label: 'Track grip', type: 'select', options: AC_GRIP.map(x => [x.id, x.label]), get: () => ss.grip, set: v => { ss.grip = v; } },
-            { label: 'Penalties', type: 'seg', options: [[true, 'On'], [false, 'Off']], get: () => ss.penalties, set: v => { ss.penalties = v; } },
+            { icon: QD_ICONS.grip, label: 'Track grip', type: 'select', options: AC_GRIP.map(x => [x.id, x.label]), get: () => ss.grip, set: v => { ss.grip = v; } },
+            { icon: QD_ICONS.warning, label: 'Penalties', type: 'seg', options: [[true, 'On'], [false, 'Off']], get: () => ss.penalties, set: v => { ss.penalties = v; } },
           ],
         },
         {
           title: 'Wind', fields: [
-            { label: 'Wind speed', type: 'select', get: () => ss.wind.speed, set: v => { ss.wind.speed = v; },
+            { icon: QD_ICONS.wind, label: 'Wind speed', type: 'num', get: () => ss.wind.speed, set: v => { ss.wind.speed = v; },
               options: withCurrent(steps(0, 60, 5).map(n => [n, n ? `${n} km/h` : 'Calm']), ss.wind.speed, n => `${n} km/h`) },
             ...(ss.wind.speed > 0 ? [
-              { label: 'Gusts', type: 'select', get: () => ss.wind.gusts, set: v => { ss.wind.gusts = v; },
+              { icon: QD_ICONS.gusts, label: 'Gusts', type: 'num', get: () => ss.wind.gusts, set: v => { ss.wind.gusts = v; },
                 options: withCurrent([[0, 'Steady'], [5, '+5 km/h'], [10, '+10 km/h'], [20, '+20 km/h']], ss.wind.gusts, n => `+${n} km/h`) },
-              { label: 'Direction', type: 'select', get: () => ss.wind.dir, set: v => { ss.wind.dir = v; },
+              { icon: QD_ICONS.compass, label: 'Direction', type: 'num', get: () => ss.wind.dir, set: v => { ss.wind.dir = v; },
                 options: withCurrent(steps(0, 315, 45).map(d => [d, compass(d)]), ss.wind.dir, compass) },
             ] : []),
           ],
         },
         {
           title: 'Assists', wide: true, fields: [
-            { label: 'Preset', hint: "AC's own presets", type: 'seg', get: assistPreset, set: v => { if (AC_ASSIST_PRESETS[v]) Object.assign(ss.assists, AC_ASSIST_PRESETS[v]); },
+            { icon: QD_ICONS.sliders, label: 'Preset', hint: "AC's own presets", type: 'seg', get: assistPreset, set: v => { if (AC_ASSIST_PRESETS[v]) Object.assign(ss.assists, AC_ASSIST_PRESETS[v]); },
               options: [['gamer', 'Gamer'], ['racer', 'Racer'], ['pro', 'Pro'], ['custom', 'Custom']] },
           ],
         },
         {
           title: 'Driving aids', fields: [
-            { label: 'ABS', type: 'seg', options: [[0, 'Off'], [1, 'Factory'], [2, 'On']], get: () => ss.assists.abs, set: v => { ss.assists.abs = v; } },
-            { label: 'Traction control', type: 'seg', options: [[0, 'Off'], [1, 'Factory'], [2, 'On']], get: () => ss.assists.tc, set: v => { ss.assists.tc = v; } },
-            { label: 'Stability control', type: 'select', get: () => ss.assists.stability, set: v => { ss.assists.stability = v; },
+            { icon: QD_ICONS.brake, label: 'ABS', type: 'seg', options: [[0, 'Off'], [1, 'Factory'], [2, 'On']], get: () => ss.assists.abs, set: v => { ss.assists.abs = v; } },
+            { icon: QD_ICONS.traction, label: 'Traction control', type: 'seg', options: [[0, 'Off'], [1, 'Factory'], [2, 'On']], get: () => ss.assists.tc, set: v => { ss.assists.tc = v; } },
+            { icon: QD_ICONS.shield, label: 'Stability control', type: 'num', get: () => ss.assists.stability, set: v => { ss.assists.stability = v; },
               options: withCurrent(steps(0, 100, 10).map(n => [n, n ? `${n}%` : 'Off']), ss.assists.stability, n => `${n}%`) },
-            { label: 'Clutch', type: 'seg', options: [[1, 'Auto'], [0, 'Manual']], get: () => ss.assists.autoClutch, set: v => { ss.assists.autoClutch = v; } },
-            { label: 'Gear shifts', type: 'seg', options: [[1, 'Auto'], [0, 'Manual']], get: () => ss.assists.autoShift, set: v => { ss.assists.autoShift = v; } },
-            { label: 'Auto blip', hint: 'Throttle blips on downshifts', type: 'seg', options: onOff, get: () => ss.assists.autoBlip, set: v => { ss.assists.autoBlip = v; } },
-            { label: 'Ideal line', type: 'seg', options: onOff, get: () => ss.assists.ideal, set: v => { ss.assists.ideal = v; } },
+            { icon: QD_ICONS.pedal, label: 'Clutch', type: 'seg', options: [[1, 'Auto'], [0, 'Manual']], get: () => ss.assists.autoClutch, set: v => { ss.assists.autoClutch = v; } },
+            { icon: QD_ICONS.gears, label: 'Gear shifts', type: 'seg', options: [[1, 'Auto'], [0, 'Manual']], get: () => ss.assists.autoShift, set: v => { ss.assists.autoShift = v; } },
+            { icon: QD_ICONS.zap, label: 'Auto blip', hint: 'Throttle blips on downshifts', type: 'seg', options: onOff, get: () => ss.assists.autoBlip, set: v => { ss.assists.autoBlip = v; } },
+            { icon: QD_ICONS.line, label: 'Ideal line', type: 'seg', options: onOff, get: () => ss.assists.ideal, set: v => { ss.assists.ideal = v; } },
           ],
         },
         {
           title: 'Realism', fields: [
-            { label: 'Mechanical damage', type: 'select', get: () => ss.assists.damage, set: v => { ss.assists.damage = v; },
+            { icon: QD_ICONS.wrench, label: 'Mechanical damage', type: 'num', get: () => ss.assists.damage, set: v => { ss.assists.damage = v; },
               options: withCurrent(steps(0, 100, 10).map(n => [n, n ? `${n}%` : 'Off']), ss.assists.damage, n => `${n}%`) },
-            { label: 'Visual damage', type: 'seg', options: onOff, get: () => ss.assists.visualDamage, set: v => { ss.assists.visualDamage = v; } },
-            { label: 'Fuel use', type: 'seg', options: onOff, get: () => ss.assists.fuel, set: v => { ss.assists.fuel = v; } },
-            { label: 'Tyre wear', type: 'seg', options: [[0, 'Off'], [1, '1×'], [2, '2×'], [3, '3×']], get: () => ss.assists.tyreWear, set: v => { ss.assists.tyreWear = v; } },
-            { label: 'Tyre blankets', type: 'seg', options: onOff, get: () => ss.assists.blankets, set: v => { ss.assists.blankets = v; } },
-            { label: 'Slipstream', type: 'select', get: () => ss.assists.slipstream, set: v => { ss.assists.slipstream = v; },
+            { icon: QD_ICONS.eye, label: 'Visual damage', type: 'seg', options: onOff, get: () => ss.assists.visualDamage, set: v => { ss.assists.visualDamage = v; } },
+            { icon: QD_ICONS.fuel, label: 'Fuel use', type: 'seg', options: onOff, get: () => ss.assists.fuel, set: v => { ss.assists.fuel = v; } },
+            { icon: QD_ICONS.tyre, label: 'Tyre wear', type: 'seg', options: [[0, 'Off'], [1, '1×'], [2, '2×'], [3, '3×']], get: () => ss.assists.tyreWear, set: v => { ss.assists.tyreWear = v; } },
+            { icon: QD_ICONS.heat, label: 'Tyre blankets', type: 'seg', options: onOff, get: () => ss.assists.blankets, set: v => { ss.assists.blankets = v; } },
+            { icon: QD_ICONS.slipstream, label: 'Slipstream', type: 'num', get: () => ss.assists.slipstream, set: v => { ss.assists.slipstream = v; },
               options: withCurrent(steps(1, 5, 1).map(n => [n, `${n}×`]), ss.assists.slipstream, n => `${n}×`) },
           ],
         },
@@ -3127,8 +3277,18 @@ async function openQuickDrive({ car, skin, track } = {}) {
 
 const dropOverlay = document.createElement('div');
 dropOverlay.id = 'drop-overlay';
-dropOverlay.innerHTML = `<div class="drop-box"><div class="drop-icon">＋</div><b>Drop to install</b>
-  <span>.zip · .rar · .7z · .kspkg · .pak<br>The launcher detects the game and puts the mod in the right folder.</span></div>`;
+dropOverlay.innerHTML = `<div class="drop-box">
+  <svg class="drop-icon" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg>
+  <b>Drop to install</b>
+  <span class="drop-sub">The launcher finds the game and the folder for each mod. You check the list before anything is copied.</span>
+  <div class="drop-games">
+    <div><img src="/img/logos/ac.png" alt="Assetto Corsa"><span>Cars, tracks, skins, apps, CSP and PP filters</span></div>
+    <div><img src="/img/logos/acc.png" alt="Assetto Corsa Competizione"><span>Liveries</span></div>
+    <div><img src="/img/logos/evo.png" alt="Assetto Corsa EVO"><span><code>.kspkg</code> cars and tracks, track folders</span></div>
+    <div><img src="/img/logos/rally.png" alt="Assetto Corsa Rally"><span><code>.pak</code> liveries</span></div>
+  </div>
+  <small>As files, or inside <code>.zip</code>, <code>.rar</code> and <code>.7z</code> archives</small>
+</div>`;
 document.body.appendChild(dropOverlay);
 
 let dragDepth = 0;
@@ -3137,7 +3297,16 @@ const draggingFiles = e => [...(e.dataTransfer?.types || [])].includes('Files');
 // carries a file, which would open the install overlay. Files dragged in from
 // outside still work.
 document.addEventListener('dragstart', e => e.preventDefault());
-window.addEventListener('dragenter', e => { if (!draggingFiles(e)) return; e.preventDefault(); dragDepth++; dropOverlay.classList.add('show'); });
+window.addEventListener('dragenter', e => {
+  if (!draggingFiles(e)) return;
+  e.preventDefault();
+  if (!dragDepth++) {
+    // How many files come in is known while dragging (their names only on the drop).
+    const n = [...(e.dataTransfer.items || [])].filter(i => i.kind === 'file').length;
+    dropOverlay.querySelector('b').textContent = n > 1 ? `Drop ${n} files to install` : 'Drop to install';
+  }
+  dropOverlay.classList.add('show');
+});
 window.addEventListener('dragover', e => { if (!draggingFiles(e)) return; e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; });
 window.addEventListener('dragleave', e => { if (draggingFiles(e) && --dragDepth <= 0) { dragDepth = 0; dropOverlay.classList.remove('show'); } });
 window.addEventListener('drop', e => {
@@ -3157,42 +3326,128 @@ async function pickModFiles() {
   } catch (err) { log(`open dialog: ${err?.message || JSON.stringify(err)}`); }
 }
 
-function progressModal(text) {
-  const { el, close } = modal(`<div class="imp-progress"><div class="spinner"></div><span>${esc(text)}</span></div>`, 'modal imp-modal slim');
+// A file name cut in the middle when it's too long: the start is ellipsised and the
+// end (version, extension) always shows. The whole name is its tooltip.
+function fileNameHTML(name) {
+  let at = Math.max(0, name.length - 12);
+  const sep = name.slice(at, at + 6).search(/[ _.-]/);
+  if (sep >= 0) at += sep;
+  return `<span class="fname" title="${esc(name)}"><span>${esc(name.slice(0, at))}</span><span>${esc(name.slice(at))}</span></span>`;
+}
+
+const FILE_ICON = '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/>';
+const ARCHIVE_ICON = '<rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8M10 12h4"/>';
+// What a dropped file is, before it's read: a game's own file shows the game's logo.
+function fileThumb(name) {
+  const game = /\.kspkg$/i.test(name) ? 'evo' : /\.(pak|utoc|ucas)$/i.test(name) ? 'rally' : '';
+  if (game) return `<img class="imp-logo" src="/img/logos/${game}.png" alt="">`;
+  return `<svg class="imp-file" viewBox="0 0 24 24">${/\.(zip|rar|7z|tar|tgz|gz|xz|bz2)$/i.test(name) ? ARCHIVE_ICON : FILE_ICON}</svg>`;
+}
+
+const mmss = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+
+// The dropped files being read, before the review opens in the same window: a row
+// per file with what's happening to it (copied in, extracted, looked through).
+// Nothing can be closed meanwhile.
+function readingDialog(names) {
+  const rows = names.map(() => ({ state: 'wait', line: 'Waiting', pct: null, t0: 0 }));
+  let timer = 0;
+  const { el, close } = modal(`<div class="qd imp">
+    <header class="qd-head"><h2>Install mods</h2><div class="qd-sub" data-r-sub></div></header>
+    <div class="imp-list">${names.map((n, k) => `<div class="imp-row imp-q wait" data-r="${k}">
+      <div class="imp-thumb">${fileThumb(n)}</div>
+      <div class="imp-info">
+        <b>${fileNameHTML(n)}</b>
+        <small class="imp-q-line"></small>
+        <div class="imp-bar"><i></i></div>
+      </div>
+      <span class="imp-tag"></span>
+    </div>`).join('')}</div>
+  </div>`, 'modal imp-modal', () => clearInterval(timer));
   el.dataset.busy = '1';
-  const set = t => { const s = el.querySelector('.imp-progress span'); if (s) s.textContent = t; };
-  set.close = () => { delete el.dataset.busy; close(); };
-  return set;
+
+  const draw = k => {
+    const r = rows[k], row = el.querySelector(`[data-r="${k}"]`);
+    if (!row) return;
+    row.className = `imp-row imp-q ${r.state}`;
+    const secs = r.state === 'run' ? (Date.now() - r.t0) / 1000 : 0;
+    row.querySelector('.imp-q-line').textContent = r.pct == null && secs >= 3 ? `${r.line} · ${mmss(secs)}` : r.line;
+    const bar = row.querySelector('.imp-bar');
+    bar.classList.toggle('indet', r.pct == null);
+    bar.firstChild.style.width = r.pct == null ? '' : `${r.pct}%`;
+    const tag = row.querySelector('.imp-tag');
+    const [cls, text] = r.state === 'wait' ? ['wait', 'Waiting'] : r.state === 'run' ? ['run', r.pct == null ? '' : `${r.pct}%`] : r.tag;
+    tag.className = `imp-tag ${cls}`;
+    tag.textContent = text;
+  };
+  const sub = () => {
+    const at = rows.findIndex(r => r.state === 'run');
+    el.querySelector('[data-r-sub]').textContent = names.length > 1 && at >= 0
+      ? `Reading ${at + 1} of ${names.length}. Then you choose what to install.`
+      : 'Reading what\'s inside. Then you choose what to install.';
+  };
+  rows.forEach((r, k) => draw(k));
+  sub();
+  timer = setInterval(() => rows.forEach((r, k) => { if (r.state === 'run' && r.pct == null) draw(k); }), 1000);
+
+  return {
+    // line: 'Extracting', 'Copying into the launcher'…; pct: null while it can't be told.
+    stage(k, line, pct = null) {
+      const r = rows[k];
+      if (r.state !== 'run') { r.state = 'run'; r.t0 = Date.now(); }
+      if (line !== r.line) r.t0 = Date.now();
+      Object.assign(r, { line, pct: pct == null ? null : Math.max(0, Math.min(100, Math.round(pct))) });
+      draw(k); sub();
+    },
+    finish(k, found, problem = '') {
+      Object.assign(rows[k], found
+        ? { state: 'done', line: `${found} mod${found > 1 ? 's' : ''} found`, pct: 100, tag: ['new', 'Read'] }
+        : { state: 'fail', line: problem, pct: null, tag: ['bad', 'Nothing to install'] });
+      draw(k); sub();
+    },
+    close() { clearInterval(timer); delete el.dataset.busy; close(); },
+  };
 }
 
 let importing = false;
 async function importSources(sources) {
   if (importing) { toast('Still working on the previous mod…', true); return; }
   importing = true;
-  const status = progressModal('Preparing…');
+  const labels = sources.map(s => s.file?.name || basename(s.path));
+  const reading = readingDialog(labels);
   const items = [], problems = [], sessions = [];
   try {
     const evoCache = await evoCacheDir().catch(() => '');
-    for (const s of sources) {
-      const label = s.file?.name || basename(s.path);
-      if (!IMPORT_RE.test(label)) { problems.push(`${label}: not a mod archive or mod file`); continue; }
+    for (const [k, s] of sources.entries()) {
+      const label = labels[k];
+      if (!IMPORT_RE.test(label)) {
+        problems.push(`${label}: not a mod archive or mod file`);
+        reading.finish(k, 0, 'Not a mod archive or mod file');
+        continue;
+      }
       try {
+        reading.stage(k, 'Starting');
         const src = s.file
-          ? await resolveDropped(s.file, (done, total) => status(`Reading ${label}… ${Math.round(done / total * 100)}%`))
+          ? await resolveDropped(s.file, (done, total) => reading.stage(k, 'Copying into the launcher', done / total * 100))
           : { path: s.path, temp: false };
-        const r = await prepareImport(src, state.paths, { evoCache, onStatus: status });
+        const r = await prepareImport(src, state.paths, { evoCache, onStatus: line => reading.stage(k, line) });
         sessions.push(...r.session);
         items.push(...r.items);
-        if (!r.items.length) problems.push(`${label}: no Assetto Corsa mod recognised inside`);
+        if (r.items.length) reading.finish(k, r.items.length);
+        else {
+          problems.push(`${label}: no Assetto Corsa mod recognised inside`);
+          reading.finish(k, 0, 'No Assetto Corsa mod recognised inside');
+        }
       } catch (err) {
         log(`import ${label}: ${err?.stack || err?.message || JSON.stringify(err)}`);
         problems.push(`${label}: ${err?.message || 'could not be read'}`);
+        reading.finish(k, 0, err?.message || 'Could not be read');
       }
     }
   } finally {
     importing = false;
   }
-  status.close();
+  reading.close();
   await openInstallReview(items, problems, sessions);
 }
 
@@ -3340,7 +3595,7 @@ function installsDone() {
   if (failed.length) toast(`Could not install ${failed.join('; ')}`, true);
   else if (done.length && done.every(i => i.kind === 'pp filter')) toast(`Installed ${done.map(i => i.title).join(', ')}. Pick it in Settings → Assetto Corsa · Video.`);
   else toast(`Installed ${done.length} mod${done.length > 1 ? 's' : ''}`);
-  if (done.some(i => i.game === 'evo' && i.kind === 'track')) evoTrackSync({ force: true });
+  if (done.some(isEvoListed)) evoTrackSync({ force: true });
   if (state.view === 'academy') { AY.data = {}; drawAcademy(); return; }
   // The new mod's tab, if the dialog was watched to the end; otherwise the page
   // being looked at stays, refreshed.
@@ -3438,20 +3693,30 @@ function drawInstallPill() {
   pill.title = `Installing ${cur.item.title}: ${installLine(cur)}. Click for the list.`;
 }
 
-// EVO's track list (evotracks.js) follows the mod tracks installed: after one is
-// installed, enabled, disabled or uninstalled, before EVO starts from here, and at
-// startup (a game update replaces content.kspkg, and with it the list). quiet: a
-// failure is only logged, as it's tried again next time. force: also after the
-// list was restored in Settings, which stops the automatic updates.
+// Mods EVO offers only once they're in its own lists (evotracks.js): tracks, and
+// packed liveries for its cars (an import item's mode, a Mods page item's toggle).
+const isEvoListed = i => i.game === 'evo' && (i.kind === 'track' || (i.kind === 'livery' && (i.mode === 'evo-pack' || i.toggle === 'evo')));
+
+// EVO's track list and its cars' liveries (evotracks.js) follow the mod tracks and
+// liveries installed: after one is installed, enabled, disabled or uninstalled,
+// before EVO starts from here, and at startup (a game update replaces content.kspkg,
+// and with it the lists). quiet: a failure is only logged, as it's tried again next
+// time. force: also after the lists were restored in Settings, which stops the
+// automatic updates.
 async function evoTrackSync({ force = false, quiet = false } = {}) {
   if (!state.paths?.evo?.install || !state.paths.evo.mods) return null;
   try {
     const r = await syncEvoTrackList(state.paths, { force });
-    if (r.changed) toast(r.listed.length ? `${r.listed.join(', ')} ${r.listed.length > 1 ? 'are' : 'is'} now in EVO's track list` : "EVO's track list is back to the original");
+    const are = list => (list.length > 1 ? 'are' : 'is');
+    const said = [
+      r.listed.length ? `${r.listed.join(', ')} ${are(r.listed)} now in EVO's track list` : '',
+      r.liveries.length ? `${r.liveries.join(', ')} ${r.liveries.length > 1 ? 'are now liveries' : 'is now a livery'} in EVO` : '',
+    ].filter(Boolean);
+    if (r.changed) toast(said.join('; ') || "EVO's track list and liveries are back to the original");
     return r;
   } catch (err) {
     log(`evo track list: ${err?.stack || err?.message || err}`);
-    if (!quiet) toast(`Couldn't update EVO's track list: ${err?.message || err} It's tried again when EVO next starts from the launcher.`, true);
+    if (!quiet) toast(`Couldn't update EVO's track list and liveries: ${err?.message || err} It's tried again when EVO next starts from the launcher.`, true);
     return null;
   }
 }
@@ -5085,22 +5350,25 @@ async function runCspInstall() {
   }
 }
 
-// Shown once there's a mod track (or the list was changed or restored).
+// Shown once there's a mod track or livery (or the lists were changed or restored).
 async function evoTracksSettingsHTML() {
   if (!state.paths?.evo?.install) return '';
   const s = await evoTrackListStatus(state.paths);
-  if (!s.listed.length && !s.waiting.length && !s.skipped.length && !s.off) return '';
+  if (!s.listed.length && !s.waiting.length && !s.liveries.length && !s.liveriesWaiting.length && !s.skipped.length && !s.off) return '';
   const val = [
-    s.listed.length ? `In EVO's track list: ${s.listed.join(', ')}` : s.off ? 'EVO has its original track list (restored here)' : '',
-    s.waiting.length ? `Not added yet: ${s.waiting.join(', ')}` : '',
+    s.listed.length ? `In EVO's track list: ${s.listed.join(', ')}` : '',
+    s.liveries.length ? `Liveries added to their cars: ${s.liveries.join(', ')}` : '',
+    s.off && !s.listed.length && !s.liveries.length ? 'EVO has its original track list and liveries (restored here)' : '',
+    s.waiting.length || s.liveriesWaiting.length ? `Not added yet: ${[...s.waiting, ...s.liveriesWaiting].join(', ')}` : '',
     ...s.skipped.map(x => `Can't be added: ${x.file} (${x.why})`),
   ].filter(Boolean).map(esc).join('<br>');
-  return `<div class="settings-group"><h3>Assetto Corsa EVO · Mod tracks</h3>
-    <p class="settings-note">EVO only lists the tracks in its own track list, inside its game file <code>content.kspkg</code>. The launcher adds your mod tracks to it when you install one and before EVO starts from here, and keeps a copy of what it changes. Restore puts the file back exactly as it was, as Steam's Verify integrity also does.</p>
-    <div class="setting"><label>Track list</label><div class="val">${val}</div>
+  const liveries = s.liveries.length || s.liveriesWaiting.length;
+  return `<div class="settings-group"><h3>Assetto Corsa EVO · Mod tracks${liveries ? ' and liveries' : ''}</h3>
+    <p class="settings-note">EVO only lists the tracks in its own track list, and a car's liveries in the car's own files, all inside its game file <code>content.kspkg</code>. The launcher adds your mod tracks and liveries there when you install one and before EVO starts from here, and keeps a copy of what it changes. Restore puts the file back exactly as it was, as Steam's Verify integrity also does.</p>
+    <div class="setting"><label>${liveries ? 'Tracks and liveries' : 'Track list'}</label><div class="val">${val}</div>
       <div class="btns">
-        <button class="btn small subtle" data-act="evo-tracks-add" ${s.waiting.length ? '' : 'disabled'}>Add to EVO</button>
-        <button class="btn small subtle" data-act="evo-tracks-restore" ${s.listed.length ? '' : 'disabled'}>Restore original</button>
+        <button class="btn small subtle" data-act="evo-tracks-add" ${s.waiting.length || s.liveriesWaiting.length ? '' : 'disabled'}>Add to EVO</button>
+        <button class="btn small subtle" data-act="evo-tracks-restore" ${s.listed.length || s.liveries.length ? '' : 'disabled'}>Restore original</button>
       </div></div></div>`;
 }
 
@@ -5221,8 +5489,8 @@ async function renderSettings() {
       t.disabled = true; t.textContent = 'Restoring…';
       try {
         await restoreEvoTrackList(state.paths);
-        toast("EVO's track list is back to the original. Mod tracks stay installed; Add to EVO lists them again.");
-      } catch (err) { toast(err?.message || 'Could not restore the track list', true); }
+        toast("EVO's track list and liveries are back to the original. Mod tracks and liveries stay installed; Add to EVO lists them again.");
+      } catch (err) { toast(err?.message || 'Could not restore the track list and liveries', true); }
       renderSettings();
     } else if (t.dataset.act === 'chime-test') {
       playChime().then(st => log(`chime: ${st}`));
@@ -5655,6 +5923,7 @@ Neutralino.events.on('ready', async () => {
     if (importArg) import('./dev-import-test.js').then(m => m.runImportTest(importArg.slice('--import-test='.length), {
       // The UI install test installs into its sandbox folders and saves no settings.
       usePaths: paths => { state.paths = paths; state.cache = {}; state.snapshotRun = true; },
+      importPaths: paths => importSources(paths.map(path => ({ path: norm(path) }))),
     }));
   } catch (e) {
     log(`boot failed: ${e?.stack || JSON.stringify(e)}`);
@@ -6282,6 +6551,45 @@ async function runSnapshots(dir) {
   }
   // --check10: window grips (resize), Rally stage outlines (white, none on the
   // location cards), replay icon, detail logo, news and site checks (see the log).
+  // --check-sheets: each game's session sheet (top and bottom), and a number field
+  // dragged, stepped with the arrow keys and typed into.
+  if ((window.NL_ARGS || []).includes('--check-sheets')) {
+    const vals = () => [...document.querySelectorAll('.qd-sheet .qd-num output')].map(o => o.textContent).join(', ');
+    for (const game of ['rally', 'acc', 'evo', 'ac']) {
+      state.game = game; renderSidebar(); state.view = 'quickdrive'; render(); await wait(5000);
+      if (game !== 'rally') {
+        // Race modes show the most fields.
+        $('#main .qd-session-btn')?.click(); await wait(600);
+        [...document.querySelectorAll('.qd-sheet .qd-seg button')].find(b => /^(Race|Race Weekend|Custom race|CustomRace)$/i.test(b.textContent))?.click(); await wait(300);
+      } else { $('#main .qd-session-btn')?.click(); await wait(600); }
+      log(`sheets ${game}: icons ${document.querySelectorAll('.qd-sheet .qd-row-icon').length}/${document.querySelectorAll('.qd-sheet .qd-row').length} rows, ${document.querySelectorAll('.qd-sheet .qd-num').length} number fields, ${document.querySelectorAll('.qd-sheet select').length} dropdowns: ${vals()}`);
+      await snap(`sheets-${game}`);
+      const body = $('.qd-sheet-body'); if (body) body.scrollTop = body.scrollHeight;
+      await snap(`sheets-${game}-end`); if (body) body.scrollTop = 0;
+      const out = () => $('.qd-sheet .qd-num output');
+      if (out()) {
+        const o = out(), r = o.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2;
+        const before = o.textContent;
+        o.dispatchEvent(new PointerEvent('pointerdown', { clientX: x, clientY: y, button: 0, pointerId: 1, bubbles: true }));
+        o.dispatchEvent(new PointerEvent('pointermove', { clientX: x + 30, clientY: y, pointerId: 1, bubbles: true }));
+        const during = o.textContent;
+        o.dispatchEvent(new PointerEvent('pointerup', { clientX: x + 30, clientY: y, pointerId: 1, bubbles: true })); await wait(200);
+        const dragged = out().textContent;
+        out().dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true })); await wait(200);
+        const stepped = out().textContent;
+        out().dispatchEvent(new MouseEvent('dblclick', { bubbles: true })); await wait(200);
+        const edit = $('.qd-sheet .qd-num-edit');
+        if (edit) { edit.value = game === 'acc' || game === 'evo' || game === 'ac' ? '17' : '14:30'; edit.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); }
+        await wait(200);
+        log(`sheets ${game} first number field: ${before} -> drag +30px ${during} -> ${dragged} -> left ${stepped} -> typed ${edit?.value} ${out().textContent}; summary ${$('#main .qd-session-btn')?.textContent.replace(/\s+/g, ' ').trim()}`);
+        await snap(`sheets-${game}-after`);
+      }
+      $('.qd-sheet [data-done]')?.click(); await wait(300);
+      $('#modal-root [data-close]')?.click(); await wait(300);
+    }
+    await Neutralino.app.exit();
+    return;
+  }
   if ((window.NL_ARGS || []).includes('--check10')) {
     const before = await Neutralino.window.getSize();
     const se = $('#win-grips .rz-se'), at = (x, y) => ({ screenX: x, screenY: y, button: 0, bubbles: true });

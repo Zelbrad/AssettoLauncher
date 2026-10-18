@@ -302,6 +302,13 @@ export async function extractArchive(archive, dest) {
 }
 
 async function extractLinux(archive, dest) {
+  const r = await extractWith(archive, dest);
+  // Links in an archive could point anywhere on the PC; what's installed from here is
+  // copied on, so none are kept.
+  await sh(`find ${shQuote(dest)} -type l -delete`);
+  return r;
+}
+async function extractWith(archive, dest) {
   const have = async tool => (await sh(`command -v ${tool}`)).exitCode === 0;
   // stdin closed, so a password prompt fails instead of waiting forever.
   const x = cmd => sh(`${cmd} </dev/null 2>&1`);
@@ -309,7 +316,8 @@ async function extractLinux(archive, dest) {
   if (await have('bsdtar')) return x(`bsdtar -xf ${a} -C ${d}`);
   for (const z of ['7zz', '7z', '7za']) if (await have(z)) return x(`${z} x -y -p- -o${d} ${a}`);
   if (/\.zip$/i.test(archive) && await have('unzip')) return x(`unzip -o -q ${a} -d ${d}`);
-  if (/\.rar$/i.test(archive) && await have('unrar')) return x(`unrar x -o+ -p- ${a} ${shQuote(`${dest}/`)}`);
+  // unrar last: versions before 6.12 could be made to write outside dest (CVE-2022-30333).
+  if (/\.rar$/i.test(archive) && await have('unrar')) { log('extract: using unrar (bsdtar or 7-Zip is safer)'); return x(`unrar x -o+ -p- ${a} ${shQuote(`${dest}/`)}`); }
   if (/\.(tar(\.(gz|bz2|xz))?|tgz)$/i.test(archive)) return x(`tar -xf ${a} -C ${d}`);
   return { exitCode: 1, stdOut: '', stdErr: 'no extractor found: install bsdtar (libarchive-tools) or 7-Zip (p7zip), then try again.' };
 }

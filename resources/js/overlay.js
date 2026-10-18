@@ -22,6 +22,9 @@
 // its own file.
 import { overlayFile, readText, log } from './util.js';
 
+// Anything the Content-Security-Policy (overlay.html) blocked, for the log.
+document.addEventListener('securitypolicyviolation', e => log(`overlay csp: ${e.violatedDirective} blocked ${e.blockedURI || 'inline code'}`));
+
 const POLL_MS = 100, QUIET_MS = 60000, AWAY = -32000;
 const query = new URLSearchParams(location.search), root = document.getElementById('root'), side = query.get('side') || '';
 let file = '', sid = 0, last = -1, heard = Date.now(), hideTimer = 0, busy = false, card = null, spot = { x: 0, y: 0 };
@@ -31,6 +34,10 @@ async function show(msg) {
   const seconds = msg.seconds || 8;
   card = OverlayCard.render(root, msg.show, seconds);
   await Neutralino.window.move(spot.x, spot.y).catch(() => {});
+  // Off the screen, the web view draws slowly; back on it, a couple of frames go by
+  // before it runs at full rate. The slide starts after them (100 ms at most), else
+  // its first part stutters.
+  await new Promise(r => { const t = setTimeout(r, 100); requestAnimationFrame(() => requestAnimationFrame(() => { clearTimeout(t); r(); })); });
   OverlayCard.enter(card);
   if (msg.snap) {
     await new Promise(r => setTimeout(r, 1200)); // slid in, chevrons lit

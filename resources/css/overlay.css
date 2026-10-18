@@ -35,6 +35,7 @@
   filter: drop-shadow(0 10px 18px rgba(0, 0, 0, 0.45)) drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
   transform: translateY(calc(-1 * (var(--top) + 100% + 40px)));
   transition: transform 0.5s cubic-bezier(0.55, 0, 0.8, 0.2); /* back up */
+  will-change: transform; /* its own layer, ready before it slides */
 }
 .ov-card.in { pointer-events: auto; transform: none; transition: transform 0.75s cubic-bezier(0.16, 1, 0.3, 1); }
 /* Brushed metals, lit from the upper left; dark ink on them. */
@@ -60,7 +61,8 @@
 .ov-plate::before { content: ''; position: absolute; inset: 0; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), inset 0 -1px 0 rgba(0, 0, 0, 0.25); }
 .ov-plate::after { content: ''; position: absolute; top: 0; bottom: 0; left: -60%; width: 45%; background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.55), transparent); transform: skewX(-16deg); opacity: 0; }
 .ov-card.run:not(.none):not(.void) .ov-plate::after { animation: ov-sheen 0.9s cubic-bezier(0.3, 0, 0.2, 1) 0.6s; }
-@keyframes ov-sheen { from { left: -60%; opacity: 1; } to { left: 120%; opacity: 1; } }
+/* Moved by transform, not `left` (no layout each frame): -60 % to 120 % of the plate is 4 of its widths. */
+@keyframes ov-sheen { from { transform: translateX(0) skewX(-16deg); opacity: 1; } to { transform: translateX(400%) skewX(-16deg); opacity: 1; } }
 .ov-title { position: relative; font-family: var(--font-head); font-size: 44px; line-height: 1; letter-spacing: 0.05em; padding-top: 4px; color: var(--ink); text-transform: uppercase; white-space: nowrap; }
 .ov-card:is(.platinum, .gold, .silver, .bronze) .ov-title { text-shadow: 0 1px 0 rgba(255, 255, 255, 0.35); }
 /* "Not counted" is longer than a medal's name: smaller, a word to a line. */
@@ -107,6 +109,7 @@
   pointer-events: none;
   transform: translateX(calc(100% + 60px));
   transition: transform 0.45s cubic-bezier(0.55, 0, 0.8, 0.2);
+  will-change: transform;
 }
 .ov-sr.in { pointer-events: auto; transform: none; transition: transform 0.55s cubic-bezier(0.16, 1, 0.3, 1); }
 .ov-sr.l2 { --c: 245, 176, 0; }

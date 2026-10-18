@@ -522,13 +522,22 @@ select { background: #222; border: 1px solid #383838; border-radius: 6px; height
 .qd-row-icon svg { width: 18px; height: 18px; }
 .qd-range { display: flex; align-items: center; gap: 10px; }
 /* Sliders (Rally's session sheet, Settings → Darken) as Rally's own: a thin square track filled up to the value, an upright bar as the handle. */
-.qd-range input[type=range], .bg-darken input[type=range] { -webkit-appearance: none; appearance: none; width: 160px; height: 18px; margin: 0; background: transparent; cursor: pointer; }
-.qd-range input[type=range]::-webkit-slider-runnable-track, .bg-darken input[type=range]::-webkit-slider-runnable-track { height: 4px; border-radius: 0; background: linear-gradient(to right, var(--red) var(--fill, 0%), #343434 var(--fill, 0%)); }
-.qd-range input[type=range]::-webkit-slider-thumb, .bg-darken input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 6px; height: 16px; margin-top: -6px; border-radius: 1px; background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.45), 0 1px 4px rgba(0,0,0,.5); transition: transform .12s; }
-.qd-range input[type=range]:hover::-webkit-slider-thumb, .bg-darken input[type=range]:hover::-webkit-slider-thumb, .qd-range input[type=range]:active::-webkit-slider-thumb, .bg-darken input[type=range]:active::-webkit-slider-thumb { transform: scaleY(1.15); }
-.qd-range input[type=range]:focus, .bg-darken input[type=range]:focus { outline: none; }
-.qd-range input[type=range]:focus-visible::-webkit-slider-thumb, .bg-darken input[type=range]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 2px var(--red); }
+.qd-range input[type=range], .qd-num input[type=range], .bg-darken input[type=range] { -webkit-appearance: none; appearance: none; width: 160px; height: 18px; margin: 0; background: transparent; cursor: pointer; }
+.qd-range input[type=range]::-webkit-slider-runnable-track, .qd-num input[type=range]::-webkit-slider-runnable-track, .bg-darken input[type=range]::-webkit-slider-runnable-track { height: 4px; border-radius: 0; background: linear-gradient(to right, var(--red) var(--fill, 0%), #343434 var(--fill, 0%)); }
+.qd-range input[type=range]::-webkit-slider-thumb, .qd-num input[type=range]::-webkit-slider-thumb, .bg-darken input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 6px; height: 16px; margin-top: -6px; border-radius: 1px; background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.45), 0 1px 4px rgba(0,0,0,.5); transition: transform .12s; }
+.qd-range input[type=range]:hover::-webkit-slider-thumb, .qd-num input[type=range]:hover::-webkit-slider-thumb, .bg-darken input[type=range]:hover::-webkit-slider-thumb, .qd-range input[type=range]:active::-webkit-slider-thumb, .qd-num input[type=range]:active::-webkit-slider-thumb, .bg-darken input[type=range]:active::-webkit-slider-thumb { transform: scaleY(1.15); }
+.qd-range input[type=range]:focus, .qd-num input[type=range]:focus, .bg-darken input[type=range]:focus { outline: none; }
+.qd-range input[type=range]:focus-visible::-webkit-slider-thumb, .qd-num input[type=range]:focus-visible::-webkit-slider-thumb, .bg-darken input[type=range]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 2px var(--red); }
 .qd-range output { min-width: 40px; text-align: right; font-size: 12.5px; color: #eee; font-variant-numeric: tabular-nums; }
+.qd-num { display: flex; align-items: center; gap: 10px; }
+.qd-num input[type=range] { width: 96px; }
+.qd-num output, .qd-num-edit { width: 92px; height: 32px; padding: 0 10px; display: flex; align-items: center; justify-content: flex-end; font-size: 12.5px; color: #eee; background: #1f1f1f; border: 1px solid #303030; border-radius: 6px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; }
+.qd-num output { cursor: ew-resize; user-select: none; transition: border-color .15s; }
+.qd-num output:hover, .qd-num.dragging output { border-color: #4a4a4a; }
+.qd-num output:focus { outline: none; }
+.qd-num output:focus-visible, .qd-num-edit:focus { outline: none; border-color: var(--red); }
+.qd-num-edit { text-align: right; font-family: inherit; }
+.qd-row.disabled .qd-num output { cursor: not-allowed; }
 .qd-row select { height: 32px; min-width: 160px; padding: 0 8px; font-size: 12.5px; color: #eee; }
 .qd-row .qd-seg button { padding: 6px 12px; font-size: 12px; }
 .modal .qd-head > .close { top: 50%; right: 22px; transform: translateY(-50%); }
@@ -588,33 +597,47 @@ select { background: #222; border: 1px solid #383838; border-radius: 6px; height
 .qd-variant-hint:hover::after { opacity: 1; transform: none; }
 
 /* Mod installer */
-#drop-overlay { position: fixed; inset: 0; z-index: 80; display: none; place-items: center; background: rgba(10,10,10,.78); backdrop-filter: blur(3px); pointer-events: none; }
+/* The drop target: plain, like the windows (the page behind only dimmed). */
+#drop-overlay { position: fixed; inset: 0; z-index: 80; display: none; place-items: center; background: rgba(10,10,10,.82); pointer-events: none; }
 #drop-overlay.show { display: grid; }
-.drop-box { zoom: var(--page-zoom); width: 520px; padding: 44px 40px; border: 2px dashed var(--red); border-radius: 16px; background: rgba(24,24,24,.9); text-align: center; display: flex; flex-direction: column; align-items: center; gap: 10px; }
-.drop-box .drop-icon { flex: none; width: 64px; height: 64px; border-radius: 50%; background: var(--red); display: grid; place-items: center; font-size: 34px; line-height: 1; }
-.drop-box b { font-family: var(--font-head); font-weight: 400; font-size: 34px; text-transform: uppercase; letter-spacing: .02em; }
-.drop-box span { color: var(--muted); font-size: 13.5px; line-height: 1.6; }
+.drop-box { zoom: var(--page-zoom); width: 600px; padding: 34px 36px 26px; border: 2px dashed #3d3d3d; border-radius: 12px; background: #181818; text-align: center; display: flex; flex-direction: column; align-items: center; }
+#drop-overlay.show .drop-box { animation: qdIn .15s ease; }
+.drop-box .drop-icon { width: 44px; height: 44px; flex: none; fill: none; stroke: var(--red); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; margin-bottom: 14px; }
+.drop-box b { font-family: var(--font-head); font-weight: 400; font-size: 40px; line-height: 1; text-transform: uppercase; letter-spacing: .01em; }
+.drop-box .drop-sub { max-width: 440px; margin-top: 10px; color: var(--muted); font-size: 13.5px; line-height: 1.55; }
+.drop-games { width: 100%; margin-top: 24px; display: flex; flex-direction: column; gap: 6px; text-align: left; }
+.drop-games > div { display: flex; align-items: center; gap: 16px; padding: 10px 16px; background: #1f1f1f; border: 1px solid #292929; border-radius: 8px; font-size: 13px; color: #d4d4d4; }
+.drop-games img { width: 72px; height: 22px; flex: none; object-fit: contain; object-position: left center; }
+.drop-box small { margin-top: 16px; color: var(--muted); font-size: 12.5px; }
+.drop-box code { background: #262626; padding: 1px 5px; border-radius: 4px; font-size: 12px; color: #ddd; }
 .modal.imp-modal { width: min(860px, 100%); display: flex; flex-direction: column; }
 .modal.imp-modal.slim { width: 460px; }
-.imp-progress { display: flex; align-items: center; gap: 16px; padding: 28px 60px 28px 28px; font-size: 14px; }
-.spinner { width: 26px; height: 26px; flex: none; border-radius: 50%; border: 3px solid #333; border-top-color: var(--red); animation: spin .8s linear infinite; }
+/* A window that can't be closed yet (reading dropped mods, closing mid-install) shows no close button. */
+.modal[data-busy] .close { display: none; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .qd.imp { padding: 0; display: flex; flex-direction: column; min-height: 0; flex: 1; }
 .qd.imp > h2, .qd.imp > .qd-sub { padding: 0 28px; }
 .qd.imp > h2 { padding-top: 24px; padding-right: 66px; }
 .qd.imp > .qd-sub { padding-bottom: 24px; line-height: 1.6; }
 .qd.imp code { background: #222; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
-.imp-problems { margin: 0 28px 12px; padding: 10px 14px 10px 30px; background: rgba(224,160,80,.08); border: 1px solid rgba(224,160,80,.3); border-radius: 8px; color: #e0a050; font-size: 13px; line-height: 1.6; }
+.imp-problems { margin: 0 28px 12px; padding: 10px 14px 10px 30px; background: rgba(224,160,80,.08); border: 1px solid rgba(224,160,80,.3); border-radius: 8px; color: #e0a050; font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
 .imp-list { overflow-y: auto; min-height: 0; flex: 1; padding: 4px 28px 16px; display: flex; flex-direction: column; gap: 8px; border-top: 1px solid #262626; padding-top: 14px; }
 .imp-row { display: flex; align-items: center; gap: 14px; padding: 10px 14px 10px 12px; border-radius: 8px; background: #1f1f1f; border: 1px solid #292929; cursor: pointer; }
 .imp-row:hover { border-color: #3a3a3a; }
 .imp-row.off { opacity: .55; cursor: default; }
 .imp-row input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--red); flex: none; cursor: pointer; }
-.imp-thumb { width: 120px; aspect-ratio: 16 / 9; border-radius: 6px; overflow: hidden; background: #141414; flex: none; display: grid; place-items: center; }
-.imp-thumb img.main { width: 100%; height: 100%; object-fit: cover; }
+.imp-thumb { position: relative; width: 120px; aspect-ratio: 16 / 9; border-radius: 6px; overflow: hidden; background: #141414; flex: none; display: grid; place-items: center; }
+/* Laid over the box: as a grid item, a square car picture kept its own height and
+   only its top half showed (the car low and cut off). */
+.imp-thumb img.main { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.imp-thumb .imp-file { width: 30px; height: 30px; fill: none; stroke: #8a8a8a; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 .imp-thumb .imp-logo { max-width: 70%; max-height: 60%; object-fit: contain; opacity: .8; }
 .imp-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .imp-info b { font-size: 14.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* fileNameHTML: the start gives way, the end (version, extension) stays. */
+.fname { display: flex; min-width: 0; }
+.fname > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fname > span:last-child { flex: none; white-space: pre; }
 .imp-info small { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .imp-info code { font-family: Consolas, monospace; font-size: 11.5px; color: #8f8f8f; background: none !important; padding: 0 !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .imp-info small.imp-note { color: #d6a640; white-space: normal; }
@@ -635,6 +658,11 @@ select { background: #222; border: 1px solid #383838; border-radius: 6px; height
 .imp-q.run .imp-bar { display: block; }
 .imp-bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--red) 40%, #ff4b4b 50%, var(--red) 60%) 0 0 / 300% 100%; animation: impBar 1.6s linear infinite; transition: width .3s ease; }
 @keyframes impBar { from { background-position: 100% 0; } to { background-position: 0 0; } }
+/* While how far it is can't be told (extracting, looking inside): a short bar going across. */
+.imp-bar.indet i { width: 28%; background: var(--red); animation: impSlide 1.3s ease-in-out infinite; transition: none; }
+@keyframes impSlide { from { transform: translateX(-100%); } to { transform: translateX(360%); } }
+.imp-tag:empty { display: none; }
+.imp-q.done .imp-q-line { color: #c9c9c9; }
 .imp-tag.wait { background: #262626; color: var(--muted); }
 .imp-tag.run { min-width: 52px; text-align: center; background: rgba(197,13,13,.16); color: #ff6b6b; font-variant-numeric: tabular-nums; }
 .qd-summary.imp-hint { color: var(--muted); font-size: 12.5px; line-height: 1.5; }

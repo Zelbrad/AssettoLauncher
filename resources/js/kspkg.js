@@ -149,6 +149,7 @@ function protoStrings(buf) {
     .map(x => utf8.decode(x.v).trim())
     .filter(s => s && !s.includes('\\'));
 }
+export const protoLabels = buf => protoStrings(buf);
 
 // ---------------------------------------------------------------------------
 // Textures: a protobuf header (.texture) + BC7 data (.texturemips) stored in
@@ -333,9 +334,15 @@ const CACHE_VERSION = 'v4';
 export const cacheKey = (file, st) =>
   `${basename(file).replace(/\.disabled$/i, '').replace(/[^\w.-]+/g, '_')}-${st.size}-${Math.floor(st.modifiedAt)}-${CACHE_VERSION}`;
 
+// A track mod's picture, in its name like FRAMING: 0.3.0 took the first UI texture
+// (a converted track's map); its picture stayed when 0.4.0 read the track again.
+const TRACK_PICTURE = 1;
 const withPaths = (info, cacheDir) => ({ ...info, thumbs: info.thumbs.map(t => ({ ...t, path: join(cacheDir, t.file) })) });
 
-// Returns { key, kind: 'car'|'track'|'other', name, brand, thumbs: [{ path, label }] }, or null.
+// Returns { key, kind: 'car'|'track'|'livery'|'other', name, brand, thumbs: [{ path, label }] }, or null.
+// A livery is one for a car of the game (installer.js packs LiveryLab's exports so):
+// a visual preset under content\cars\<car>\presets, without the car itself (no actor,
+// no modded car record); evotracks.js adds it to the car's list.
 export async function readModInfo(file, cacheDir) {
   const st = await Neutralino.filesystem.getStats(file);
   const key = cacheKey(file, st);
@@ -345,9 +352,10 @@ export async function readModInfo(file, cacheDir) {
   if (cached) {
     try {
       old = JSON.parse(cached);
-      // Read again: tracks read before they were named from their ui\previews.json,
-      // and cars whose pictures were framed differently (frameCar), or not at all.
-      if (old.kind === 'track' ? old.named : old.kind !== 'car' || old.framing === FRAMING) return withPaths(old, cacheDir);
+      // Read again: tracks read before they were named from their ui\previews.json or
+      // before their photo was preferred (TRACK_PICTURE), and cars whose pictures were
+      // framed differently (frameCar), or not at all.
+      if (old.kind === 'track' ? old.named && old.picture === TRACK_PICTURE : old.kind !== 'car' || old.framing === FRAMING) return withPaths(old, cacheDir);
     } catch { /* rebuild */ }
   }
 
@@ -357,12 +365,14 @@ export async function readModInfo(file, cacheDir) {
   const hasTracks = pkg.files.some(e => /^content\\tracks\\/i.test(e.name));
   // content\cars\<id>\... -> <id>, the id EVO uses for this car/track.
   const folderOf = re => pkg.files.find(e => re.test(e.name))?.name.split('\\')[2] || '';
+  const content = pkg.find(/\.modded\w*content$/i)[0];
+  const visuals = pkg.find(/^content\\cars\\[^\\]+\\presets\\[^\\]+\.visualcarpreset$/i);
+  const livery = hasCars && !content && visuals.length && !pkg.files.some(e => /^content\\cars\\[^\\]+\\[^\\]+\.actor$/i.test(e.name));
   const info = {
-    key, kind: hasCars ? 'car' : hasTracks ? 'track' : 'other', name: '', brand: '', thumbs: [],
+    key, kind: livery ? 'livery' : hasCars ? 'car' : hasTracks ? 'track' : 'other', name: '', brand: '', thumbs: [],
     contentId: hasCars ? folderOf(/^content\\cars\\[^\\]+\\/i) : folderOf(/^content\\tracks\\[^\\]+\\/i),
   };
 
-  const content = pkg.find(/\.modded\w*content$/i)[0];
   if (content) {
     const s = protoStrings(await pkg.read(content));
     info.name = s[0] || '';
@@ -370,7 +380,21 @@ export async function readModInfo(file, cacheDir) {
   }
   await ensureDir(cacheDir);
 
-  if (info.kind === 'car') {
+  if (livery) {
+    // Visual presets carry [brand, livery name, …]: "Audi", "Audi R8 ABT 2024 03".
+    const labels = await Promise.all(visuals.map(async e => protoStrings(await pkg.read(e))));
+    info.name = labels.map(l => l[1] || l[0]).filter(Boolean).join(', ');
+    info.brand = labels[0][0] || '';
+    // LiveryLab puts its picture of the livery in the skin folder.
+    const png = pkg.find(/\\livery_thumbnail\.png$/i)[0] || pkg.find(/^content\\cars\\.*\.(png|jpe?g)$/i)[0];
+    if (png) {
+      try {
+        const name = `${key}-l0.${png.name.split('.').pop().toLowerCase()}`;
+        if (!(await exists(join(cacheDir, name)))) await Neutralino.filesystem.writeBinaryFile(join(cacheDir, name), (await pkg.read(png)).slice().buffer);
+        info.thumbs.push({ file: name, label: '' });
+      } catch (err) { log(`kspkg: livery picture failed ${png.name}: ${err?.message || err}`); }
+    }
+  } else if (info.kind === 'car') {
     // Sorted so variants appear in preset order (visual_1, visual_2, ...).
     const textures = pkg.find(/[\\/]generated[\\/]thumbnails[\\/][^\\/]+\.texture$/i)
       .sort((a, b) => a.name.split('-').pop().localeCompare(b.name.split('-').pop(), undefined, { numeric: true }));
@@ -400,10 +424,15 @@ export async function readModInfo(file, cacheDir) {
     const tex = pkg.find(/^content\\tracks\\.*(\\ui\\|preview|thumb|layout).*\.texture$/i).sort((a, b) => +!/photo|preview/i.test(a.name) - +!/photo|preview/i.test(b.name))[0];
     if (tex) {
       try {
-        const name = `${key}-0.jpg`;
+        const name = `${key}-t${TRACK_PICTURE}-0.jpg`;
         await saveTexture(pkg, tex, join(cacheDir, name), 1000);
         info.thumbs.push({ file: name, label: '' });
       } catch (err) { log(`kspkg: track preview failed ${tex.name}: ${err?.message || err}`); }
+    }
+    info.picture = TRACK_PICTURE;
+    // The picture made before (another name) isn't needed any more.
+    for (const t of old?.thumbs || []) {
+      if (!info.thumbs.some(x => x.file === t.file)) await Neutralino.filesystem.remove(join(cacheDir, t.file)).catch(() => {});
     }
     if (!info.name) {
       const previews = pkg.get(`content\\tracks\\${info.contentId}\\ui\\previews.json`);
@@ -623,6 +652,7 @@ const layoutName = id => prettifyId(id.replace(/-/g, ' ')).replace(/\bV(\d)/g, '
 // first; the rest are decoded one by one in the background, tracks then cars.
 
 const lazyJobs = new Map(); // picture URL -> { url, pkgPath, tex, out, maxWidth }
+const catalogsShown = new Set(); // the catalogue folders (keys) this run has handed out
 const urgent = [], idle = [];
 const openPkgs = new Map(); // package path -> Promise<package>
 let pumping = false, prefetchTimer = 0;
@@ -699,14 +729,17 @@ export async function readEvoCatalog(contentPath, cacheDir, onProgress = () => {
   const baseDir = join(cacheDir, 'base'), dir = join(baseDir, key);
   const manifestPath = join(dir, 'catalog.json');
   const cached = await readText(manifestPath);
-  if (cached) { try { return catalogWithPaths(JSON.parse(cached), dir, contentPath); } catch { /* rebuild */ } }
+  if (cached) { try { const cat = catalogWithPaths(JSON.parse(cached), dir, contentPath); catalogsShown.add(key); return cat; } catch { /* rebuild */ } }
 
   await ensureDir(cacheDir); await ensureDir(baseDir);
   // A game update produces a new key; drop catalogues from older versions. For the
   // same game build, a new BASE_VERSION reuses the old folder so its images are kept.
+  // One this run has shown stays until the next start: content.kspkg changes while
+  // the launcher runs too (evotracks.js adds the mod tracks to it), and the cards
+  // on screen still show its pictures.
   const build = `base-${st.size}-${Math.floor(st.modifiedAt)}-`;
   for (const e of await Neutralino.filesystem.readDirectory(baseDir).catch(() => [])) {
-    if (e.type !== 'DIRECTORY' || e.entry === key) continue;
+    if (e.type !== 'DIRECTORY' || e.entry === key || catalogsShown.has(e.entry)) continue;
     const old = join(baseDir, e.entry);
     const reused = e.entry.startsWith(build) && !(await exists(dir)) && await Neutralino.filesystem.move(old, dir).then(() => true, () => false);
     if (reused) await Neutralino.filesystem.remove(manifestPath).catch(() => {});
@@ -796,6 +829,7 @@ export async function readEvoCatalog(contentPath, cacheDir, onProgress = () => {
 
   const catalog = { cars: cars.filter(c => c.tex), tracks: tracks.filter(t => t.layouts.length) };
   await writeText(manifestPath, JSON.stringify(catalog));
+  catalogsShown.add(key);
   return catalogWithPaths(catalog, dir, contentPath);
 }
 

@@ -51,15 +51,15 @@ export async function installUpdate(setup) {
   const temp = norm(await Neutralino.os.getEnv('TEMP'));
   const file = join(temp, setup.name.replace(/[^\w.-]/g, '_'));
   if (!/^https:\/\/github\.com\//i.test(setup.url) || !safeUrl(setup.url)) throw new Error('Unexpected download address');
+  // Never run a setup that couldn't be checked: GitHub lists a SHA-256 for every asset.
+  if (!/^[0-9a-f]{64}$/.test(setup.sha256 || '')) throw new Error('This release has no checksum to check the download against. Get it from the release page instead.');
   const dl = await run(`${CURL} -s -L -f --max-time 300 -o "${file}" "${setup.url}"`);
   if (dl.exitCode !== 0) throw new Error('The download failed. Check your connection and try again.');
-  if (setup.sha256) {
-    const got = (await sha256File(file)).toLowerCase();
-    if (got !== setup.sha256) {
-      await Neutralino.filesystem.remove(file).catch(() => {});
-      log(`update: hash mismatch ${got} vs ${setup.sha256}`);
-      throw new Error('The downloaded file didn\'t match the release, so it wasn\'t installed.');
-    }
+  const got = (await sha256File(file)).toLowerCase();
+  if (got !== setup.sha256) {
+    await Neutralino.filesystem.remove(file).catch(() => {});
+    log(`update: hash mismatch ${got} vs ${setup.sha256}`);
+    throw new Error('The downloaded file didn\'t match the release, so it wasn\'t installed.');
   }
   // /SILENT: progress window only; the installer closes this copy if needed,
   // updates it and starts the new version (installer.iss).

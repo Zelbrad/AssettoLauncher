@@ -3,6 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- Only the launcher's own scripts run: text from mods, setup files or the web put
+       into the page by mistake can't run as code (no inline scripts or on…= handlers).
+       blob: workers are the timer clocks and hls.js; https: is Steam's pictures and trailers. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' blob: https:; connect-src 'self' ws://127.0.0.1:* ws://localhost:* https:; font-src 'self' data:; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">
   <title>Assetto Launcher</title>
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="/css/app.css">

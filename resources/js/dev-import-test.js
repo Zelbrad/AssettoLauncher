@@ -113,6 +113,25 @@ export async function runImportTest(configPath, hooks = {}) {
     await wait(500);
   }
 
+  // The drop target with uiRead.dragCount files over it, then uiRead.paths read as
+  // if dropped (hooks.importPaths): the reading window while it works, the review
+  // when it opens. Nothing is installed.
+  if (cfg.uiRead) {
+    const u = cfg.uiRead, snap = name => Neutralino.window.snapshot(`${cfg.snapDir}/${name}.png`);
+    const dt = new DataTransfer();
+    for (let i = 0; i < (u.dragCount || 1); i++) dt.items.add(new File(['x'], `f${i}.zip`));
+    window.dispatchEvent(new DragEvent('dragenter', { dataTransfer: dt, bubbles: true }));
+    await wait(600); await snap('read-overlay');
+    window.dispatchEvent(new DragEvent('dragleave', { dataTransfer: dt, bubbles: true }));
+    hooks.importPaths(u.paths);
+    for (const [k, ms] of (u.snapsAt || [1500]).entries()) { await wait(ms); await snap(`read-progress-${k}`); }
+    for (let i = 0; i < 2400 && !document.querySelector('.imp-list input'); i++) await wait(250);
+    await wait(2000); await snap('read-review');
+    report.uiRead = { rows: [...document.querySelectorAll('.imp-row')].map(r => r.querySelector('b')?.textContent) };
+    document.querySelector('#modal-root [data-close]')?.click();
+    await wait(500);
+  }
+
   // Installs through the UI into the sandbox (cfg.paths, through hooks.usePaths):
   // drops uiInstall.files one after another (the later ones while the first still
   // installs), snapshots the progress dialog and the title bar's pill, then waits

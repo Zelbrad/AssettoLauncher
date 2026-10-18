@@ -351,7 +351,10 @@ function parseInstalledLog(text) {
     if (key.trim() === 'build') out.build = Number(value.trim());
     if (key.trim() === 'file') {
       const [rel, , , mtime] = value.split(':');
-      if (rel?.trim()) out.files.push({ rel: rel.trim().replace(/\\/g, '/'), mtime: Number(mtime) || 0 });
+      // Only paths inside extension\: the files listed here get removed, and a mod
+      // can ship its own installed.log ("..\..\" or "C:\…" would reach other folders).
+      const path = rel?.trim().replace(/\\/g, '/');
+      if (path && !/^\/|^[a-z]:|(^|\/)\.\.(\/|$)/i.test(path)) out.files.push({ rel: path, mtime: Number(mtime) || 0 });
     }
   }
   return out;
